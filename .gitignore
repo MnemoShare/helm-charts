@@ -1,0 +1,18 @@
+# Helm
+*.tgz
+.cr-release-packages/
+.cr-index/
+
+# Test files
+test-values.yaml
+*-test-values.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

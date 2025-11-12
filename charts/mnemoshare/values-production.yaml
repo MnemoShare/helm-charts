@@ -1,0 +1,174 @@
+# Production values for MnemoShare Helm Chart
+# Copy this file and customize for your environment
+
+# Number of replicas for high availability
+replicaCount: 3
+
+image:
+  repository: mnemoshare/mnemoshare
+  pullPolicy: IfNotPresent
+  tag: "latest"  # Use specific version tags in production (e.g., "0.3.1")
+
+# MongoDB - Use managed service (MongoDB Atlas) in production
+mongodb:
+  external:
+    enabled: true
+    uri: "mongodb+srv://username:password@cluster.mongodb.net/mnemoshare?retryWrites=true&w=majority"
+
+# S3 - Use AWS S3 or equivalent in production
+s3:
+  endpoint: "https://s3.amazonaws.com"
+  region: "us-east-1"
+  bucket: "mnemoshare-production-files"
+  accessKey: ""  # Set via --set or use existingSecrets
+  secretKey: ""  # Set via --set or use existingSecrets
+  useSSL: true
+
+# JWT - Generate strong secret
+jwt:
+  secret: ""  # Generate with: openssl rand -base64 48
+  expiration: "24h"
+
+# Encryption - Generate 32-byte key
+encryption:
+  key: ""  # Generate with: openssl rand -base64 32
+
+# License - Required for production
+license:
+  key: ""  # Your license key from purchase
+  serverUrl: "https://license.mnemoshare.com"
+
+# Application URL - Your production domain
+appUrl: "https://mnemoshare.yourdomain.com"
+
+# SendGrid - Enable email notifications
+sendgrid:
+  apiKey: ""  # Your SendGrid API key
+  fromEmail: "noreply@yourdomain.com"
+  fromName: "MnemoShare"
+
+# Ingress - Enable with TLS
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10g"  # Match max file size
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: mnemoshare.yourdomain.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: mnemoshare-tls
+      hosts:
+        - mnemoshare.yourdomain.com
+
+# Resources - Adjust based on load
+resources:
+  requests:
+    cpu: 1000m
+    memory: 2Gi
+  limits:
+    cpu: 4000m
+    memory: 8Gi
+
+# Auto-scaling - Enable for production
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Node affinity - Run on dedicated node pool (optional)
+nodeSelector: {}
+  # workload: mnemoshare
+
+# Tolerations - For dedicated nodes (optional)
+tolerations: []
+  # - key: "workload"
+  #   operator: "Equal"
+  #   value: "mnemoshare"
+  #   effect: "NoSchedule"
+
+# Pod anti-affinity - Spread across nodes
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - mnemoshare
+          topologyKey: kubernetes.io/hostname
+
+# File settings - Adjust for your needs
+files:
+  maxSize: "10737418240"  # 10GB
+  defaultLinkExpiration: "168h"  # 7 days
+
+# CORS - Add your domains
+cors:
+  allowedOrigins: "https://mnemoshare.yourdomain.com"
+
+# Rate limiting - Protect against abuse
+rateLimit:
+  requests: 1000
+  window: "1m"
+
+# Health checks - Production-ready probes
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Security - Run as non-root
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+
+# Use existing secrets for sensitive data (recommended)
+existingSecrets:
+  mongodb: "mnemoshare-mongodb-secret"
+  s3: "mnemoshare-s3-secret"
+  jwt: "mnemoshare-jwt-secret"
+  encryption: "mnemoshare-encryption-secret"
+  license: "mnemoshare-license-secret"
+
+# Additional environment variables (if needed)
+extraEnv: []
+  # - name: CUSTOM_VAR
+  #   value: "production"

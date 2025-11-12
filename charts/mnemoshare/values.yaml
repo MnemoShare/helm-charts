@@ -1,0 +1,169 @@
+# Default values for mnemoshare
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 2
+
+image:
+  repository: mnemoshare/mnemoshare
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+  hosts:
+    - host: mnemoshare.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: mnemoshare-tls
+      hosts:
+        - mnemoshare.example.com
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# MongoDB configuration
+mongodb:
+  # If using external MongoDB
+  external:
+    enabled: true
+    uri: ""  # mongodb://username:password@host:27017/mnemoshare
+  # If deploying MongoDB as subchart (not recommended for production)
+  enabled: false
+
+# S3-compatible storage configuration
+s3:
+  endpoint: "https://s3.amazonaws.com"
+  region: "us-east-1"
+  bucket: ""  # Required: your-bucket-name
+  accessKey: ""  # Required: AWS_ACCESS_KEY_ID
+  secretKey: ""  # Required: AWS_SECRET_ACCESS_KEY
+  useSSL: true
+
+# JWT authentication
+jwt:
+  secret: ""  # Required: minimum 32 characters
+  expiration: "24h"
+
+# Encryption
+encryption:
+  key: ""  # Required: 32-byte encryption key
+
+# License configuration
+license:
+  key: ""  # Required: your license key from purchase
+  serverUrl: "https://license.mnemoshare.com"
+
+# SendGrid email configuration (optional)
+sendgrid:
+  apiKey: ""
+  fromEmail: "noreply@example.com"
+  fromName: "MnemoShare"
+
+# Application URL
+appUrl: ""  # Required: https://mnemoshare.example.com
+
+# File upload settings
+files:
+  maxSize: "10737418240"  # 10GB in bytes
+  defaultLinkExpiration: "168h"  # 7 days
+
+# CORS settings
+cors:
+  allowedOrigins: ""  # Comma-separated list, e.g., "https://example.com,https://app.example.com"
+
+# Rate limiting
+rateLimit:
+  requests: 100
+  window: "1m"
+
+# Liveness probe
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Readiness probe
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Environment variables (for additional custom env vars)
+extraEnv: []
+# - name: CUSTOM_VAR
+#   value: "custom_value"
+
+# Existing secrets (alternative to values for sensitive data)
+existingSecrets:
+  mongodb: ""  # Name of existing secret with 'mongodb-uri' key
+  s3: ""       # Name of existing secret with 's3-access-key' and 's3-secret-key' keys
+  jwt: ""      # Name of existing secret with 'jwt-secret' key
+  encryption: ""  # Name of existing secret with 'encryption-key' key
+  license: ""  # Name of existing secret with 'license-key' key
