@@ -1,6 +1,0 @@
-# Artifact Hub repository metadata file
-# https://artifacthub.io/docs/topics/repositories/
-repositoryID: 01234567-89ab-cdef-0123-456789abcdef
-owners:
-  - name: MnemoShare
-    email: support@mnemoshare.com
