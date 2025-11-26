@@ -44,6 +44,8 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.mongodb }}{{ .Values.existingSecrets.mongodb }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: mongodb-uri
+        - name: MONGODB_DATABASE
+          value: {{ .Values.mongodb.external.database | quote }}
         # S3 Storage
         - name: S3_ENDPOINT
           value: {{ .Values.s3.endpoint | quote }}

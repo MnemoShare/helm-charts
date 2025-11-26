@@ -85,7 +85,8 @@ mongodb:
   # If using external MongoDB
   external:
     enabled: true
-    uri: ""  # mongodb://username:password@host:27017/mnemoshare
+    uri: ""  # mongodb://username:password@host:27017/dbname
+    database: "mnemoshare"  # Database name (overrides default and URI path)
   # If deploying MongoDB as subchart (not recommended for production)
   enabled: false
 
