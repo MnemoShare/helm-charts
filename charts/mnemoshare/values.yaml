@@ -110,7 +110,13 @@ encryption:
 # License configuration
 license:
   key: ""  # Required: your license key from purchase
-  serverUrl: "https://license.mnemoshare.com"
+  # deploymentId: ""  # Optional: Override the auto-generated infrastructure-based deployment ID
+  # Note: Deployment ID is now automatically generated based on namespace + cluster.
+  # This ensures:
+  # - All pods in the same namespace/cluster share the same deployment ID (allows scaling)
+  # - Different namespace or cluster = different deployment ID (counts as separate deployment)
+  # - Copying database to a new cluster generates a new ID (prevents license sharing)
+  # Only set deploymentId if you need to migrate an existing deployment to a new cluster.
 
 # SendGrid email configuration (optional)
 sendgrid:
