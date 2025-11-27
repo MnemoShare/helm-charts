@@ -2,6 +2,31 @@ apiVersion: v1
 entries:
   mnemoshare:
   - apiVersion: v2
+    appVersion: 0.4.0
+    created: "2025-11-27T00:26:35.766833884Z"
+    description: HIPAA-compliant secure file transfer system with knowledge-based
+      authentication
+    digest: 5a5f85a6fe5ffaa4c39df719004d03cfe33b2d8a961002a0fc28a9960c6503bb
+    home: https://mnemoshare.com
+    icon: https://mnemoshare.com/logo.png
+    keywords:
+    - secure-file-transfer
+    - hipaa
+    - healthcare
+    - encryption
+    - file-sharing
+    maintainers:
+    - email: support@mnemoshare.com
+      name: MnemoShare
+      url: https://mnemoshare.com
+    name: mnemoshare
+    sources:
+    - https://github.com/mnemoshare/mnemoshare
+    type: application
+    urls:
+    - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-1.1.0/mnemoshare-1.1.0.tgz
+    version: 1.1.0
+  - apiVersion: v2
     appVersion: 0.3.1
     created: "2025-11-11T22:23:25.738155-06:00"
     description: HIPAA-compliant secure file transfer system with knowledge-based
@@ -26,4 +51,4 @@ entries:
     urls:
     - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-1.0.0/mnemoshare-1.0.0.tgz
     version: 1.0.0
-generated: "2025-11-11T22:23:25.737309-06:00"
+generated: "2025-11-27T00:26:35.766847178Z"
