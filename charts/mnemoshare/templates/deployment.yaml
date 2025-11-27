@@ -135,6 +135,13 @@ spec:
         - name: SENDGRID_FROM_NAME
           value: {{ .Values.sendgrid.fromName | quote }}
         {{- end }}
+        # ClamAV ICAP endpoint (when built-in ClamAV is enabled)
+        {{- if .Values.clamav.enabled }}
+        - name: DEFAULT_ICAP_URL
+          value: "icap://{{ include "mnemoshare.fullname" . }}-clamav:1344"
+        - name: DEFAULT_ICAP_SERVICE
+          value: "avscan"
+        {{- end }}
         # Extra environment variables
         {{- with .Values.extraEnv }}
         {{- toYaml . | nindent 8 }}

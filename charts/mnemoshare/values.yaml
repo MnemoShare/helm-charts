@@ -174,3 +174,52 @@ existingSecrets:
   jwt: ""      # Name of existing secret with 'jwt-secret' key
   encryption: ""  # Name of existing secret with 'encryption-key' key
   license: ""  # Name of existing secret with 'license-key' key
+
+# ClamAV ICAP antivirus scanning (optional)
+# Provides free, open-source virus scanning for uploaded files
+clamav:
+  # Enable/disable ClamAV deployment
+  enabled: false
+
+  image:
+    repository: mnemoshare/clamav-icap
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  # ICAP endpoint configuration
+  # When enabled, the ClamAV service is deployed and available at:
+  #   icap://<release-name>-clamav:1344
+  #
+  # To use it, configure each organization's ICAP settings in the admin UI:
+  #   - ICAP URL: icap://<release-name>-clamav:1344
+  #   - ICAP Service: avscan
+  #   - ICAP Timeout: 30 (seconds)
+  #
+  # You can also point organizations to external ICAP servers (commercial AV)
+
+  # Persistence for virus definition database
+  # Without persistence, definitions are re-downloaded on every pod restart (~300MB)
+  persistence:
+    enabled: false
+    # Storage class (leave empty for default)
+    storageClass: ""
+    # Access mode
+    accessMode: ReadWriteOnce
+    # Size of the PVC (ClamAV database is ~300-400MB, 500Mi recommended)
+    size: 500Mi
+
+  # Resource limits
+  # ClamAV needs memory for virus database (~1GB recommended for scanning)
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 200m
+      memory: 1Gi
+
+  # Node selector for ClamAV pods
+  nodeSelector: {}
+
+  # Tolerations for ClamAV pods
+  tolerations: []

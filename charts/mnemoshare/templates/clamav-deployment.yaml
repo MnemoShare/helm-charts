@@ -1,0 +1,70 @@
+{{- if .Values.clamav.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-clamav
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clamav
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: clamav
+  template:
+    metadata:
+      labels:
+        {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: clamav
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 101  # clamav group
+      containers:
+      - name: clamav-icap
+        image: "{{ .Values.clamav.image.repository }}:{{ .Values.clamav.image.tag }}"
+        imagePullPolicy: {{ .Values.clamav.image.pullPolicy }}
+        ports:
+        - name: icap
+          containerPort: 1344
+          protocol: TCP
+        {{- if .Values.clamav.persistence.enabled }}
+        volumeMounts:
+        - name: clamav-data
+          mountPath: /var/lib/clamav
+        {{- end }}
+        resources:
+          {{- toYaml .Values.clamav.resources | nindent 12 }}
+        livenessProbe:
+          tcpSocket:
+            port: icap
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 5
+        readinessProbe:
+          tcpSocket:
+            port: icap
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      {{- if .Values.clamav.persistence.enabled }}
+      volumes:
+      - name: clamav-data
+        persistentVolumeClaim:
+          claimName: {{ include "mnemoshare.fullname" . }}-clamav
+      {{- end }}
+      {{- with .Values.clamav.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.clamav.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

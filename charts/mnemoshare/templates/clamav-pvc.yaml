@@ -1,0 +1,22 @@
+{{- if and .Values.clamav.enabled .Values.clamav.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-clamav
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clamav
+spec:
+  accessModes:
+    - {{ .Values.clamav.persistence.accessMode | default "ReadWriteOnce" }}
+  {{- if .Values.clamav.persistence.storageClass }}
+  {{- if (eq "-" .Values.clamav.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.clamav.persistence.storageClass | quote }}
+  {{- end }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.clamav.persistence.size | default "500Mi" }}
+{{- end }}
