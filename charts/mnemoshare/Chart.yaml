@@ -2,8 +2,8 @@ apiVersion: v2
 name: mnemoshare
 description: HIPAA-compliant secure file transfer system with knowledge-based authentication
 type: application
-version: 1.2.1
-appVersion: "0.4.2"
+version: 1.2.3
+appVersion: "0.5.1"
 keywords:
   - secure-file-transfer
   - hipaa
@@ -18,3 +18,12 @@ maintainers:
     email: support@mnemoshare.com
     url: https://mnemoshare.com
 icon: https://mnemoshare.com/logo.png
+
+# Optional dependencies
+dependencies:
+  # MinIO - S3-compatible object storage
+  # Enable for Azure deployments or on-premise without S3-compatible storage
+  - name: minio
+    version: "5.2.0"
+    repository: "https://charts.min.io/"
+    condition: minio.enabled
