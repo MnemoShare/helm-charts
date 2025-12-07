@@ -1,0 +1,19 @@
+{{- if .Values.stepCA.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-step-ca
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: step-ca
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9000
+      targetPort: https
+      protocol: TCP
+      name: https
+  selector:
+    {{- include "mnemoshare.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: step-ca
+{{- end }}

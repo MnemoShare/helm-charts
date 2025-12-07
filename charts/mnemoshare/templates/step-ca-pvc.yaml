@@ -1,0 +1,18 @@
+{{- if and .Values.stepCA.enabled .Values.stepCA.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-step-ca
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: step-ca
+spec:
+  accessModes:
+    - {{ .Values.stepCA.persistence.accessMode | default "ReadWriteOnce" }}
+  {{- if .Values.stepCA.persistence.storageClass }}
+  storageClassName: {{ .Values.stepCA.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.stepCA.persistence.size | default "1Gi" }}
+{{- end }}

@@ -223,3 +223,110 @@ clamav:
 
   # Tolerations for ClamAV pods
   tolerations: []
+
+# Smallstep CA - Certificate Authority for Hardware mTLS (Enterprise+ tier)
+# Enables hardware-bound mTLS authentication with YubiKey, TPM 2.0, Secure Enclave
+# https://smallstep.com/docs/step-ca
+stepCA:
+  # Enable/disable Step CA deployment
+  enabled: false
+
+  image:
+    repository: smallstep/step-ca
+    tag: "0.27.5"
+    pullPolicy: IfNotPresent
+
+  # CA configuration
+  ca:
+    # CA name (displayed in certificates)
+    name: "MnemoShare CA"
+    # DNS names for the CA (must include service name)
+    # Format: <release-name>-step-ca.<namespace>.svc.cluster.local
+    dns: "step-ca"
+    # Certificate validity defaults
+    minTLSCertDuration: "1h"
+    maxTLSCertDuration: "2160h"    # 90 days
+    defaultTLSCertDuration: "720h"  # 30 days
+
+  # OCSP responder for certificate revocation checking
+  ocsp:
+    enabled: true
+
+  # JWK provisioner for MnemoShare authentication
+  provisioner:
+    name: "mnemoshare"
+    type: "JWK"
+    # Password for provisioner key (change in production!)
+    # Use existingSecret for production deployments
+    password: ""
+
+  # Use existing secret for provisioner password
+  # Secret must contain 'password' key
+  existingSecret: ""
+
+  # Persistence for CA keys and database
+  persistence:
+    enabled: true
+    storageClass: ""  # Leave empty for default storage class
+    accessMode: ReadWriteOnce
+    size: 1Gi
+
+  # Resource limits
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Node selector for Step CA pods
+  nodeSelector: {}
+
+  # Tolerations for Step CA pods
+  tolerations: []
+
+# MinIO - S3-compatible object storage (optional)
+# Enable for Azure deployments or on-premise environments without S3-compatible storage
+# When enabled, deploys MinIO in-cluster and auto-configures S3 endpoint
+minio:
+  enabled: false
+
+  # MinIO mode: "standalone" for dev/small deployments, "distributed" for production
+  mode: standalone
+
+  # Root credentials (used if existingSecret is not set)
+  # IMPORTANT: Change these defaults!
+  rootUser: "mnemoshare"
+  rootPassword: ""  # Required if enabled - must be at least 8 characters
+
+  # Use existing secret for credentials
+  # Secret must contain 'rootUser' and 'rootPassword' keys
+  existingSecret: ""
+
+  # Storage configuration
+  persistence:
+    enabled: true
+    storageClass: ""  # Leave empty for default storage class
+    accessMode: ReadWriteOnce
+    size: 100Gi  # Adjust based on expected file storage needs
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  # MinIO replicas (only for distributed mode)
+  replicas: 4
+
+  # MinIO console (web UI) - useful for debugging
+  consoleIngress:
+    enabled: false
+    # Configure if you want external access to MinIO console
+    # annotations: {}
+    # hosts: []
+    # tls: []

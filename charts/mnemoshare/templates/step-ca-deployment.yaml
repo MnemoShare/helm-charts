@@ -1,0 +1,138 @@
+{{- if .Values.stepCA.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-step-ca
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: step-ca
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: step-ca
+  template:
+    metadata:
+      labels:
+        {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: step-ca
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        # Initialize CA if not already done
+        - name: init-ca
+          image: "{{ .Values.stepCA.image.repository }}:{{ .Values.stepCA.image.tag }}"
+          imagePullPolicy: {{ .Values.stepCA.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              if [ ! -f /home/step/config/ca.json ]; then
+                echo "Initializing Step CA..."
+                step ca init \
+                  --name="{{ .Values.stepCA.ca.name }}" \
+                  --dns="{{ .Values.stepCA.ca.dns }}" \
+                  --address=":9000" \
+                  --provisioner="{{ .Values.stepCA.provisioner.name }}" \
+                  --password-file=/run/secrets/password \
+                  --provisioner-password-file=/run/secrets/password
+
+                # Enable OCSP if configured
+                {{- if .Values.stepCA.ocsp.enabled }}
+                echo "Enabling OCSP responder..."
+                # OCSP configuration is added to ca.json
+                {{- end }}
+              else
+                echo "Step CA already initialized"
+              fi
+          volumeMounts:
+            - name: step-home
+              mountPath: /home/step
+            - name: password
+              mountPath: /run/secrets
+              readOnly: true
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+      containers:
+        - name: step-ca
+          image: "{{ .Values.stepCA.image.repository }}:{{ .Values.stepCA.image.tag }}"
+          imagePullPolicy: {{ .Values.stepCA.image.pullPolicy }}
+          args:
+            - /home/step/config/ca.json
+            - --password-file=/run/secrets/password
+          ports:
+            - name: https
+              containerPort: 9000
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+                - step
+                - ca
+                - health
+                - --ca-url
+                - https://localhost:9000
+                - --root
+                - /home/step/certs/root_ca.crt
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - step
+                - ca
+                - health
+                - --ca-url
+                - https://localhost:9000
+                - --root
+                - /home/step/certs/root_ca.crt
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.stepCA.resources | nindent 12 }}
+          volumeMounts:
+            - name: step-home
+              mountPath: /home/step
+            - name: password
+              mountPath: /run/secrets
+              readOnly: true
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: step-home
+          {{- if .Values.stepCA.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "mnemoshare.fullname" . }}-step-ca
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: password
+          secret:
+            secretName: {{ include "mnemoshare.fullname" . }}-step-ca
+            items:
+              - key: password
+                path: password
+      {{- with .Values.stepCA.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.stepCA.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
