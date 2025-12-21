@@ -80,7 +80,16 @@ tolerations: []
 
 affinity: {}
 
-# MongoDB configuration
+# Database configuration (v0.6.0+)
+# Supports: mongodb (default), postgres, sqlite
+database:
+  # Driver: mongodb, postgres, or sqlite
+  driver: "mongodb"
+  # SQLite configuration (single-instance deployments only)
+  sqlite:
+    path: "/var/lib/mnemoshare/mnemoshare.db"
+
+# MongoDB configuration (when database.driver = "mongodb")
 mongodb:
   # If using external MongoDB
   external:
@@ -89,6 +98,11 @@ mongodb:
     database: "mnemoshare"  # Database name (overrides default and URI path)
   # If deploying MongoDB as subchart (not recommended for production)
   enabled: false
+
+# PostgreSQL configuration (when database.driver = "postgres")
+postgres:
+  # Connection string (DSN)
+  dsn: ""  # postgres://user:password@host:5432/dbname?sslmode=disable
 
 # S3-compatible storage configuration
 s3:
@@ -170,6 +184,7 @@ extraEnv: []
 # Existing secrets (alternative to values for sensitive data)
 existingSecrets:
   mongodb: ""  # Name of existing secret with 'mongodb-uri' key
+  postgres: ""  # Name of existing secret with 'postgres-dsn' key
   s3: ""       # Name of existing secret with 's3-access-key' and 's3-secret-key' keys
   jwt: ""      # Name of existing secret with 'jwt-secret' key
   encryption: ""  # Name of existing secret with 'encryption-key' key
