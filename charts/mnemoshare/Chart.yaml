@@ -2,8 +2,8 @@ apiVersion: v2
 name: mnemoshare
 description: HIPAA-compliant secure file transfer system with knowledge-based authentication
 type: application
-version: 1.3.2
-appVersion: "0.6.1"
+version: 1.3.3
+appVersion: "0.6.2"
 keywords:
   - secure-file-transfer
   - hipaa
