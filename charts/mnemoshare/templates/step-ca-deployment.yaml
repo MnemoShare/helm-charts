@@ -1,4 +1,7 @@
 {{- if .Values.stepCA.enabled }}
+{{- $hsmEnabled := .Values.stepCA.hsm.enabled | default false }}
+{{- $imageRepo := ternary .Values.stepCA.hsm.image.repository .Values.stepCA.image.repository $hsmEnabled }}
+{{- $imageTag := ternary .Values.stepCA.hsm.image.tag .Values.stepCA.image.tag $hsmEnabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,6 +9,9 @@ metadata:
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: step-ca
+    {{- if $hsmEnabled }}
+    mnemoshare.com/hsm-enabled: "true"
+    {{- end }}
 spec:
   replicas: 1
   selector:
@@ -17,23 +23,73 @@ spec:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: step-ca
+        {{- if $hsmEnabled }}
+        mnemoshare.com/hsm-enabled: "true"
+        {{- end }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      {{- if and $hsmEnabled .Values.stepCA.hsm.securityContext.runAsRoot }}
+      # HSM mode may require root for USB device access
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 0
+      {{- else }}
       securityContext:
         fsGroup: 1000
+      {{- end }}
+      {{- if and $hsmEnabled .Values.stepCA.hsm.nodeAffinity.enabled }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                {{- range $key, $value := .Values.stepCA.hsm.nodeAffinity.requiredNodeLabels }}
+                - key: {{ $key }}
+                  operator: In
+                  values:
+                    - {{ $value | quote }}
+                {{- end }}
+      {{- end }}
       initContainers:
         # Initialize CA if not already done
         - name: init-ca
-          image: "{{ .Values.stepCA.image.repository }}:{{ .Values.stepCA.image.tag }}"
+          image: "{{ $imageRepo }}:{{ $imageTag }}"
           imagePullPolicy: {{ .Values.stepCA.image.pullPolicy }}
           command:
             - sh
             - -c
             - |
+              {{- if $hsmEnabled }}
+              # HSM Mode initialization
+              if [ ! -f /home/step/config/ca.json ]; then
+                echo "Initializing Step CA with HSM/PKCS#11 support..."
+
+                # Build KMS configuration for PKCS#11
+                KMS_TYPE="pkcs11"
+                KMS_URI="{{ .Values.stepCA.hsm.pkcs11.uri }}"
+
+                step ca init \
+                  --name="{{ .Values.stepCA.ca.name }}" \
+                  --dns="{{ .Values.stepCA.ca.dns }}" \
+                  --address=":9000" \
+                  --provisioner="{{ .Values.stepCA.provisioner.name }}" \
+                  --password-file=/run/secrets/password \
+                  --provisioner-password-file=/run/secrets/password \
+                  --kms="${KMS_TYPE}:${KMS_URI}?pin-source=/run/secrets/hsm-pin"
+
+                {{- if .Values.stepCA.ocsp.enabled }}
+                echo "Enabling OCSP responder..."
+                {{- end }}
+              else
+                echo "Step CA already initialized (HSM mode)"
+              fi
+              {{- else }}
+              # Standard Mode initialization
               if [ ! -f /home/step/config/ca.json ]; then
                 echo "Initializing Step CA..."
                 step ca init \
@@ -44,30 +100,79 @@ spec:
                   --password-file=/run/secrets/password \
                   --provisioner-password-file=/run/secrets/password
 
-                # Enable OCSP if configured
                 {{- if .Values.stepCA.ocsp.enabled }}
                 echo "Enabling OCSP responder..."
-                # OCSP configuration is added to ca.json
                 {{- end }}
               else
                 echo "Step CA already initialized"
               fi
+              {{- end }}
           volumeMounts:
             - name: step-home
               mountPath: /home/step
             - name: password
               mountPath: /run/secrets
               readOnly: true
+            {{- if $hsmEnabled }}
+            - name: hsm-pin
+              mountPath: /run/secrets/hsm-pin
+              subPath: pin
+              readOnly: true
+            {{- if .Values.stepCA.hsm.hostMounts.pkcs11Lib.enabled }}
+            - name: pkcs11-lib
+              mountPath: {{ .Values.stepCA.hsm.hostMounts.pkcs11Lib.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- range .Values.stepCA.hsm.hostMounts.extraMounts }}
+            - name: {{ .name }}
+              mountPath: {{ .mountPath }}
+              readOnly: {{ .readOnly | default true }}
+            {{- end }}
+            {{- end }}
+          {{- if and $hsmEnabled .Values.stepCA.hsm.securityContext.runAsRoot }}
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            {{- if .Values.stepCA.hsm.securityContext.privileged }}
+            privileged: true
+            {{- end }}
+            {{- if .Values.stepCA.hsm.securityContext.capabilities }}
+            capabilities:
+              add:
+                {{- toYaml .Values.stepCA.hsm.securityContext.capabilities | nindent 16 }}
+            {{- end }}
+          {{- else }}
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000
+          {{- end }}
       containers:
+        {{- if and $hsmEnabled .Values.stepCA.hsm.pcscd.enabled }}
+        # PC/SC Smart Card Daemon for USB smart cards (YubiKey, etc.)
+        - name: pcscd
+          image: "{{ .Values.stepCA.hsm.pcscd.image.repository }}:{{ .Values.stepCA.hsm.pcscd.image.tag }}"
+          command: ["pcscd", "--foreground", "--auto-exit"]
+          securityContext:
+            privileged: true
+          volumeMounts:
+            {{- if .Values.stepCA.hsm.hostMounts.usbDevice.enabled }}
+            - name: usb-devices
+              mountPath: {{ .Values.stepCA.hsm.hostMounts.usbDevice.hostPath }}
+            {{- end }}
+            - name: pcscd-socket
+              mountPath: /var/run/pcscd
+        {{- end }}
         - name: step-ca
-          image: "{{ .Values.stepCA.image.repository }}:{{ .Values.stepCA.image.tag }}"
+          image: "{{ $imageRepo }}:{{ $imageTag }}"
           imagePullPolicy: {{ .Values.stepCA.image.pullPolicy }}
           args:
             - /home/step/config/ca.json
             - --password-file=/run/secrets/password
+          {{- if $hsmEnabled }}
+          env:
+            - name: PKCS11_MODULE_PATH
+              value: {{ .Values.stepCA.hsm.pkcs11.modulePath | quote }}
+          {{- end }}
           ports:
             - name: https
               containerPort: 9000
@@ -108,11 +213,47 @@ spec:
             - name: password
               mountPath: /run/secrets
               readOnly: true
+            {{- if $hsmEnabled }}
+            - name: hsm-pin
+              mountPath: /run/secrets/hsm-pin
+              subPath: pin
+              readOnly: true
+            {{- if .Values.stepCA.hsm.hostMounts.pkcs11Lib.enabled }}
+            - name: pkcs11-lib
+              mountPath: {{ .Values.stepCA.hsm.hostMounts.pkcs11Lib.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.stepCA.hsm.pcscd.enabled }}
+            - name: pcscd-socket
+              mountPath: /var/run/pcscd
+            {{- end }}
+            {{- range .Values.stepCA.hsm.hostMounts.extraMounts }}
+            - name: {{ .name }}
+              mountPath: {{ .mountPath }}
+              readOnly: {{ .readOnly | default true }}
+            {{- end }}
+            {{- end }}
+          {{- if and $hsmEnabled .Values.stepCA.hsm.securityContext.runAsRoot }}
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: {{ .Values.stepCA.hsm.securityContext.privileged }}
+            {{- if .Values.stepCA.hsm.securityContext.privileged }}
+            privileged: true
+            {{- end }}
+            {{- if .Values.stepCA.hsm.securityContext.capabilities }}
+            capabilities:
+              add:
+                {{- toYaml .Values.stepCA.hsm.securityContext.capabilities | nindent 16 }}
+            {{- end }}
+          {{- else }}
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000
             readOnlyRootFilesystem: false
             allowPrivilegeEscalation: false
+          {{- end }}
       volumes:
         - name: step-home
           {{- if .Values.stepCA.persistence.enabled }}
@@ -123,10 +264,41 @@ spec:
           {{- end }}
         - name: password
           secret:
-            secretName: {{ include "mnemoshare.fullname" . }}-step-ca
+            secretName: {{ if .Values.stepCA.existingSecret }}{{ .Values.stepCA.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-step-ca{{ end }}
             items:
               - key: password
                 path: password
+        {{- if $hsmEnabled }}
+        # HSM-specific volumes
+        - name: hsm-pin
+          secret:
+            secretName: {{ if .Values.stepCA.hsm.pkcs11.existingPinSecret }}{{ .Values.stepCA.hsm.pkcs11.existingPinSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-step-ca-hsm{{ end }}
+            items:
+              - key: pin
+                path: pin
+        {{- if .Values.stepCA.hsm.hostMounts.pkcs11Lib.enabled }}
+        - name: pkcs11-lib
+          hostPath:
+            path: {{ .Values.stepCA.hsm.hostMounts.pkcs11Lib.hostPath }}
+            type: File
+        {{- end }}
+        {{- if .Values.stepCA.hsm.hostMounts.usbDevice.enabled }}
+        - name: usb-devices
+          hostPath:
+            path: {{ .Values.stepCA.hsm.hostMounts.usbDevice.hostPath }}
+            type: Directory
+        {{- end }}
+        {{- if .Values.stepCA.hsm.pcscd.enabled }}
+        - name: pcscd-socket
+          emptyDir: {}
+        {{- end }}
+        {{- range .Values.stepCA.hsm.hostMounts.extraMounts }}
+        - name: {{ .name }}
+          hostPath:
+            path: {{ .hostPath }}
+            type: {{ .type | default "Directory" }}
+        {{- end }}
+        {{- end }}
       {{- with .Values.stepCA.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -7,9 +7,12 @@ HIPAA-compliant secure file transfer system with knowledge-based authentication.
 - 🔒 **HIPAA Compliant** - Built for healthcare and financial data
 - 🔐 **Knowledge-Based Authentication** - Dynamic questionnaire validation
 - 🔑 **Multi-Factor Authentication** - TOTP-based 2FA
+- 🔏 **Hardware mTLS** - Enterprise+ hardware key authentication
+- 🛡️ **HSM Support** - FIPS 140-2/140-3 compliant key protection (PKCS#11)
 - 📊 **Comprehensive Audit Logging** - Track all file access
 - 🚀 **Horizontal Scaling** - Auto-scaling with HPA support
 - 📦 **S3-Compatible Storage** - AWS S3, MinIO, GCS support
+- 🏛️ **External CA Integration** - Vault PKI, EJBCA support
 
 ## Prerequisites
 
@@ -178,6 +181,196 @@ resources:
     cpu: 4000m
     memory: 8Gi
 ```
+
+## Certificate Authority Configuration
+
+MnemoShare supports hardware mTLS authentication (Enterprise+ tier) using certificate authorities. Choose from the built-in Step-CA or integrate with external CA providers.
+
+### Step-CA (Built-in)
+
+Enable the built-in Smallstep CA for mTLS certificate management:
+
+```yaml
+stepCA:
+  enabled: true
+  ca:
+    name: "MnemoShare CA"
+    dns: "step-ca"
+  provisioner:
+    name: "mnemoshare"
+    password: "your-provisioner-password"
+  persistence:
+    enabled: true
+    size: 1Gi
+```
+
+### Step-CA with HSM (FIPS 140-2/140-3 Compliant)
+
+For organizations requiring FIPS-compliant key protection, Step-CA can store CA signing keys in a Hardware Security Module (HSM) using PKCS#11.
+
+**Requirements:**
+- Node with HSM access (USB passthrough or network HSM)
+- Vendor-specific PKCS#11 library
+- Pre-initialized HSM with appropriate slots/tokens
+
+**Supported HSMs:**
+- YubiKey 5 series (PIV mode)
+- Thales Luna Network HSM
+- AWS CloudHSM
+- Azure Dedicated HSM
+- Google Cloud HSM
+- SafeNet/Gemalto HSMs
+- SoftHSM2 (for testing only)
+
+#### YubiKey HSM Example
+
+```yaml
+stepCA:
+  enabled: true
+  ca:
+    name: "MnemoShare CA"
+  hsm:
+    enabled: true
+    image:
+      repository: smallstep/step-ca-hsm
+      tag: "0.27.5"
+    pkcs11:
+      modulePath: "/usr/lib/libykcs11.so"
+      uri: "pkcs11:token=YubiKey%20PIV;slot-id=0"
+      pin: "123456"  # Use existingPinSecret in production
+    hostMounts:
+      pkcs11Lib:
+        enabled: true
+        hostPath: "/usr/lib/libykcs11.so"
+        mountPath: "/usr/lib/libykcs11.so"
+      usbDevice:
+        enabled: true
+        hostPath: "/dev/bus/usb"
+    pcscd:
+      enabled: true
+      image:
+        repository: pcscd
+        tag: "latest"
+    securityContext:
+      runAsRoot: true
+    nodeAffinity:
+      enabled: true
+      requiredNodeLabels:
+        hsm-attached: "true"
+        hsm-type: "yubikey"
+```
+
+#### AWS CloudHSM Example
+
+```yaml
+stepCA:
+  enabled: true
+  hsm:
+    enabled: true
+    pkcs11:
+      modulePath: "/opt/cloudhsm/lib/libcloudhsm_pkcs11.so"
+      uri: "pkcs11:token=cavium;object=ca-key;type=private"
+      existingPinSecret: "cloudhsm-credentials"  # Contains 'pin' key
+    hostMounts:
+      extraMounts:
+        - name: cloudhsm-config
+          hostPath: /opt/cloudhsm
+          mountPath: /opt/cloudhsm
+          readOnly: true
+    nodeAffinity:
+      enabled: true
+      requiredNodeLabels:
+        cloudhsm-attached: "true"
+```
+
+#### SoftHSM2 (Testing Only)
+
+For development/testing environments:
+
+```yaml
+stepCA:
+  enabled: true
+  hsm:
+    enabled: true
+    pkcs11:
+      modulePath: "/usr/lib/softhsm/libsofthsm2.so"
+      uri: "pkcs11:module-path=/usr/lib/softhsm/libsofthsm2.so;token=step-ca"
+      pin: "1234"
+```
+
+**Node Preparation for USB HSMs:**
+
+```bash
+# Label HSM-attached nodes
+kubectl label node <node-name> hsm-attached=true hsm-type=yubikey
+
+# Verify USB device is accessible
+kubectl debug node/<node-name> -it --image=alpine -- ls /dev/bus/usb/
+```
+
+### HashiCorp Vault PKI (External Integration)
+
+Integrate with an existing HashiCorp Vault deployment for certificate management.
+
+> **Note:** MnemoShare does NOT deploy Vault. You must have an existing Vault installation.
+
+```yaml
+vaultPKI:
+  enabled: true
+  address: "https://vault.example.com:8200"
+  mountPath: "pki"
+  roleName: "mnemoshare"
+  auth:
+    method: "kubernetes"
+    kubernetes:
+      role: "mnemoshare"
+      mountPath: "auth/kubernetes"
+```
+
+#### Vault Enterprise with Managed Keys (HSM-backed)
+
+> **Warning:** Managed Keys require **Vault Enterprise** license.
+
+For HSM-backed keys in Vault Enterprise:
+
+```yaml
+vaultPKI:
+  enabled: true
+  address: "https://vault.example.com:8200"
+  mountPath: "pki"
+  roleName: "mnemoshare"
+  auth:
+    method: "kubernetes"
+    kubernetes:
+      role: "mnemoshare"
+  managedKeys:
+    enabled: true
+    keyName: "hsm-ca-key"  # Configured in Vault
+```
+
+HSM/KMS configuration is done in Vault, not in this chart. See [Vault Managed Keys documentation](https://developer.hashicorp.com/vault/docs/enterprise/managed-keys).
+
+### EJBCA (External Integration)
+
+Integrate with an existing EJBCA installation.
+
+> **Important:** MnemoShare does **NOT** deploy or manage EJBCA. You must have an existing EJBCA installation.
+
+```yaml
+ejbca:
+  enabled: true
+  apiUrl: "https://ejbca.example.com/ejbca/ejbca-rest-api"
+  certificateProfile: "mnemoshare"
+  endEntityProfile: "mnemoshare"
+  caName: "MnemoShareCA"
+  auth:
+    clientCert:
+      existingSecret: "ejbca-client-cert"
+      certKey: "tls.crt"
+      keyKey: "tls.key"
+```
+
+EJBCA supports PKCS#11-backed CA keys natively. Configure HSM integration in EJBCA directly. See [EJBCA Crypto Tokens documentation](https://doc.primekey.com/ejbca/ejbca-operations/ejbca-ca-concept-guide/crypto-tokens).
 
 ## Upgrading
 

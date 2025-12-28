@@ -279,6 +279,115 @@ stepCA:
   # Secret must contain 'password' key
   existingSecret: ""
 
+  # ============================================================================
+  # HSM / PKCS#11 Configuration (Enterprise+ with Hardware Security Module)
+  # ============================================================================
+  # Enables hardware-protected CA signing keys using PKCS#11-compatible HSMs.
+  # When enabled, the CA root and intermediate keys are stored in the HSM,
+  # providing FIPS 140-2/140-3 compliant key protection.
+  #
+  # Supported HSMs:
+  #   - YubiKey 5 series (PIV mode)
+  #   - Thales Luna Network HSM
+  #   - AWS CloudHSM
+  #   - Azure Dedicated HSM
+  #   - Google Cloud HSM
+  #   - SafeNet/Gemalto HSMs
+  #   - SoftHSM2 (for testing only)
+  #
+  # IMPORTANT: HSM mode requires:
+  #   1. Node with HSM access (USB passthrough or network HSM)
+  #   2. Vendor-specific PKCS#11 library mounted into container
+  #   3. Pre-initialized HSM with appropriate slots/tokens
+  #
+  # See: https://smallstep.com/docs/step-ca/cryptographic-protection/
+  # ============================================================================
+  hsm:
+    # Enable HSM mode - switches to smallstep/step-ca-hsm image
+    enabled: false
+
+    # HSM image override (uses step-ca-hsm by default when hsm.enabled=true)
+    image:
+      repository: smallstep/step-ca-hsm
+      tag: "0.27.5"
+
+    # PKCS#11 Configuration
+    pkcs11:
+      # PKCS#11 module path inside the container
+      # Examples:
+      #   YubiKey:     /usr/lib/libykcs11.so
+      #   SoftHSM2:    /usr/lib/softhsm/libsofthsm2.so
+      #   Thales Luna: /usr/lib/libCryptoki2_64.so
+      #   AWS CloudHSM: /opt/cloudhsm/lib/libcloudhsm_pkcs11.so
+      modulePath: ""
+
+      # PKCS#11 URI for the token (RFC 7512 format)
+      # Examples:
+      #   pkcs11:token=YubiKey%20PIV;slot-id=0
+      #   pkcs11:token=hsm-token;object=ca-key;type=private
+      #   pkcs11:module-path=/usr/lib/libsofthsm2.so;token=step-ca
+      uri: ""
+
+      # Token/slot PIN (use existingPinSecret for production)
+      pin: ""
+
+      # Use existing secret for PKCS#11 PIN
+      # Secret must contain 'pin' key
+      existingPinSecret: ""
+
+    # Mount host PKCS#11 libraries into container
+    # Required for USB HSMs (YubiKey) or vendor-specific libraries
+    hostMounts:
+      # Mount vendor PKCS#11 library from host
+      pkcs11Lib:
+        enabled: false
+        # Host path to PKCS#11 .so library
+        hostPath: ""
+        # Mount path inside container (should match pkcs11.modulePath)
+        mountPath: "/usr/lib/pkcs11/vendor.so"
+
+      # Mount USB device for hardware tokens (YubiKey, etc.)
+      usbDevice:
+        enabled: false
+        # USB device path (e.g., /dev/bus/usb or /dev/yubico)
+        hostPath: "/dev/bus/usb"
+
+      # Additional host mounts (for vendor-specific requirements)
+      extraMounts: []
+      # - name: cloudhsm-config
+      #   hostPath: /opt/cloudhsm
+      #   mountPath: /opt/cloudhsm
+      #   readOnly: true
+
+    # Run pcscd (PC/SC Smart Card Daemon) sidecar for USB smart cards
+    # Required for YubiKey and other USB CCID devices
+    pcscd:
+      enabled: false
+      image:
+        repository: pcscd
+        tag: "latest"
+
+    # Security context overrides for HSM access
+    # Some HSMs require elevated privileges or specific group membership
+    securityContext:
+      # Run as root (required for some USB HSM access)
+      runAsRoot: false
+      # Add specific capabilities (e.g., SYS_ADMIN for some HSMs)
+      capabilities: []
+      # - SYS_ADMIN
+      # Privileged mode (last resort - not recommended)
+      privileged: false
+
+    # Node affinity for HSM-attached nodes
+    # Use this to ensure the CA pod runs on a node with HSM access
+    nodeAffinity:
+      enabled: false
+      # Label selector for HSM-capable nodes
+      # Example: schedule only on nodes with label "hsm-attached=true"
+      requiredNodeLabels: {}
+      # hsm-attached: "true"
+      # hsm-type: "yubikey"
+
   # Persistence for CA keys and database
   persistence:
     enabled: true
@@ -300,6 +409,91 @@ stepCA:
 
   # Tolerations for Step CA pods
   tolerations: []
+
+# ============================================================================
+# Alternative CA Providers (External Integration)
+# ============================================================================
+# MnemoShare can integrate with external Certificate Authorities for
+# organizations that already have established PKI infrastructure.
+#
+# IMPORTANT: These are EXTERNAL integrations - MnemoShare does not deploy
+# or manage these CA systems. You must have an existing deployment.
+# ============================================================================
+
+# HashiCorp Vault PKI - External CA Integration
+# https://developer.hashicorp.com/vault/docs/secrets/pki
+vaultPKI:
+  # Enable Vault PKI integration (requires external Vault deployment)
+  enabled: false
+
+  # Vault server address
+  address: ""  # e.g., https://vault.example.com:8200
+
+  # PKI secrets engine mount path
+  mountPath: "pki"
+
+  # Role name for certificate issuance
+  roleName: "mnemoshare"
+
+  # Authentication method
+  auth:
+    # Method: kubernetes, token, approle
+    method: "kubernetes"
+    # Kubernetes auth (when method=kubernetes)
+    kubernetes:
+      role: "mnemoshare"
+      mountPath: "auth/kubernetes"
+    # Token auth (when method=token) - use existingSecret
+    token:
+      existingSecret: ""
+      secretKey: "token"
+    # AppRole auth (when method=approle)
+    appRole:
+      roleId: ""
+      existingSecretId: ""
+      secretKey: "secret-id"
+
+  # HSM-backed keys in Vault (Vault Enterprise only)
+  # ⚠️  REQUIRES VAULT ENTERPRISE LICENSE
+  # When enabled, Vault uses "Managed Keys" backed by HSM/KMS
+  # See: https://developer.hashicorp.com/vault/docs/enterprise/managed-keys
+  managedKeys:
+    enabled: false
+    # Managed key name configured in Vault
+    keyName: ""
+    # Note: HSM/KMS configuration is done in Vault, not here
+
+# EJBCA - External CA Integration
+# https://www.ejbca.org/
+ejbca:
+  # Enable EJBCA integration (requires external EJBCA deployment)
+  # ⚠️  MnemoShare does NOT deploy or manage EJBCA
+  # You must have an existing EJBCA installation
+  enabled: false
+
+  # EJBCA REST API endpoint
+  apiUrl: ""  # e.g., https://ejbca.example.com/ejbca/ejbca-rest-api
+
+  # Certificate profile name
+  certificateProfile: "mnemoshare"
+
+  # End entity profile name
+  endEntityProfile: "mnemoshare"
+
+  # CA name in EJBCA
+  caName: ""
+
+  # Authentication
+  auth:
+    # Client certificate authentication (recommended)
+    clientCert:
+      existingSecret: ""
+      certKey: "tls.crt"
+      keyKey: "tls.key"
+
+  # Note: EJBCA supports PKCS#11-backed CA keys natively
+  # Configure HSM integration in EJBCA directly, not here
+  # See: https://doc.primekey.com/ejbca/ejbca-operations/ejbca-ca-concept-guide/crypto-tokens
 
 # MinIO - S3-compatible object storage (optional)
 # Enable for Azure deployments or on-premise environments without S3-compatible storage
