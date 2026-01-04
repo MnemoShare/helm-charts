@@ -1,0 +1,226 @@
+# MnemoShare Stack - Complete Deployment Configuration
+#
+# Quick Start: Just run `helm install mnemoshare-stack ./mnemoshare-stack`
+# with defaults to get a fully working evaluation environment.
+#
+# For production, disable bundled services and configure external ones.
+
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+# Choose ONE: bundled PostgreSQL OR external database
+
+# Option 1: Bundled PostgreSQL (default for evaluation)
+postgresql:
+  enabled: true
+  auth:
+    database: mnemoshare
+    username: mnemoshare
+    password: "mnemoshare-secret-change-me"
+    postgresPassword: "postgres-admin-change-me"
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+
+# Option 2: External Database (set postgresql.enabled=false)
+externalDatabase:
+  # type: postgres or mongodb
+  type: postgres
+  # For PostgreSQL:
+  host: ""
+  port: 5432
+  database: mnemoshare
+  username: ""
+  password: ""
+  # Full DSN (alternative to individual fields):
+  # dsn: "postgres://user:pass@host:5432/mnemoshare?sslmode=require"
+  # For MongoDB:
+  # uri: "mongodb+srv://user:pass@cluster.mongodb.net/mnemoshare"
+
+# =============================================================================
+# IDENTITY PROVIDER CONFIGURATION
+# =============================================================================
+# Choose ONE: bundled Keycloak OR external IdP OR none (local auth only)
+
+# Option 1: Bundled Keycloak (default for evaluation)
+keycloak:
+  enabled: true
+  auth:
+    adminUser: admin
+    adminPassword: "admin-secret-change-me"
+  postgresql:
+    enabled: false  # Use the shared PostgreSQL instance
+  externalDatabase:
+    host: "{{ .Release.Name }}-postgresql"
+    port: 5432
+    database: keycloak
+    user: keycloak
+    password: "keycloak-secret-change-me"
+  proxy: edge
+  production: false  # Set to true for production
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 200m
+    limits:
+      memory: 1Gi
+      cpu: 1000m
+
+# Option 2: External Identity Provider (set keycloak.enabled=false)
+externalIdP:
+  enabled: false
+  # type: keycloak, okta, azure-ad, google-workspace
+  type: ""
+  # Keycloak / Generic OIDC:
+  issuerUrl: ""
+  clientId: ""
+  clientSecret: ""
+  # Provider-specific settings populated based on type
+
+# =============================================================================
+# STORAGE CONFIGURATION
+# =============================================================================
+# Choose ONE: bundled MinIO OR external S3-compatible storage
+
+# Option 1: Bundled MinIO (default for evaluation)
+minio:
+  enabled: true
+  auth:
+    rootUser: minioadmin
+    rootPassword: "minio-secret-change-me"
+  defaultBuckets: "mnemoshare-files"
+  persistence:
+    enabled: true
+    size: 50Gi
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 1Gi
+      cpu: 500m
+
+# Option 2: External S3-compatible Storage (set minio.enabled=false)
+externalStorage:
+  enabled: false
+  # type: s3, gcs, azure-blob, minio
+  type: s3
+  # S3 / MinIO:
+  endpoint: "s3.amazonaws.com"  # Or your MinIO endpoint
+  region: "us-east-1"
+  bucket: "mnemoshare-files"
+  accessKey: ""
+  secretKey: ""
+  useSSL: true
+  # For GCS:
+  # endpoint: "storage.googleapis.com"
+  # For Azure Blob:
+  # endpoint: "blob.core.windows.net"
+  # connectionString: ""
+
+# =============================================================================
+# CLAMAV ANTIVIRUS (Recommended)
+# =============================================================================
+clamav:
+  enabled: true
+  image:
+    repository: mnemoshare/clamav-icap
+    tag: "0.6.2"
+  persistence:
+    enabled: true
+    size: 2Gi
+  resources:
+    requests:
+      memory: 1Gi
+      cpu: 200m
+    limits:
+      memory: 2Gi
+      cpu: 1000m
+
+# =============================================================================
+# STEP-CA (Optional - for Hardware mTLS, Enterprise+ feature)
+# =============================================================================
+stepca:
+  enabled: false
+  # Configure if you want hardware key mTLS authentication
+  password: "stepca-secret-change-me"
+  persistence:
+    enabled: true
+    size: 1Gi
+
+# =============================================================================
+# MNEMOSHARE APPLICATION
+# =============================================================================
+mnemoshare:
+  replicaCount: 1
+
+  image:
+    repository: mnemoshare/mnemoshare
+    tag: "0.6.2"
+    pullPolicy: IfNotPresent
+
+  # License key (optional - can be entered in Settings page)
+  # Get a license at https://mnemoshare.com/pricing
+  license:
+    key: ""
+
+  # Security settings
+  jwt:
+    secret: ""  # Auto-generated if empty
+    expiration: "24h"
+
+  encryption:
+    key: ""  # Auto-generated if empty (32 bytes for AES-256)
+
+  # Application settings
+  app:
+    environment: production
+    testMode: false
+    swaggerEnabled: false
+
+  # Ingress
+  ingress:
+    enabled: true
+    className: nginx
+    annotations: {}
+    hosts:
+      - host: mnemoshare.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  # Resources
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 1Gi
+      cpu: 1000m
+
+  # Persistence for license deployment ID
+  persistence:
+    enabled: true
+    size: 100Mi
+
+# =============================================================================
+# GLOBAL SETTINGS
+# =============================================================================
+global:
+  # Domain for all services (used for ingress hostnames)
+  domain: "local"
+
+  # Storage class for all PVCs (leave empty for default)
+  storageClass: ""
+
+  # Image pull secrets (if using private registry)
+  imagePullSecrets: []

@@ -1,0 +1,158 @@
+# MnemoShare Stack - Production Configuration Example
+#
+# This configuration uses external services for database, identity, and storage.
+# Customize for your environment before deploying.
+#
+# Usage:
+#   helm install mnemoshare ./mnemoshare-stack -f values-production.yaml
+#
+# Prerequisites:
+#   - External PostgreSQL or MongoDB database
+#   - AWS S3, GCS, or existing MinIO cluster
+#   - (Optional) External IdP: Okta, Azure AD, or Google Workspace
+#   - TLS certificates for your domain
+
+# =============================================================================
+# DISABLE BUNDLED SERVICES - Use External
+# =============================================================================
+
+# Disable bundled PostgreSQL - use external database
+postgresql:
+  enabled: false
+
+# External Database Configuration
+externalDatabase:
+  type: postgres  # or mongodb
+  host: "your-postgres-host.example.com"
+  port: 5432
+  database: mnemoshare
+  username: mnemoshare
+  password: "YOUR_SECURE_PASSWORD"
+  # Or use full DSN:
+  # dsn: "postgres://user:pass@host:5432/mnemoshare?sslmode=require"
+
+# Disable bundled Keycloak - use external IdP
+keycloak:
+  enabled: false
+
+# External Identity Provider
+externalIdP:
+  enabled: true
+  type: okta  # or azure-ad, google-workspace, keycloak
+  issuerUrl: "https://your-org.okta.com"
+  clientId: "YOUR_CLIENT_ID"
+  clientSecret: "YOUR_CLIENT_SECRET"
+
+# Disable bundled MinIO - use AWS S3
+minio:
+  enabled: false
+
+# External S3 Storage (AWS S3 example)
+externalStorage:
+  enabled: true
+  type: s3
+  endpoint: "s3.amazonaws.com"
+  region: "us-west-2"
+  bucket: "your-mnemoshare-bucket"
+  accessKey: "YOUR_AWS_ACCESS_KEY"
+  secretKey: "YOUR_AWS_SECRET_KEY"
+  useSSL: true
+
+# =============================================================================
+# SECURITY SERVICES
+# =============================================================================
+
+# Keep ClamAV enabled for virus scanning
+clamav:
+  enabled: true
+  image:
+    repository: mnemoshare/clamav-icap
+    tag: "0.6.2"
+  persistence:
+    enabled: true
+    size: 5Gi
+  resources:
+    requests:
+      memory: 2Gi
+      cpu: 500m
+    limits:
+      memory: 4Gi
+      cpu: 2000m
+
+# Enable Step-CA for mTLS (Enterprise+ feature)
+stepca:
+  enabled: true
+  password: "YOUR_STEPCA_PASSWORD"
+  persistence:
+    enabled: true
+    size: 1Gi
+
+# =============================================================================
+# MNEMOSHARE APPLICATION
+# =============================================================================
+
+mnemoshare:
+  replicaCount: 3  # High availability
+
+  image:
+    repository: mnemoshare/mnemoshare
+    tag: "0.6.2"
+    pullPolicy: IfNotPresent
+
+  # Production license key
+  license:
+    key: "YOUR_LICENSE_KEY"
+
+  # Strong secrets (generate with: openssl rand -base64 48)
+  jwt:
+    secret: "YOUR_64_CHAR_JWT_SECRET_HERE"
+    expiration: "8h"  # Shorter for production
+
+  encryption:
+    key: "YOUR_32_CHAR_AES_KEY_HERE"
+
+  app:
+    environment: production
+    testMode: false
+    swaggerEnabled: false
+
+  # Production ingress with TLS
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-production
+      nginx.ingress.kubernetes.io/proxy-body-size: "10g"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    hosts:
+      - host: mnemoshare.yourdomain.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: mnemoshare-tls
+        hosts:
+          - mnemoshare.yourdomain.com
+
+  # Production resources
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 2Gi
+      cpu: 2000m
+
+  persistence:
+    enabled: true
+    size: 1Gi
+
+# =============================================================================
+# GLOBAL SETTINGS
+# =============================================================================
+
+global:
+  domain: "yourdomain.com"
+  storageClass: "gp3"  # AWS EBS, adjust for your cloud
+  imagePullSecrets:
+    - name: docker-registry-secret  # If using private registry

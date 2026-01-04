@@ -1,0 +1,73 @@
+{{/*
+This secret provides the computed connection strings for MnemoShare.
+It bridges the bundled services (PostgreSQL, MinIO, Keycloak) or external services
+to the MnemoShare application.
+*/}}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "mnemoshare-stack.fullname" . }}-config
+  labels:
+    {{- include "mnemoshare-stack.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  # Database configuration
+  DB_DRIVER: {{ if .Values.externalDatabase.type }}{{ .Values.externalDatabase.type }}{{ else }}postgres{{ end }}
+  {{- if or .Values.postgresql.enabled (eq .Values.externalDatabase.type "postgres") }}
+  POSTGRES_DSN: {{ include "mnemoshare-stack.postgresqlDsn" . | quote }}
+  {{- end }}
+  {{- if and (not .Values.postgresql.enabled) (eq .Values.externalDatabase.type "mongodb") }}
+  MONGODB_URI: {{ .Values.externalDatabase.uri | quote }}
+  {{- end }}
+
+  # S3 Storage configuration
+  S3_ENDPOINT: {{ include "mnemoshare-stack.s3Endpoint" . | quote }}
+  S3_REGION: {{ .Values.externalStorage.region | default "us-east-1" | quote }}
+  S3_BUCKET: {{ include "mnemoshare-stack.s3Bucket" . | quote }}
+  S3_ACCESS_KEY: {{ include "mnemoshare-stack.s3AccessKey" . | quote }}
+  S3_SECRET_KEY: {{ include "mnemoshare-stack.s3SecretKey" . | quote }}
+  S3_USE_SSL: {{ include "mnemoshare-stack.s3UseSSL" . | quote }}
+
+  # ClamAV configuration
+  {{- if .Values.clamav.enabled }}
+  CLAMAV_ICAP_URL: {{ include "mnemoshare-stack.clamavUrl" . | quote }}
+  {{- end }}
+
+  # Security (auto-generated if not provided)
+  JWT_SECRET: {{ include "mnemoshare-stack.jwtSecret" . | quote }}
+  ENCRYPTION_KEY: {{ include "mnemoshare-stack.encryptionKey" . | quote }}
+
+  # License (optional)
+  {{- if .Values.mnemoshare.license.key }}
+  LICENSE_KEY: {{ .Values.mnemoshare.license.key | quote }}
+  {{- end }}
+
+  # OAuth/SSO Configuration
+  {{- if .Values.keycloak.enabled }}
+  OAUTH_ENABLED: "true"
+  OAUTH_PROVIDER: "keycloak"
+  OAUTH_ISSUER_URL: "http://{{ .Release.Name }}-keycloak:80/realms/mnemoshare"
+  {{- else if .Values.externalIdP.enabled }}
+  OAUTH_ENABLED: "true"
+  OAUTH_PROVIDER: {{ .Values.externalIdP.type | quote }}
+  OAUTH_ISSUER_URL: {{ .Values.externalIdP.issuerUrl | quote }}
+  OAUTH_CLIENT_ID: {{ .Values.externalIdP.clientId | quote }}
+  OAUTH_CLIENT_SECRET: {{ .Values.externalIdP.clientSecret | quote }}
+  {{- end }}
+---
+{{/*
+ConfigMap with non-sensitive settings
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mnemoshare-stack.fullname" . }}-env
+  labels:
+    {{- include "mnemoshare-stack.labels" . | nindent 4 }}
+data:
+  ENVIRONMENT: {{ .Values.mnemoshare.app.environment | default "production" | quote }}
+  TEST_MODE: {{ .Values.mnemoshare.app.testMode | default false | quote }}
+  SWAGGER_ENABLED: {{ .Values.mnemoshare.app.swaggerEnabled | default false | quote }}
+  API_HOST: "0.0.0.0"
+  API_PORT: "8080"

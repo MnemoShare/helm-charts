@@ -1,0 +1,92 @@
+{{- if .Values.clamav.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mnemoshare-stack.fullname" . }}-clamav
+  labels:
+    {{- include "mnemoshare-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clamav
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.global.storageClass }}
+  storageClassName: {{ .Values.global.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.clamav.persistence.size | default "2Gi" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mnemoshare-stack.fullname" . }}-clamav
+  labels:
+    {{- include "mnemoshare-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clamav
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "mnemoshare-stack.name" . }}-clamav
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "mnemoshare-stack.name" . }}-clamav
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: clamav-icap
+          image: "{{ .Values.clamav.image.repository }}:{{ .Values.clamav.image.tag }}"
+          imagePullPolicy: {{ .Values.clamav.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: icap
+              containerPort: 1344
+              protocol: TCP
+          volumeMounts:
+            - name: clamav-data
+              mountPath: /var/lib/clamav
+          resources:
+            {{- toYaml .Values.clamav.resources | nindent 12 }}
+          readinessProbe:
+            tcpSocket:
+              port: 1344
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 1344
+            initialDelaySeconds: 120
+            periodSeconds: 30
+      volumes:
+        - name: clamav-data
+          {{- if .Values.clamav.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "mnemoshare-stack.fullname" . }}-clamav
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare-stack.fullname" . }}-clamav
+  labels:
+    {{- include "mnemoshare-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clamav
+spec:
+  type: ClusterIP
+  ports:
+    - port: 1344
+      targetPort: icap
+      protocol: TCP
+      name: icap
+  selector:
+    app.kubernetes.io/name: {{ include "mnemoshare-stack.name" . }}-clamav
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

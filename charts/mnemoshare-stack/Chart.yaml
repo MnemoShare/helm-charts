@@ -1,0 +1,48 @@
+apiVersion: v2
+name: mnemoshare-stack
+description: |
+  Complete MnemoShare deployment stack for quick evaluation and production use.
+  Includes optional PostgreSQL, Keycloak (IdP), MinIO (S3), ClamAV, and Step-CA.
+
+type: application
+version: 1.0.0
+appVersion: "0.6.2"
+
+keywords:
+  - mnemoshare
+  - secure-file-transfer
+  - hipaa
+  - compliance
+  - encryption
+
+home: https://mnemoshare.com
+sources:
+  - https://github.com/MnemoShare/helm-charts
+
+maintainers:
+  - name: MnemoShare
+    email: support@mnemoshare.com
+
+dependencies:
+  # PostgreSQL - Database (optional, can use external)
+  - name: postgresql
+    version: "15.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+
+  # Keycloak - Identity Provider (optional, can use external IdP)
+  - name: keycloak
+    version: "21.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: keycloak.enabled
+
+  # MinIO - S3-compatible storage (optional, can use AWS S3/GCS)
+  - name: minio
+    version: "14.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: minio.enabled
+
+  # MnemoShare - Main application
+  - name: mnemoshare
+    version: "1.x.x"
+    repository: "file://../mnemoshare"

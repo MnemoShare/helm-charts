@@ -1,0 +1,15 @@
+dependencies:
+- name: postgresql
+  repository: https://charts.bitnami.com/bitnami
+  version: 15.5.38
+- name: keycloak
+  repository: https://charts.bitnami.com/bitnami
+  version: 21.8.0
+- name: minio
+  repository: https://charts.bitnami.com/bitnami
+  version: 14.10.5
+- name: mnemoshare
+  repository: file://../mnemoshare
+  version: 1.4.0
+digest: sha256:c3c73de05af9afbe6320551d7767b5813ed1b54c6ebd8e1dec8d8fff5dda8a26
+generated: "2026-01-04T17:01:16.410314-06:00"

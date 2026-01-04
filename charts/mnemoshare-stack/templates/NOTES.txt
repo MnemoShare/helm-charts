@@ -1,0 +1,118 @@
+
+==============================================================================
+ __  __                           ____  _
+|  \/  |_ __   ___ _ __ ___   ___/ ___|| |__   __ _ _ __ ___
+| |\/| | '_ \ / _ \ '_ ` _ \ / _ \___ \| '_ \ / _` | '__/ _ \
+| |  | | | | |  __/ | | | | | (_) |__) | | | | (_| | | |  __/
+|_|  |_|_| |_|\___|_| |_| |_|\___/____/|_| |_|\__,_|_|  \___|
+
+==============================================================================
+
+Thank you for installing MnemoShare Stack!
+
+DEPLOYMENT SUMMARY
+------------------
+Release Name: {{ .Release.Name }}
+Namespace:    {{ .Release.Namespace }}
+
+SERVICES DEPLOYED:
+{{- if .Values.postgresql.enabled }}
+  [x] PostgreSQL (bundled)
+{{- else }}
+  [ ] PostgreSQL (external: {{ .Values.externalDatabase.host }})
+{{- end }}
+{{- if .Values.keycloak.enabled }}
+  [x] Keycloak (bundled)
+{{- else if .Values.externalIdP.enabled }}
+  [ ] Identity Provider (external: {{ .Values.externalIdP.type }})
+{{- else }}
+  [ ] Identity Provider (none - local auth only)
+{{- end }}
+{{- if .Values.minio.enabled }}
+  [x] MinIO (bundled)
+{{- else }}
+  [ ] S3 Storage (external: {{ .Values.externalStorage.endpoint }})
+{{- end }}
+{{- if .Values.clamav.enabled }}
+  [x] ClamAV (virus scanning)
+{{- end }}
+{{- if .Values.stepca.enabled }}
+  [x] Step-CA (mTLS certificates)
+{{- end }}
+  [x] MnemoShare Application
+
+ACCESS MNEMOSHARE
+-----------------
+{{- if .Values.mnemoshare.ingress.enabled }}
+{{- range .Values.mnemoshare.ingress.hosts }}
+  URL: http{{ if $.Values.mnemoshare.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else }}
+  Run this command to access MnemoShare:
+  kubectl port-forward svc/{{ .Release.Name }}-mnemoshare 8080:80 -n {{ .Release.Namespace }}
+  Then open: http://localhost:8080
+{{- end }}
+
+DEFAULT CREDENTIALS
+-------------------
+  MnemoShare:  admin@example.com / Password123
+{{- if .Values.keycloak.enabled }}
+  Keycloak:    {{ .Values.keycloak.auth.adminUser }} / {{ .Values.keycloak.auth.adminPassword }}
+{{- end }}
+{{- if .Values.minio.enabled }}
+  MinIO:       {{ .Values.minio.auth.rootUser }} / {{ .Values.minio.auth.rootPassword }}
+{{- end }}
+
+IMPORTANT: Change all default passwords before using in production!
+
+{{- if not .Values.mnemoshare.license.key }}
+
+LICENSE
+-------
+  No license key configured. MnemoShare will run in evaluation mode.
+
+  To add a license:
+  1. Get a license at https://mnemoshare.com/pricing
+  2. Enter the license key in Settings > License
+
+  Or upgrade this deployment:
+  helm upgrade {{ .Release.Name }} ./mnemoshare-stack --set mnemoshare.license.key=YOUR_LICENSE_KEY
+
+{{- end }}
+
+{{- if .Values.mnemoshare.ingress.enabled }}
+{{- if not .Values.mnemoshare.ingress.tls }}
+
+SETUP /etc/hosts (for local access)
+-----------------------------------
+{{- range .Values.mnemoshare.ingress.hosts }}
+  echo "127.0.0.1 {{ .host }}" | sudo tee -a /etc/hosts
+{{- end }}
+{{- if .Values.keycloak.enabled }}
+  echo "127.0.0.1 keycloak.local" | sudo tee -a /etc/hosts
+{{- end }}
+
+{{- end }}
+{{- end }}
+
+USEFUL COMMANDS
+---------------
+  # View pods
+  kubectl get pods -n {{ .Release.Namespace }}
+
+  # View MnemoShare logs
+  kubectl logs -l app.kubernetes.io/name=mnemoshare -n {{ .Release.Namespace }} -f
+
+  # Upgrade deployment
+  helm upgrade {{ .Release.Name }} ./mnemoshare-stack -n {{ .Release.Namespace }} -f your-values.yaml
+
+DOCUMENTATION
+-------------
+  https://mnemoshare.com/docs
+
+SUPPORT
+-------
+  https://github.com/MnemoShare/helm-charts/issues
+  support@mnemoshare.com
+
+==============================================================================

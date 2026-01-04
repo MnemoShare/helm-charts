@@ -1,0 +1,70 @@
+# MnemoShare Stack - Quickstart Configuration
+#
+# This configuration deploys everything you need to evaluate MnemoShare
+# in a single command. All services are bundled and pre-configured.
+#
+# Usage:
+#   helm install mnemoshare ./mnemoshare-stack -f values-quickstart.yaml
+#
+# After installation, access MnemoShare at http://mnemoshare.local
+# Default login: admin@example.com / Password123
+
+# Use bundled PostgreSQL
+postgresql:
+  enabled: true
+  auth:
+    database: mnemoshare
+    username: mnemoshare
+    password: "quickstart-db-password"
+    postgresPassword: "quickstart-admin-password"
+
+# Use bundled Keycloak for SSO testing
+keycloak:
+  enabled: true
+  auth:
+    adminUser: admin
+    adminPassword: "quickstart-keycloak"
+  production: false
+
+# Use bundled MinIO for S3 storage
+minio:
+  enabled: true
+  auth:
+    rootUser: minioadmin
+    rootPassword: "quickstart-minio"
+  defaultBuckets: "mnemoshare-files"
+
+# Enable ClamAV for virus scanning
+clamav:
+  enabled: true
+  image:
+    repository: mnemoshare/clamav-icap
+    tag: "0.6.2"
+
+# Disable Step-CA (not needed for basic evaluation)
+stepca:
+  enabled: false
+
+# MnemoShare settings
+mnemoshare:
+  image:
+    repository: mnemoshare/mnemoshare
+    tag: "0.6.2"
+
+  # No license needed for evaluation - enter later in Settings
+  license:
+    key: ""
+
+  app:
+    environment: development
+    testMode: true
+    swaggerEnabled: true
+
+  ingress:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: mnemoshare.local
+        paths:
+          - path: /
+            pathType: Prefix
