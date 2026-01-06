@@ -69,9 +69,9 @@ spec:
         {{- end }}
         # S3 Storage
         {{- if .Values.minio.enabled }}
-        # MinIO is enabled - use internal MinIO service endpoint
+        # MinIO is enabled - use internal MinIO service endpoint (no protocol prefix)
         - name: S3_ENDPOINT
-          value: "http://{{ include "mnemoshare.fullname" . }}-minio:9000"
+          value: "{{ include "mnemoshare.fullname" . }}-minio:9000"
         - name: S3_REGION
           value: "us-east-1"
         - name: S3_BUCKET
