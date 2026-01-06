@@ -34,6 +34,7 @@ jobs:
         run: |
           helm repo add bitnami https://charts.bitnami.com/bitnami
           helm repo add minio https://charts.min.io/
+          helm repo add mnemoshare https://mnemoshare.github.io/helm-charts
           helm repo update
 
       - name: Run chart-releaser
