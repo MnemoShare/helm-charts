@@ -133,7 +133,7 @@ clamav:
   enabled: true
   image:
     repository: mnemoshare/clamav-icap
-    tag: "0.6.2"
+    tag: "0.7.0"
   persistence:
     enabled: true
     size: 2Gi
@@ -164,7 +164,7 @@ mnemoshare:
 
   image:
     repository: mnemoshare/mnemoshare
-    tag: "0.6.2"
+    tag: "0.7.0"
     pullPolicy: IfNotPresent
 
   # License key (optional - can be entered in Settings page)

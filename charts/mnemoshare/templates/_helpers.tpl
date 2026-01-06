@@ -58,3 +58,25 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Generate JWT secret - use provided value or auto-generate
+*/}}
+{{- define "mnemoshare.jwtSecret" -}}
+{{- if .Values.jwt.secret }}
+{{- .Values.jwt.secret }}
+{{- else }}
+{{- randAlphaNum 64 }}
+{{- end }}
+{{- end }}
+
+{{/*
+Generate encryption key - use provided value or auto-generate (must be exactly 32 bytes)
+*/}}
+{{- define "mnemoshare.encryptionKey" -}}
+{{- if .Values.encryption.key }}
+{{- .Values.encryption.key }}
+{{- else }}
+{{- randAlphaNum 32 }}
+{{- end }}
+{{- end }}
