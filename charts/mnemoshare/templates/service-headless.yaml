@@ -1,0 +1,19 @@
+# Headless service for pod-to-pod communication
+# Used for peer discovery in multi-replica deployments (e.g., license synchronization)
+# DNS lookup on this service returns all pod IPs instead of a single ClusterIP
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-headless
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service - DNS returns all pod IPs
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "mnemoshare.selectorLabels" . | nindent 4 }}
