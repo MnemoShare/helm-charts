@@ -8,6 +8,11 @@ metadata:
     app.kubernetes.io/component: clamav
 spec:
   replicas: 1
+  {{- if .Values.clamav.persistence.enabled }}
+  # Use Recreate strategy when persistence is enabled to avoid PVC multi-attach issues
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
