@@ -2,14 +2,11 @@ dependencies:
 - name: postgresql
   repository: https://charts.bitnami.com/bitnami
   version: 15.5.38
-- name: keycloak
-  repository: https://charts.bitnami.com/bitnami
-  version: 21.8.0
 - name: minio
-  repository: https://charts.bitnami.com/bitnami
-  version: 14.10.5
+  repository: https://charts.min.io/
+  version: 5.2.0
 - name: mnemoshare
   repository: https://mnemoshare.github.io/helm-charts
-  version: 1.5.7
-digest: sha256:ba247f0f74b21082eccb80aaa9e3a21b0ff8dc5cc80e886f9073fc670e8102a7
-generated: "2026-01-14T16:20:08.311086-06:00"
+  version: 1.7.1
+digest: sha256:85a740e7a101bae942e8c73b286ad226916d5dcb4e99f55a29388ec36a60f86f
+generated: "2026-01-17T22:41:17.533258-06:00"

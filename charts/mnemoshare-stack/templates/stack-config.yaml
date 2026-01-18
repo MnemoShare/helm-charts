@@ -1,7 +1,9 @@
 {{/*
 This secret provides the computed connection strings for MnemoShare.
-It bridges the bundled services (PostgreSQL, MinIO, Keycloak) or external services
+It bridges the bundled services (PostgreSQL, MinIO) or external services
 to the MnemoShare application.
+
+Note: Redis is handled by the mnemoshare subchart directly.
 */}}
 ---
 apiVersion: v1
@@ -13,7 +15,7 @@ metadata:
 type: Opaque
 stringData:
   # Database configuration
-  DB_DRIVER: {{ if .Values.externalDatabase.type }}{{ .Values.externalDatabase.type }}{{ else }}postgres{{ end }}
+  DB_DRIVER: {{ .Values.mnemoshare.database.driver | default "postgres" }}
   {{- if or .Values.postgresql.enabled (eq .Values.externalDatabase.type "postgres") }}
   POSTGRES_DSN: {{ include "mnemoshare-stack.postgresqlDsn" . | quote }}
   {{- end }}
@@ -31,29 +33,18 @@ stringData:
 
   # ClamAV configuration
   {{- if .Values.clamav.enabled }}
-  CLAMAV_ICAP_URL: {{ include "mnemoshare-stack.clamavUrl" . | quote }}
+  DEFAULT_ICAP_URL: {{ include "mnemoshare-stack.clamavUrl" . | quote }}
+  DEFAULT_ICAP_SERVICE: "avscan"
   {{- end }}
 
   # Security (auto-generated if not provided)
   JWT_SECRET: {{ include "mnemoshare-stack.jwtSecret" . | quote }}
+  JWT_EXPIRATION: {{ .Values.mnemoshare.jwt.expiration | default "24h" | quote }}
   ENCRYPTION_KEY: {{ include "mnemoshare-stack.encryptionKey" . | quote }}
 
   # License (optional)
   {{- if .Values.mnemoshare.license.key }}
   LICENSE_KEY: {{ .Values.mnemoshare.license.key | quote }}
-  {{- end }}
-
-  # OAuth/SSO Configuration
-  {{- if .Values.keycloak.enabled }}
-  OAUTH_ENABLED: "true"
-  OAUTH_PROVIDER: "keycloak"
-  OAUTH_ISSUER_URL: "http://{{ .Release.Name }}-keycloak:80/realms/mnemoshare"
-  {{- else if .Values.externalIdP.enabled }}
-  OAUTH_ENABLED: "true"
-  OAUTH_PROVIDER: {{ .Values.externalIdP.type | quote }}
-  OAUTH_ISSUER_URL: {{ .Values.externalIdP.issuerUrl | quote }}
-  OAUTH_CLIENT_ID: {{ .Values.externalIdP.clientId | quote }}
-  OAUTH_CLIENT_SECRET: {{ .Values.externalIdP.clientSecret | quote }}
   {{- end }}
 ---
 {{/*
@@ -66,8 +57,5 @@ metadata:
   labels:
     {{- include "mnemoshare-stack.labels" . | nindent 4 }}
 data:
-  ENVIRONMENT: {{ .Values.mnemoshare.app.environment | default "production" | quote }}
-  TEST_MODE: {{ .Values.mnemoshare.app.testMode | default false | quote }}
-  SWAGGER_ENABLED: {{ .Values.mnemoshare.app.swaggerEnabled | default false | quote }}
   API_HOST: "0.0.0.0"
   API_PORT: "8080"

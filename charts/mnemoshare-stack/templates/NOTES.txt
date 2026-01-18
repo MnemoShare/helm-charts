@@ -21,25 +21,21 @@ SERVICES DEPLOYED:
 {{- else }}
   [ ] PostgreSQL (external: {{ .Values.externalDatabase.host }})
 {{- end }}
-{{- if .Values.keycloak.enabled }}
-  [x] Keycloak (bundled)
-{{- else if .Values.externalIdP.enabled }}
-  [ ] Identity Provider (external: {{ .Values.externalIdP.type }})
-{{- else }}
-  [ ] Identity Provider (none - local auth only)
+{{- if .Values.mnemoshare.redis.enabled }}
+  [x] Redis (bundled) - workflow job queue
 {{- end }}
 {{- if .Values.minio.enabled }}
-  [x] MinIO (bundled)
+  [x] MinIO (bundled) - S3 storage
 {{- else }}
   [ ] S3 Storage (external: {{ .Values.externalStorage.endpoint }})
 {{- end }}
 {{- if .Values.clamav.enabled }}
   [x] ClamAV (virus scanning)
 {{- end }}
-{{- if .Values.stepca.enabled }}
-  [x] Step-CA (mTLS certificates)
-{{- end }}
   [x] MnemoShare Application
+{{- if .Values.mnemoshare.workflowWorker.enabled }}
+  [x] Workflow Workers ({{ .Values.mnemoshare.workflowWorker.replicas }} replicas)
+{{- end }}
 
 ACCESS MNEMOSHARE
 -----------------
@@ -56,11 +52,14 @@ ACCESS MNEMOSHARE
 DEFAULT CREDENTIALS
 -------------------
   MnemoShare:  admin@example.com / Password123
-{{- if .Values.keycloak.enabled }}
-  Keycloak:    {{ .Values.keycloak.auth.adminUser }} / {{ .Values.keycloak.auth.adminPassword }}
-{{- end }}
 {{- if .Values.minio.enabled }}
-  MinIO:       {{ .Values.minio.auth.rootUser }} / {{ .Values.minio.auth.rootPassword }}
+  MinIO:       {{ .Values.minio.rootUser }} / {{ .Values.minio.rootPassword }}
+{{- end }}
+{{- if .Values.postgresql.enabled }}
+  PostgreSQL:  {{ .Values.postgresql.auth.username }} / {{ .Values.postgresql.auth.password }}
+{{- end }}
+{{- if .Values.mnemoshare.redis.enabled }}
+  Redis:       (password) {{ .Values.mnemoshare.redis.password }}
 {{- end }}
 
 IMPORTANT: Change all default passwords before using in production!
@@ -88,9 +87,6 @@ SETUP /etc/hosts (for local access)
 {{- range .Values.mnemoshare.ingress.hosts }}
   echo "127.0.0.1 {{ .host }}" | sudo tee -a /etc/hosts
 {{- end }}
-{{- if .Values.keycloak.enabled }}
-  echo "127.0.0.1 keycloak.local" | sudo tee -a /etc/hosts
-{{- end }}
 
 {{- end }}
 {{- end }}
@@ -102,6 +98,9 @@ USEFUL COMMANDS
 
   # View MnemoShare logs
   kubectl logs -l app.kubernetes.io/name=mnemoshare -n {{ .Release.Namespace }} -f
+
+  # View Workflow Worker logs
+  kubectl logs -l app.kubernetes.io/component=workflow-worker -n {{ .Release.Namespace }} -f
 
   # Upgrade deployment
   helm upgrade {{ .Release.Name }} ./mnemoshare-stack -n {{ .Release.Namespace }} -f your-values.yaml

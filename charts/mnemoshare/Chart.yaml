@@ -1,6 +1,6 @@
 apiVersion: v2
 name: mnemoshare
-description: HIPAA-compliant secure file transfer system with knowledge-based authentication
+description: Zero-trust MFT system enforcing encryption-at-rest, knowledge-based authentication
 type: application
 version: 1.7.1
 appVersion: "0.7.8"

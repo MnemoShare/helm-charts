@@ -46,7 +46,7 @@ postgres://{{ .Values.externalDatabase.username }}:{{ .Values.externalDatabase.p
 {{- end }}
 
 {{/*
-S3 endpoint
+S3 endpoint - uses official MinIO chart schema (rootUser/rootPassword at top level)
 */}}
 {{- define "mnemoshare-stack.s3Endpoint" -}}
 {{- if .Values.minio.enabled }}
@@ -57,11 +57,11 @@ S3 endpoint
 {{- end }}
 
 {{/*
-S3 credentials
+S3 credentials - official MinIO chart uses rootUser/rootPassword at top level
 */}}
 {{- define "mnemoshare-stack.s3AccessKey" -}}
 {{- if .Values.minio.enabled }}
-{{- .Values.minio.auth.rootUser }}
+{{- .Values.minio.rootUser }}
 {{- else }}
 {{- .Values.externalStorage.accessKey }}
 {{- end }}
@@ -69,7 +69,7 @@ S3 credentials
 
 {{- define "mnemoshare-stack.s3SecretKey" -}}
 {{- if .Values.minio.enabled }}
-{{- .Values.minio.auth.rootPassword }}
+{{- .Values.minio.rootPassword }}
 {{- else }}
 {{- .Values.externalStorage.secretKey }}
 {{- end }}
@@ -77,7 +77,7 @@ S3 credentials
 
 {{- define "mnemoshare-stack.s3Bucket" -}}
 {{- if .Values.minio.enabled }}
-{{- .Values.minio.defaultBuckets | default "mnemoshare-files" }}
+{{- .Values.mnemoshare.s3.bucket | default "mnemoshare-files" }}
 {{- else }}
 {{- .Values.externalStorage.bucket }}
 {{- end }}

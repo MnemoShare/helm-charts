@@ -46,67 +46,27 @@ externalDatabase:
   # uri: "mongodb+srv://user:pass@cluster.mongodb.net/mnemoshare"
 
 # =============================================================================
-# IDENTITY PROVIDER CONFIGURATION
-# =============================================================================
-# Choose ONE: bundled Keycloak OR external IdP OR none (local auth only)
-
-# Option 1: Bundled Keycloak (default for evaluation)
-keycloak:
-  enabled: true
-  auth:
-    adminUser: admin
-    adminPassword: "admin-secret-change-me"
-  postgresql:
-    enabled: false  # Use the shared PostgreSQL instance
-  externalDatabase:
-    host: "{{ .Release.Name }}-postgresql"
-    port: 5432
-    database: keycloak
-    user: keycloak
-    password: "keycloak-secret-change-me"
-  proxy: edge
-  production: false  # Set to true for production
-  resources:
-    requests:
-      memory: 512Mi
-      cpu: 200m
-    limits:
-      memory: 1Gi
-      cpu: 1000m
-
-# Option 2: External Identity Provider (set keycloak.enabled=false)
-externalIdP:
-  enabled: false
-  # type: keycloak, okta, azure-ad, google-workspace
-  type: ""
-  # Keycloak / Generic OIDC:
-  issuerUrl: ""
-  clientId: ""
-  clientSecret: ""
-  # Provider-specific settings populated based on type
-
-# =============================================================================
 # STORAGE CONFIGURATION
 # =============================================================================
 # Choose ONE: bundled MinIO OR external S3-compatible storage
 
 # Option 1: Bundled MinIO (default for evaluation)
+# Uses official MinIO chart from charts.min.io
 minio:
   enabled: true
-  auth:
-    rootUser: minioadmin
-    rootPassword: "minio-secret-change-me"
-  defaultBuckets: "mnemoshare-files"
+  mode: standalone
+  rootUser: "minioadmin"
+  rootPassword: "minio-secret-change-me"
   persistence:
     enabled: true
     size: 50Gi
   resources:
     requests:
-      memory: 256Mi
-      cpu: 100m
+      memory: 512Mi
+      cpu: 250m
     limits:
-      memory: 1Gi
-      cpu: 500m
+      memory: 2Gi
+      cpu: 1000m
 
 # Option 2: External S3-compatible Storage (set minio.enabled=false)
 externalStorage:
@@ -120,11 +80,6 @@ externalStorage:
   accessKey: ""
   secretKey: ""
   useSSL: true
-  # For GCS:
-  # endpoint: "storage.googleapis.com"
-  # For Azure Blob:
-  # endpoint: "blob.core.windows.net"
-  # connectionString: ""
 
 # =============================================================================
 # CLAMAV ANTIVIRUS (Recommended)
@@ -133,10 +88,11 @@ clamav:
   enabled: true
   image:
     repository: mnemoshare/clamav-icap
-    tag: "0.7.0"
+    tag: "0.7.5"
+    pullPolicy: IfNotPresent
   persistence:
     enabled: true
-    size: 2Gi
+    size: 500Mi
   resources:
     requests:
       memory: 1Gi
@@ -146,26 +102,19 @@ clamav:
       cpu: 1000m
 
 # =============================================================================
-# STEP-CA (Optional - for Hardware mTLS, Enterprise+ feature)
-# =============================================================================
-stepca:
-  enabled: false
-  # Configure if you want hardware key mTLS authentication
-  password: "stepca-secret-change-me"
-  persistence:
-    enabled: true
-    size: 1Gi
-
-# =============================================================================
 # MNEMOSHARE APPLICATION
 # =============================================================================
 mnemoshare:
-  replicaCount: 1
+  replicaCount: 2
 
   image:
     repository: mnemoshare/mnemoshare
-    tag: "0.7.0"
+    tag: ""  # Defaults to appVersion (0.7.8)
     pullPolicy: IfNotPresent
+
+  # Database driver - use postgres for this stack
+  database:
+    driver: "postgres"
 
   # License key (optional - can be entered in Settings page)
   # Get a license at https://mnemoshare.com/pricing
@@ -180,17 +129,54 @@ mnemoshare:
   encryption:
     key: ""  # Auto-generated if empty (32 bytes for AES-256)
 
-  # Application settings
-  app:
-    environment: production
-    testMode: false
-    swaggerEnabled: false
+  # S3 configuration - auto-configured from MinIO above
+  s3:
+    bucket: "mnemoshare-files"
+
+  # Redis - enabled for workflow workers (uses mnemoshare chart's built-in Redis)
+  redis:
+    enabled: true
+    password: "redis-secret-change-me"
+    persistence:
+      enabled: true
+      size: 5Gi
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+
+  # Workflow Workers - enabled by default in stack
+  workflowWorker:
+    enabled: true
+    replicas: 2
+    concurrency: 3
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+    autoscaling:
+      enabled: false  # KEDA autoscaling (requires KEDA installed)
+      minReplicas: 1
+      maxReplicas: 5
+      listLengthTarget: 5
 
   # Ingress
   ingress:
     enabled: true
     className: nginx
-    annotations: {}
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "0"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     hosts:
       - host: mnemoshare.local
         paths:
@@ -201,40 +187,44 @@ mnemoshare:
   # Resources
   resources:
     requests:
-      memory: 256Mi
-      cpu: 100m
+      memory: 512Mi
+      cpu: 250m
     limits:
-      memory: 1Gi
+      memory: 2Gi
       cpu: 1000m
 
-  # Persistence for license deployment ID
-  persistence:
-    enabled: true
-    size: 100Mi
-
-  # Disk buffer configuration (memory management for large file uploads)
-  # When processing large uploads, chunk data is buffered during ICAP scanning.
-  # Disk buffering offloads this to disk to prevent memory pressure.
-  # See mnemoshare chart docs/private/DISK_BUFFER_CONFIG.md for details.
-  diskBuffer:
+  # Autoscaling
+  autoscaling:
     enabled: false
-    thresholdMB: 1536  # Files > 1.5GB use disk buffering (when ICAP disabled)
-    encrypt: true      # Encrypt temp files at rest
-    volume:
-      type: "emptyDir"
-      emptyDir:
-        medium: "Memory"  # RAM disk (fastest)
-        sizeLimit: "4Gi"
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+
+  # Probes
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
 
 # =============================================================================
 # GLOBAL SETTINGS
 # =============================================================================
 global:
-  # Domain for all services (used for ingress hostnames)
-  domain: "local"
-
   # Storage class for all PVCs (leave empty for default)
   storageClass: ""
 
   # Image pull secrets (if using private registry)
   imagePullSecrets: []
+
+# Override names
+nameOverride: ""
+fullnameOverride: ""

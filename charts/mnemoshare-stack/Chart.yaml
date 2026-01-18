@@ -2,10 +2,11 @@ apiVersion: v2
 name: mnemoshare-stack
 description: |
   Complete MnemoShare deployment stack for quick evaluation and production use.
-  Includes optional PostgreSQL, Keycloak (IdP), MinIO (S3), ClamAV, and Step-CA.
+  Zero-trust MFT system enforcing encryption-at-rest, knowledge-based authentication.
+  Includes PostgreSQL, Redis, MinIO (S3), ClamAV, and Workflow Workers.
 
 type: application
-version: 1.2.1
+version: 1.7.1
 appVersion: "0.7.8"
 
 keywords:
@@ -24,25 +25,19 @@ maintainers:
     email: support@mnemoshare.com
 
 dependencies:
-  # PostgreSQL - Database (optional, can use external)
+  # PostgreSQL - Database
   - name: postgresql
     version: "15.x.x"
     repository: https://charts.bitnami.com/bitnami
     condition: postgresql.enabled
 
-  # Keycloak - Identity Provider (optional, can use external IdP)
-  - name: keycloak
-    version: "21.x.x"
-    repository: https://charts.bitnami.com/bitnami
-    condition: keycloak.enabled
-
-  # MinIO - S3-compatible storage (optional, can use AWS S3/GCS)
+  # MinIO - S3-compatible storage (same chart as main mnemoshare chart)
   - name: minio
-    version: "14.x.x"
-    repository: https://charts.bitnami.com/bitnami
+    version: "5.2.0"
+    repository: https://charts.min.io/
     condition: minio.enabled
 
-  # MnemoShare - Main application
+  # MnemoShare - Main application (includes Redis and Workflow Workers)
   - name: mnemoshare
-    version: "1.5.x"
+    version: "1.7.x"
     repository: "https://mnemoshare.github.io/helm-charts"
