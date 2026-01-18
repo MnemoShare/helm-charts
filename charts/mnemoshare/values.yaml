@@ -147,6 +147,59 @@ files:
   maxSize: "10737418240"  # 10GB in bytes
   defaultLinkExpiration: "168h"  # 7 days
 
+# ============================================================================
+# Disk Buffer Configuration - Memory Management for Large File Uploads
+# ============================================================================
+# When processing large file uploads, MnemoShare buffers chunk data during
+# ICAP virus scanning and encryption. This can cause memory pressure with
+# multiple concurrent large uploads. Disk buffering offloads this to disk.
+#
+# Behavior:
+#   - ICAP enabled: Always uses disk buffering (ICAP is slow, extends memory pressure)
+#   - ICAP disabled: Uses disk buffering only for files > thresholdMB
+#
+# IMPORTANT: Mount a dedicated volume when enabled to avoid filling node disk.
+# See docs/private/DISK_BUFFER_CONFIG.md for detailed configuration guide.
+diskBuffer:
+  # Enable disk buffering feature
+  enabled: false
+
+  # Files larger than this threshold use disk buffering (in MB)
+  # Only applies when ICAP is disabled; ICAP-enabled always uses disk buffering
+  # Recommended: 1536 (1.5GB) - balances memory vs I/O overhead
+  thresholdMB: 1536
+
+  # Encrypt temp files at rest with per-file random AES-256 key
+  # Provides defense-in-depth even for temporary data
+  encrypt: true
+
+  # Volume configuration for disk buffer storage
+  # CRITICAL: Always mount a dedicated volume to avoid filling node ephemeral storage
+  volume:
+    # Volume type: "emptyDir", "ephemeral", or "existingClaim"
+    type: "emptyDir"
+
+    # emptyDir configuration (type: emptyDir)
+    emptyDir:
+      # Medium: "" for node disk, "Memory" for tmpfs (RAM disk)
+      # Memory is fastest but uses node RAM; recommended for most deployments
+      medium: "Memory"
+      # Size limit - 4Gi handles ~100 concurrent chunks (20-35MB each)
+      # Temp files are short-lived (deleted after each chunk processed)
+      sizeLimit: "4Gi"
+
+    # Ephemeral volume configuration (type: ephemeral)
+    # Creates a temporary PVC that's deleted when pod terminates
+    ephemeral:
+      storageClassName: ""  # Leave empty for default, or specify fast storage (nvme, ssd)
+      # 4Gi matches emptyDir default; increase for high-concurrency environments
+      size: "4Gi"
+
+    # Existing PVC configuration (type: existingClaim)
+    # Use when you want persistent storage or pre-provisioned volume
+    existingClaim:
+      claimName: ""
+
 # CORS settings
 cors:
   allowedOrigins: ""  # Comma-separated list, e.g., "https://example.com,https://app.example.com"
@@ -539,3 +592,139 @@ minio:
     # annotations: {}
     # hosts: []
     # tls: []
+
+# ============================================================================
+# Redis - Job Queue for Workflow Workers
+# ============================================================================
+# Required when running the workflow worker for inbound file processing.
+# Provides the Asynq job queue for distributed task processing.
+redis:
+  # Enable/disable Redis deployment
+  enabled: false
+
+  image:
+    repository: redis
+    tag: "7.2-alpine"
+    pullPolicy: IfNotPresent
+
+  # Redis password (recommended for production)
+  # Use existingSecret for production deployments
+  password: ""
+
+  # Use existing secret for Redis password
+  # Secret must contain 'redis-password' key
+  existingSecret: ""
+
+  # Persistence for Redis data
+  persistence:
+    enabled: true
+    storageClass: ""  # Leave empty for default storage class
+    accessMode: ReadWriteOnce
+    size: 5Gi
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Node selector for Redis pods
+  nodeSelector: {}
+
+  # Tolerations for Redis pods
+  tolerations: []
+
+# ============================================================================
+# Workflow Worker - Inbound File Processing
+# ============================================================================
+# Processes inbound file transfers from SFTP/FTPS/rsync sources.
+# Requires Redis to be enabled for the job queue.
+workflowWorker:
+  # Enable/disable workflow worker deployment
+  enabled: false
+
+  # Number of worker replicas (scale for more concurrent processing)
+  replicas: 2
+
+  image:
+    # Uses same image as main app (workflow-worker is a separate entrypoint)
+    repository: mnemoshare/mnemoshare
+    tag: ""  # Defaults to chart appVersion
+    pullPolicy: IfNotPresent
+
+  # Worker concurrency (tasks per worker)
+  concurrency: 10
+
+  # Temporary directory for file processing
+  # Leave empty to use system default
+  tempDir: ""
+
+  # Log level for workflow worker
+  logLevel: "info"
+
+  # ============================================================================
+  # Persistence Configuration (StatefulSet mode)
+  # ============================================================================
+  # When enabled, workflow workers run as a StatefulSet with per-pod PVCs.
+  # This solves ReadWriteOnce PVC issues with multi-replica Deployments.
+  #
+  # Use this when:
+  #   - Running multiple workflow worker replicas
+  #   - Using persistent storage for temp files (not emptyDir/ephemeral)
+  #   - Processing large files that need disk buffering
+  #
+  # When disabled, workers run as a Deployment using diskBuffer volume config.
+  persistence:
+    # Enable StatefulSet mode with per-pod PVCs
+    enabled: false
+
+    # Storage class for PVCs (leave empty for default)
+    storageClass: ""
+
+    # Size of each per-pod PVC
+    # Should accommodate concurrent file downloads and processing
+    size: "20Gi"
+
+  # Resource limits
+  # Workers need memory for file streaming (1GB+ files)
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  # Node selector for worker pods
+  nodeSelector: {}
+
+  # Tolerations for worker pods
+  tolerations: []
+
+  # ============================================================================
+  # KEDA Autoscaling (requires KEDA to be installed in the cluster)
+  # ============================================================================
+  # Scales workflow workers based on Redis queue depth.
+  # Install KEDA: helm install keda kedacore/keda --namespace keda --create-namespace
+  autoscaling:
+    # Enable KEDA-based autoscaling
+    enabled: false
+
+    # Minimum number of workers (can scale to 0 if no pending tasks)
+    minReplicas: 1
+
+    # Maximum number of workers
+    maxReplicas: 10
+
+    # Target queue length per worker replica
+    # If queue has 15 pending tasks and target is 5, KEDA will scale to 3 workers
+    listLengthTarget: 5
+
+    # How often KEDA checks queue depth (seconds)
+    pollingInterval: 15
+
+    # How long to wait before scaling down after queue is empty (seconds)
+    cooldownPeriod: 60

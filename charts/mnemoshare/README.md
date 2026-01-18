@@ -182,6 +182,66 @@ resources:
     memory: 8Gi
 ```
 
+### Disk Buffer Configuration (Large File Uploads)
+
+When processing large file uploads, MnemoShare buffers chunk data during ICAP virus scanning and encryption. For multi-GB files, this can cause memory pressure with concurrent uploads. Enable disk buffering to offload chunk data to disk.
+
+**Behavior:**
+- **ICAP enabled**: Always uses disk buffering (ICAP is slow, extends memory pressure)
+- **ICAP disabled**: Uses disk buffering only for files exceeding `thresholdMB`
+
+**Important:** Always mount a dedicated volume to avoid filling node ephemeral storage.
+
+#### RAM Disk (Fastest)
+
+```yaml
+diskBuffer:
+  enabled: true
+  thresholdMB: 1536  # Files > 1.5GB use disk buffering
+  encrypt: true      # Encrypt temp files at rest
+  volume:
+    type: "emptyDir"
+    emptyDir:
+      medium: "Memory"  # tmpfs (uses node RAM)
+      sizeLimit: "4Gi"
+```
+
+#### NVMe/SSD Ephemeral Volume (Best Balance)
+
+```yaml
+diskBuffer:
+  enabled: true
+  thresholdMB: 1536
+  encrypt: true
+  volume:
+    type: "ephemeral"
+    ephemeral:
+      storageClassName: "nvme-fast"  # Your fast storage class
+      size: "4Gi"  # Handles ~100 concurrent chunks
+```
+
+#### Existing PVC (Maximum Capacity)
+
+```yaml
+diskBuffer:
+  enabled: true
+  thresholdMB: 1536
+  encrypt: true
+  volume:
+    type: "existingClaim"
+    existingClaim:
+      claimName: "mnemoshare-disk-buffer"
+```
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `diskBuffer.enabled` | Enable disk buffering | `false` |
+| `diskBuffer.thresholdMB` | File size threshold for disk buffering (MB) | `1536` |
+| `diskBuffer.encrypt` | Encrypt temp files at rest | `true` |
+| `diskBuffer.volume.type` | Volume type: emptyDir, ephemeral, existingClaim | `emptyDir` |
+| `diskBuffer.volume.emptyDir.medium` | "" for disk, "Memory" for tmpfs | `Memory` |
+| `diskBuffer.volume.emptyDir.sizeLimit` | Size limit for emptyDir | `4Gi` |
+
 ## Certificate Authority Configuration
 
 MnemoShare supports hardware mTLS authentication (Enterprise+ tier) using certificate authorities. Choose from the built-in Step-CA or integrate with external CA providers.

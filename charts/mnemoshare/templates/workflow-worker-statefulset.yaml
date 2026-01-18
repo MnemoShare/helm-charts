@@ -1,0 +1,187 @@
+{{- if .Values.workflowWorker.enabled }}
+{{- if .Values.workflowWorker.persistence.enabled }}
+{{- if not .Values.redis.enabled }}
+{{- fail "workflowWorker.enabled requires redis.enabled=true" }}
+{{- end }}
+{{- if eq .Values.database.driver "sqlite" }}
+{{- fail "workflowWorker.enabled is not compatible with database.driver=sqlite. Use mongodb or postgres." }}
+{{- end }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-workflow-worker
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: workflow-worker
+spec:
+  serviceName: {{ include "mnemoshare.fullname" . }}-workflow-worker
+  {{- if not .Values.workflowWorker.autoscaling.enabled }}
+  replicas: {{ .Values.workflowWorker.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: workflow-worker
+  template:
+    metadata:
+      labels:
+        {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: workflow-worker
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: workflow-worker
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.workflowWorker.image.repository }}:{{ .Values.workflowWorker.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.workflowWorker.image.pullPolicy }}
+        # Override command to run workflow-worker instead of API server
+        command: ["/usr/local/bin/workflow-worker"]
+        env:
+        # Database Configuration (supports MongoDB and PostgreSQL for distributed workers)
+        - name: DB_DRIVER
+          value: {{ .Values.database.driver | default "mongodb" | quote }}
+        {{- if or (eq .Values.database.driver "mongodb") (not .Values.database.driver) }}
+        # MongoDB
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.mongodb }}{{ .Values.existingSecrets.mongodb }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: mongodb-uri
+        - name: MONGODB_DATABASE
+          value: {{ .Values.mongodb.external.database | quote }}
+        {{- else if eq .Values.database.driver "postgres" }}
+        # PostgreSQL
+        - name: POSTGRES_DSN
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.postgres }}{{ .Values.existingSecrets.postgres }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: postgres-dsn
+        {{- end }}
+        # Redis Connection
+        # Note: REDIS_PASSWORD must be defined BEFORE REDIS_URL for $(REDIS_PASSWORD) substitution to work
+        {{- if or .Values.redis.password .Values.redis.existingSecret }}
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.redis.existingSecret }}{{ .Values.redis.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-redis{{ end }}
+              key: redis-password
+        - name: REDIS_URL
+          value: "redis://:$(REDIS_PASSWORD)@{{ include "mnemoshare.fullname" . }}-redis:6379/0"
+        {{- else }}
+        - name: REDIS_URL
+          value: "redis://{{ include "mnemoshare.fullname" . }}-redis:6379/0"
+        {{- end }}
+        # Worker Configuration
+        - name: WORKER_CONCURRENCY
+          value: {{ .Values.workflowWorker.concurrency | quote }}
+        {{- if .Values.workflowWorker.tempDir }}
+        - name: TEMP_DIR
+          value: {{ .Values.workflowWorker.tempDir | quote }}
+        {{- end }}
+        # Encryption Key (same as API server)
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: encryption-key
+        # JWT Secret (same as API server - for generating worker tokens)
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.jwt }}{{ .Values.existingSecrets.jwt }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: jwt-secret
+        # API Base URL (for uploading files to MnemoShare)
+        - name: API_BASE_URL
+          value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}/api/v1"
+        # App URL (for generating links in notifications)
+        - name: APP_URL
+          value: {{ .Values.appUrl | quote }}
+        # Logging
+        - name: LOG_LEVEL
+          value: {{ .Values.workflowWorker.logLevel | default "info" | quote }}
+        # Disk buffer configuration (memory management for large file processing)
+        {{- if .Values.diskBuffer.enabled }}
+        - name: DISK_BUFFER_THRESHOLD_MB
+          value: {{ .Values.diskBuffer.thresholdMB | quote }}
+        - name: DISK_BUFFER_TEMP_DIR
+          value: "/mnt/disk-buffer"
+        - name: DISK_BUFFER_ENCRYPT
+          value: {{ .Values.diskBuffer.encrypt | quote }}
+        {{- end }}
+        # Temp directories for file processing (StatefulSet PVC mount)
+        - name: TEMP_DIR
+          value: "/mnt/workflow-data/temp"
+        - name: TEMP_FALLBACK_DIR
+          value: "/mnt/workflow-data/fallback"
+        resources:
+          {{- toYaml .Values.workflowWorker.resources | nindent 12 }}
+        volumeMounts:
+        - name: workflow-data
+          mountPath: /mnt/workflow-data
+        {{- if .Values.diskBuffer.enabled }}
+        - name: disk-buffer
+          mountPath: /mnt/disk-buffer
+        {{- end }}
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "pgrep workflow-worker"
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+      {{- if .Values.diskBuffer.enabled }}
+      volumes:
+      - name: disk-buffer
+        {{- if eq .Values.diskBuffer.volume.type "emptyDir" }}
+        emptyDir:
+          {{- if .Values.diskBuffer.volume.emptyDir.medium }}
+          medium: {{ .Values.diskBuffer.volume.emptyDir.medium }}
+          {{- end }}
+          {{- if .Values.diskBuffer.volume.emptyDir.sizeLimit }}
+          sizeLimit: {{ .Values.diskBuffer.volume.emptyDir.sizeLimit }}
+          {{- end }}
+        {{- else if eq .Values.diskBuffer.volume.type "ephemeral" }}
+        ephemeral:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              {{- if .Values.diskBuffer.volume.ephemeral.storageClassName }}
+              storageClassName: {{ .Values.diskBuffer.volume.ephemeral.storageClassName }}
+              {{- end }}
+              resources:
+                requests:
+                  storage: {{ .Values.diskBuffer.volume.ephemeral.size }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.workflowWorker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.workflowWorker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  # Per-pod PVC for workflow data (temp files, downloads, etc.)
+  volumeClaimTemplates:
+  - metadata:
+      name: workflow-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      {{- if .Values.workflowWorker.persistence.storageClass }}
+      storageClassName: {{ .Values.workflowWorker.persistence.storageClass | quote }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.workflowWorker.persistence.size | default "10Gi" }}
+{{- end }}
+{{- end }}

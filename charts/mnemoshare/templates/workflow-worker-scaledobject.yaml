@@ -1,0 +1,60 @@
+{{- if and .Values.workflowWorker.enabled .Values.workflowWorker.autoscaling.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-workflow-worker
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: workflow-worker
+spec:
+  scaleTargetRef:
+    name: {{ include "mnemoshare.fullname" . }}-workflow-worker
+    {{- if .Values.workflowWorker.persistence.enabled }}
+    kind: StatefulSet
+    {{- end }}
+  minReplicaCount: {{ .Values.workflowWorker.autoscaling.minReplicas }}
+  maxReplicaCount: {{ .Values.workflowWorker.autoscaling.maxReplicas }}
+  pollingInterval: {{ .Values.workflowWorker.autoscaling.pollingInterval | default 15 }}
+  cooldownPeriod: {{ .Values.workflowWorker.autoscaling.cooldownPeriod | default 60 }}
+  triggers:
+  # Scale based on pending tasks in the default queue
+  - type: redis
+    metadata:
+      # Use FQDN for cross-namespace resolution (KEDA runs in keda namespace)
+      address: {{ include "mnemoshare.fullname" . }}-redis.{{ .Release.Namespace }}.svc.cluster.local:6379
+      # Asynq uses list keys for pending tasks
+      listName: "asynq:default:pending"
+      listLength: {{ .Values.workflowWorker.autoscaling.listLengthTarget | default "5" | quote }}
+      # Use the database number
+      databaseIndex: "0"
+      {{- if or .Values.redis.password .Values.redis.existingSecret }}
+      # Enable authentication
+      enableTLS: "false"
+      {{- end }}
+    {{- if or .Values.redis.password .Values.redis.existingSecret }}
+    authenticationRef:
+      name: {{ include "mnemoshare.fullname" . }}-redis-trigger-auth
+    {{- end }}
+  # Also scale based on critical queue
+  - type: redis
+    metadata:
+      address: {{ include "mnemoshare.fullname" . }}-redis.{{ .Release.Namespace }}.svc.cluster.local:6379
+      listName: "asynq:critical:pending"
+      listLength: {{ .Values.workflowWorker.autoscaling.listLengthTarget | default "5" | quote }}
+      databaseIndex: "0"
+    {{- if or .Values.redis.password .Values.redis.existingSecret }}
+    authenticationRef:
+      name: {{ include "mnemoshare.fullname" . }}-redis-trigger-auth
+    {{- end }}
+  # And low priority queue
+  - type: redis
+    metadata:
+      address: {{ include "mnemoshare.fullname" . }}-redis.{{ .Release.Namespace }}.svc.cluster.local:6379
+      listName: "asynq:low:pending"
+      listLength: {{ .Values.workflowWorker.autoscaling.listLengthTarget | default "5" | quote }}
+      databaseIndex: "0"
+    {{- if or .Values.redis.password .Values.redis.existingSecret }}
+    authenticationRef:
+      name: {{ include "mnemoshare.fullname" . }}-redis-trigger-auth
+    {{- end }}
+{{- end }}

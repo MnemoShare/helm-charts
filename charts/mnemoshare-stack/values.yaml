@@ -212,6 +212,20 @@ mnemoshare:
     enabled: true
     size: 100Mi
 
+  # Disk buffer configuration (memory management for large file uploads)
+  # When processing large uploads, chunk data is buffered during ICAP scanning.
+  # Disk buffering offloads this to disk to prevent memory pressure.
+  # See mnemoshare chart docs/private/DISK_BUFFER_CONFIG.md for details.
+  diskBuffer:
+    enabled: false
+    thresholdMB: 1536  # Files > 1.5GB use disk buffering (when ICAP disabled)
+    encrypt: true      # Encrypt temp files at rest
+    volume:
+      type: "emptyDir"
+      emptyDir:
+        medium: "Memory"  # RAM disk (fastest)
+        sizeLimit: "4Gi"
+
 # =============================================================================
 # GLOBAL SETTINGS
 # =============================================================================

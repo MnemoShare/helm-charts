@@ -119,6 +119,22 @@ spec:
               key: jwt-secret
         - name: JWT_EXPIRATION
           value: {{ .Values.jwt.expiration | quote }}
+        {{- if .Values.redis.enabled }}
+        # Redis - for workflow task enqueueing (manual triggers)
+        # Note: REDIS_PASSWORD must be defined BEFORE REDIS_URL for $(REDIS_PASSWORD) substitution to work
+        {{- if or .Values.redis.password .Values.redis.existingSecret }}
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.redis.existingSecret }}{{ .Values.redis.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-redis{{ end }}
+              key: redis-password
+        - name: REDIS_URL
+          value: "redis://:$(REDIS_PASSWORD)@{{ include "mnemoshare.fullname" . }}-redis:6379/0"
+        {{- else }}
+        - name: REDIS_URL
+          value: "redis://{{ include "mnemoshare.fullname" . }}-redis:6379/0"
+        {{- end }}
+        {{- end }}
         # Encryption
         - name: ENCRYPTION_KEY
           valueFrom:
@@ -199,6 +215,15 @@ spec:
         - name: DEFAULT_ICAP_SERVICE
           value: "avscan"
         {{- end }}
+        # Disk buffer configuration (memory management for large uploads)
+        {{- if .Values.diskBuffer.enabled }}
+        - name: DISK_BUFFER_THRESHOLD_MB
+          value: {{ .Values.diskBuffer.thresholdMB | quote }}
+        - name: DISK_BUFFER_TEMP_DIR
+          value: "/mnt/disk-buffer"
+        - name: DISK_BUFFER_ENCRYPT
+          value: {{ .Values.diskBuffer.encrypt | quote }}
+        {{- end }}
         # Extra environment variables
         {{- with .Values.extraEnv }}
         {{- toYaml . | nindent 8 }}
@@ -209,6 +234,38 @@ spec:
           {{- toYaml .Values.readinessProbe | nindent 12 }}
         resources:
           {{- toYaml .Values.resources | nindent 12 }}
+        {{- if .Values.diskBuffer.enabled }}
+        volumeMounts:
+        - name: disk-buffer
+          mountPath: /mnt/disk-buffer
+        {{- end }}
+      {{- if .Values.diskBuffer.enabled }}
+      volumes:
+      - name: disk-buffer
+        {{- if eq .Values.diskBuffer.volume.type "emptyDir" }}
+        emptyDir:
+          {{- if .Values.diskBuffer.volume.emptyDir.medium }}
+          medium: {{ .Values.diskBuffer.volume.emptyDir.medium }}
+          {{- end }}
+          {{- if .Values.diskBuffer.volume.emptyDir.sizeLimit }}
+          sizeLimit: {{ .Values.diskBuffer.volume.emptyDir.sizeLimit }}
+          {{- end }}
+        {{- else if eq .Values.diskBuffer.volume.type "ephemeral" }}
+        ephemeral:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              {{- if .Values.diskBuffer.volume.ephemeral.storageClassName }}
+              storageClassName: {{ .Values.diskBuffer.volume.ephemeral.storageClassName }}
+              {{- end }}
+              resources:
+                requests:
+                  storage: {{ .Values.diskBuffer.volume.ephemeral.size }}
+        {{- else if eq .Values.diskBuffer.volume.type "existingClaim" }}
+        persistentVolumeClaim:
+          claimName: {{ .Values.diskBuffer.volume.existingClaim.claimName }}
+        {{- end }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

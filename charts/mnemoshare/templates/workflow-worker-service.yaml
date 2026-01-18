@@ -1,0 +1,21 @@
+{{- if .Values.workflowWorker.enabled }}
+{{- if .Values.workflowWorker.persistence.enabled }}
+# Headless service for StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-workflow-worker
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: workflow-worker
+spec:
+  clusterIP: None
+  selector:
+    {{- include "mnemoshare.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: workflow-worker
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+{{- end }}
+{{- end }}

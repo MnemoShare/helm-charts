@@ -1,0 +1,14 @@
+{{- if and .Values.workflowWorker.enabled .Values.workflowWorker.autoscaling.enabled (or .Values.redis.password .Values.redis.existingSecret) }}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-redis-trigger-auth
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: workflow-worker
+spec:
+  secretTargetRef:
+  - parameter: password
+    name: {{ if .Values.redis.existingSecret }}{{ .Values.redis.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-redis{{ end }}
+    key: redis-password
+{{- end }}
