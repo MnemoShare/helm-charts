@@ -139,6 +139,16 @@ sendgrid:
   fromEmail: "noreply@example.com"
   fromName: "MnemoShare"
 
+# Cloudflare Turnstile CAPTCHA (optional)
+# Used to protect public forms (access requests, etc.) from bots
+# Get keys from: https://dash.cloudflare.com/?to=/:account/turnstile
+turnstile:
+  # Public site key (embedded in frontend)
+  # Default is Cloudflare's test key that always passes (for development)
+  siteKey: ""  # Leave empty for test mode, or set production key
+  # Private secret key (used for server-side validation)
+  secretKey: ""
+
 # Application URL
 appUrl: ""  # Required: https://mnemoshare.example.com
 

@@ -208,6 +208,18 @@ spec:
         - name: SENDGRID_FROM_NAME
           value: {{ .Values.sendgrid.fromName | quote }}
         {{- end }}
+        # Cloudflare Turnstile CAPTCHA (optional)
+        {{- if .Values.turnstile.siteKey }}
+        - name: TURNSTILE_SITE_KEY
+          value: {{ .Values.turnstile.siteKey | quote }}
+        {{- end }}
+        {{- if .Values.turnstile.secretKey }}
+        - name: TURNSTILE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "mnemoshare.fullname" . }}-secrets
+              key: turnstile-secret-key
+        {{- end }}
         # ClamAV ICAP endpoint (when built-in ClamAV is enabled)
         {{- if .Values.clamav.enabled }}
         - name: DEFAULT_ICAP_URL
