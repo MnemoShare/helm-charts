@@ -493,6 +493,45 @@ entries:
     version: 1.0.0
   mnemoshare-stack:
   - apiVersion: v2
+    appVersion: 0.7.7
+    created: "2026-01-18T02:50:22.784946402Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: https://charts.bitnami.com/bitnami
+      version: 15.x.x
+    - condition: keycloak.enabled
+      name: keycloak
+      repository: https://charts.bitnami.com/bitnami
+      version: 21.x.x
+    - condition: minio.enabled
+      name: minio
+      repository: https://charts.bitnami.com/bitnami
+      version: 14.x.x
+    - name: mnemoshare
+      repository: https://mnemoshare.github.io/helm-charts
+      version: 1.5.x
+    description: 'Complete MnemoShare deployment stack for quick evaluation and production
+      use. Includes optional PostgreSQL, Keycloak (IdP), MinIO (S3), ClamAV, and Step-CA. '
+    digest: d3515361ff40922aca601ac2088921784185202a222220baa726c694f50c7613
+    home: https://mnemoshare.com
+    keywords:
+    - mnemoshare
+    - secure-file-transfer
+    - hipaa
+    - compliance
+    - encryption
+    maintainers:
+    - email: support@mnemoshare.com
+      name: MnemoShare
+    name: mnemoshare-stack
+    sources:
+    - https://github.com/MnemoShare/helm-charts
+    type: application
+    urls:
+    - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-stack-1.2.0/mnemoshare-stack-1.2.0.tgz
+    version: 1.2.0
+  - apiVersion: v2
     appVersion: 0.7.5
     created: "2026-01-11T22:57:54.460773842Z"
     dependencies:
@@ -765,4 +804,4 @@ entries:
     urls:
     - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-stack-1.0.0/mnemoshare-stack-1.0.0.tgz
     version: 1.0.0
-generated: "2026-01-18T02:38:41.86290501Z"
+generated: "2026-01-18T02:50:22.785026851Z"
