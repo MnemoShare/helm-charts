@@ -61,7 +61,7 @@ jobs:
           jwt:
             secret: "test-jwt-secret-minimum-32-characters-long"
           encryption:
-            key: "test-encryption-key-32-bytes-!"
+            key: "test-encryption-key-exactly-32by"
           license:
             key: "test-license-key"
           appUrl: "https://test.example.com"
