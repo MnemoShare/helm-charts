@@ -141,6 +141,14 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: encryption-key
+        {{- if .Values.encryption.oldKey }}
+        # Old encryption key for key rotation (temporary - remove after rotation completes)
+        - name: OLD_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: old-encryption-key
+        {{- end }}
         # License
         - name: LICENSE_KEY
           valueFrom:
