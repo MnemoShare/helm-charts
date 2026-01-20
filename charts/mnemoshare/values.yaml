@@ -121,6 +121,13 @@ jwt:
 # Encryption
 encryption:
   key: ""  # Required: 32-byte encryption key
+  # oldKey: ""  # Optional: Previous encryption key for master key rotation
+  # To rotate the master encryption key:
+  # 1. Set 'oldKey' to your current encryption key
+  # 2. Set 'key' to your new encryption key
+  # 3. Apply the Helm upgrade - rotation will start automatically on pod restart
+  # 4. Monitor progress in the Admin UI (Organization Settings > Encryption)
+  # 5. After rotation completes, remove 'oldKey' and apply again
 
 # License configuration
 license:
