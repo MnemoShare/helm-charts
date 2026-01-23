@@ -32,6 +32,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      automountServiceAccountToken: false
       {{- if and $hsmEnabled .Values.stepCA.hsm.securityContext.runAsRoot }}
       # HSM mode may require root for USB device access
       securityContext:
@@ -133,6 +134,8 @@ spec:
           securityContext:
             runAsUser: 0
             runAsGroup: 0
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
             {{- if .Values.stepCA.hsm.securityContext.privileged }}
             privileged: true
             {{- end }}
@@ -145,6 +148,8 @@ spec:
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
           {{- end }}
       containers:
         {{- if and $hsmEnabled .Values.stepCA.hsm.pcscd.enabled }}
@@ -165,6 +170,8 @@ spec:
         - name: step-ca
           image: "{{ $imageRepo }}:{{ $imageTag }}"
           imagePullPolicy: {{ .Values.stepCA.image.pullPolicy }}
+          command:
+            - /usr/local/bin/step-ca
           args:
             - /home/step/config/ca.json
             - --password-file=/run/secrets/password

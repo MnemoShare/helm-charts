@@ -31,7 +31,7 @@ spec:
         fsGroup: 101  # clamav group
       containers:
       - name: clamav-icap
-        image: "{{ .Values.clamav.image.repository }}:{{ .Values.clamav.image.tag }}"
+        image: "{{ .Values.clamav.image.repository }}:{{ .Values.clamav.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.clamav.image.pullPolicy }}
         ports:
         - name: icap

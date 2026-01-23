@@ -1,0 +1,39 @@
+{{- if .Values.serviceAccount.create -}}
+# RBAC Configuration for MnemoShare
+# Follows principle of least privilege - minimal Kubernetes API access
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+rules:
+  # MnemoShare pods need minimal k8s API access
+  # Only allow reading own pod info for health checks and debugging
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+    resourceNames: []
+  # Allow reading secrets only if explicitly needed (disabled by default)
+  # Uncomment below if pods need to read secrets directly
+  # - apiGroups: [""]
+  #   resources: ["secrets"]
+  #   verbs: ["get"]
+  #   resourceNames: ["{{ include "mnemoshare.fullname" . }}-secrets"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "mnemoshare.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "mnemoshare.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

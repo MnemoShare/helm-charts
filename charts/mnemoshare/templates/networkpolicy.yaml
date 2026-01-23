@@ -1,0 +1,283 @@
+{{- if .Values.networkPolicy.enabled }}
+# NetworkPolicy for MnemoShare
+# Implements defense-in-depth by restricting pod-to-pod communication
+---
+# Default deny all ingress/egress for MnemoShare pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-default-deny
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Allow ingress to MnemoShare API pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-api-ingress
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow traffic from ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | default "ingress-nginx" }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+        {{- if .Values.stepCA.enabled }}
+        - protocol: TCP
+          port: 8443
+        {{- end }}
+    # Allow internal pod-to-pod communication (for license sync, health checks)
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+---
+# Allow egress from MnemoShare API pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-api-egress
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # MongoDB (external or in-cluster)
+    {{- if .Values.networkPolicy.mongodb.enabled }}
+    - to:
+        {{- if .Values.networkPolicy.mongodb.cidr }}
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.mongodb.cidr }}
+        {{- else }}
+        - namespaceSelector: {}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.mongodb.port | default 27017 }}
+    {{- end }}
+    # S3/MinIO
+    {{- if .Values.minio.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio
+      ports:
+        - protocol: TCP
+          port: 9000
+    {{- else if .Values.networkPolicy.s3.enabled }}
+    - to:
+        {{- if .Values.networkPolicy.s3.cidr }}
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.s3.cidr }}
+        {{- else }}
+        # Allow all egress to S3 (typically AWS/GCS public endpoints)
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 9000
+    {{- end }}
+    # ClamAV ICAP
+    {{- if .Values.clamav.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: clamav
+      ports:
+        - protocol: TCP
+          port: 1344
+    {{- end }}
+    # Redis (for workflow workers)
+    {{- if .Values.redis.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    {{- end }}
+    # Step CA (for mTLS)
+    {{- if .Values.stepCA.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: step-ca
+      ports:
+        - protocol: TCP
+          port: 9000
+    {{- end }}
+    # License server (external)
+    {{- if .Values.networkPolicy.licenseServer.enabled }}
+    - to:
+        {{- if .Values.networkPolicy.licenseServer.cidr }}
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.licenseServer.cidr }}
+        {{- else }}
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+    # SendGrid API (external)
+    {{- if .Values.sendgrid.apiKey }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+    # OAuth/SSO providers (external)
+    {{- if .Values.networkPolicy.oauth.enabled }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+---
+{{- if .Values.clamav.enabled }}
+# ClamAV NetworkPolicy - only allow traffic from MnemoShare pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-clamav
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: clamav
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 1344
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # ClamAV definition updates (external)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+{{- end }}
+---
+{{- if .Values.redis.enabled }}
+# Redis NetworkPolicy - only allow traffic from MnemoShare and workflow workers
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-redis
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 6379
+  egress:
+    # Redis doesn't need egress in most cases
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+{{- end }}
+{{- end }}

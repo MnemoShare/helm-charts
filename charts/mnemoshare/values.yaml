@@ -8,7 +8,8 @@ image:
   repository: mnemoshare/mnemoshare
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "latest"
+  # Leave empty to use appVersion from Chart.yaml (recommended)
+  tag: ""
 
 imagePullSecrets: []
 nameOverride: ""
@@ -32,9 +33,12 @@ securityContext:
   capabilities:
     drop:
     - ALL
-  readOnlyRootFilesystem: false
+  readOnlyRootFilesystem: true
   runAsNonRoot: true
   runAsUser: 1000
+  allowPrivilegeEscalation: false
+  seccompProfile:
+    type: RuntimeDefault
 
 service:
   type: ClusterIP
@@ -156,6 +160,13 @@ turnstile:
   # Private secret key (used for server-side validation)
   secretKey: ""
 
+# Session timeout configuration
+session:
+  # Inactivity timeout in seconds before showing logout warning
+  # After this period of no activity, a 30-second warning modal appears
+  # Default: 300 (5 minutes)
+  inactivityTimeoutSeconds: 300
+
 # Application URL
 appUrl: ""  # Required: https://mnemoshare.example.com
 
@@ -268,7 +279,8 @@ clamav:
 
   image:
     repository: mnemoshare/clamav-icap
-    tag: latest
+    # Leave empty to use appVersion from Chart.yaml
+    tag: ""
     pullPolicy: IfNotPresent
 
   # ICAP endpoint configuration
@@ -745,3 +757,44 @@ workflowWorker:
 
     # How long to wait before scaling down after queue is empty (seconds)
     cooldownPeriod: 60
+
+# ============================================================================
+# Network Policies - Defense in Depth
+# ============================================================================
+# Restricts pod-to-pod communication using Kubernetes NetworkPolicies.
+# Requires a CNI plugin that supports NetworkPolicy (Calico, Cilium, etc.)
+networkPolicy:
+  # Enable/disable network policies
+  enabled: false
+
+  # Namespace where ingress controller runs (for allowing ingress traffic)
+  ingressNamespace: "ingress-nginx"
+
+  # MongoDB access configuration
+  mongodb:
+    # Enable egress to MongoDB
+    enabled: true
+    # MongoDB port
+    port: 27017
+    # CIDR block for MongoDB (leave empty to allow all, set for external MongoDB)
+    # Example: "10.0.0.0/8" for internal, "0.0.0.0/0" for external
+    cidr: ""
+
+  # S3 access configuration (when not using in-cluster MinIO)
+  s3:
+    # Enable egress to S3
+    enabled: true
+    # CIDR block for S3 (leave empty to allow public internet for AWS/GCS)
+    cidr: ""
+
+  # License server access
+  licenseServer:
+    # Enable egress to license server
+    enabled: true
+    # CIDR block (leave empty to allow public internet)
+    cidr: ""
+
+  # OAuth/SSO providers access
+  oauth:
+    # Enable egress to OAuth providers (required for SSO)
+    enabled: true

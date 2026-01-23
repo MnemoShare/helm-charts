@@ -228,6 +228,11 @@ spec:
               name: {{ include "mnemoshare.fullname" . }}-secrets
               key: turnstile-secret-key
         {{- end }}
+        # Session inactivity timeout (seconds before warning modal appears)
+        {{- if .Values.session }}
+        - name: INACTIVITY_TIMEOUT_SECONDS
+          value: {{ .Values.session.inactivityTimeoutSeconds | default 300 | quote }}
+        {{- end }}
         # ClamAV ICAP endpoint (when built-in ClamAV is enabled)
         {{- if .Values.clamav.enabled }}
         - name: DEFAULT_ICAP_URL
@@ -254,13 +259,20 @@ spec:
           {{- toYaml .Values.readinessProbe | nindent 12 }}
         resources:
           {{- toYaml .Values.resources | nindent 12 }}
-        {{- if .Values.diskBuffer.enabled }}
         volumeMounts:
+        # Writable temp directory (required for readOnlyRootFilesystem)
+        - name: tmp
+          mountPath: /tmp
+        {{- if .Values.diskBuffer.enabled }}
         - name: disk-buffer
           mountPath: /mnt/disk-buffer
         {{- end }}
-      {{- if .Values.diskBuffer.enabled }}
       volumes:
+      # Temporary directory for runtime files
+      - name: tmp
+        emptyDir:
+          sizeLimit: 1Gi
+      {{- if .Values.diskBuffer.enabled }}
       - name: disk-buffer
         {{- if eq .Values.diskBuffer.volume.type "emptyDir" }}
         emptyDir:
