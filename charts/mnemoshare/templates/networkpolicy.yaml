@@ -1,4 +1,4 @@
-{{- if .Values.networkPolicy.enabled }}
+{{- if and .Values.networkPolicy .Values.networkPolicy.enabled }}
 # NetworkPolicy for MnemoShare
 # Implements defense-in-depth by restricting pod-to-pod communication
 ---
