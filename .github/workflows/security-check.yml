@@ -1,0 +1,89 @@
+name: Security Check
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  check-secrets:
+    name: Check for Sensitive Files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for .env files
+        run: |
+          # Find .env files (excluding .env.example templates)
+          ENV_FILES=$(find . -type f \( -name "*.env" -o -name ".env*" \) \
+            ! -name ".env.example" \
+            ! -name "*.env.example" \
+            ! -path "./node_modules/*" \
+            ! -path "./.git/*" \
+            2>/dev/null || true)
+
+          if [ -n "$ENV_FILES" ]; then
+            echo "::error::Detected .env files that should not be committed!"
+            echo "Files found:"
+            echo "$ENV_FILES"
+            echo ""
+            echo "Please remove these files from git tracking:"
+            echo "  git rm --cached <file>"
+            echo ""
+            echo "And ensure they are in .gitignore"
+            exit 1
+          fi
+          echo "No .env files found in commit - OK"
+
+      - name: Check for private keys
+        run: |
+          # Check for common private key patterns
+          KEY_FILES=$(find . -type f \( \
+            -name "*.pem" -o \
+            -name "*.key" -o \
+            -name "*.p12" -o \
+            -name "*.pfx" -o \
+            -name "id_rsa" -o \
+            -name "id_ed25519" -o \
+            -name "*.keystore" \
+          \) ! -path "./node_modules/*" ! -path "./.git/*" 2>/dev/null || true)
+
+          if [ -n "$KEY_FILES" ]; then
+            echo "::warning::Detected potential private key files!"
+            echo "Files found:"
+            echo "$KEY_FILES"
+            echo ""
+            echo "Please verify these files do not contain secrets."
+            echo "If they are templates or public keys, you can ignore this warning."
+            # Warning only - some repos legitimately have .pem files for certs
+          fi
+          echo "Private key check complete"
+
+      - name: Check for hardcoded secrets patterns
+        run: |
+          # Look for common secret patterns (basic check)
+          # This is not comprehensive - use tools like gitleaks for thorough scanning
+          PATTERNS=(
+            "PRIVATE KEY"
+            "aws_secret_access_key"
+            "password.*=.*['\"][^'\"]{8,}"
+          )
+
+          FOUND=0
+          for pattern in "${PATTERNS[@]}"; do
+            if grep -rI --include="*.go" --include="*.js" --include="*.ts" \
+               --include="*.yaml" --include="*.yml" --include="*.json" \
+               -E "$pattern" . \
+               --exclude-dir=node_modules --exclude-dir=.git \
+               --exclude-dir=vendor --exclude="*.example*" \
+               --exclude="*_test.go" 2>/dev/null | head -5; then
+              echo "::warning::Potential hardcoded secret pattern found: $pattern"
+              FOUND=1
+            fi
+          done
+
+          if [ $FOUND -eq 1 ]; then
+            echo "::notice::Some patterns matched - please review above warnings"
+          fi
+          echo "Secret pattern check complete"

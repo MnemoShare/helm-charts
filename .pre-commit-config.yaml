@@ -1,0 +1,43 @@
+# Pre-commit hooks for MnemoShare
+# Install: pip install pre-commit && pre-commit install
+# Manual run: pre-commit run --all-files
+
+repos:
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: detect-private-key
+        name: Detect private keys
+      - id: check-added-large-files
+        name: Check for large files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+        name: Fix end of file
+      - id: check-yaml
+        name: Check YAML syntax
+        args: [--allow-multiple-documents]
+      - id: check-json
+        name: Check JSON syntax
+
+  # Block .env files from being committed
+  - repo: local
+    hooks:
+      - id: no-env-files
+        name: Block .env files
+        entry: bash -c 'FILES=$(git diff --cached --name-only | grep -E "\.env$|^\.env\.|/\.env$|/\.env\." | grep -v "\.example" || true); if [ -n "$FILES" ]; then echo "ERROR: Attempting to commit .env files:"; echo "$FILES"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        stages: [commit]
+
+      - id: no-secrets-in-code
+        name: Check for potential secrets
+        entry: bash -c 'if git diff --cached --name-only | xargs grep -l "PRIVATE KEY" 2>/dev/null | grep -v "_test\." | head -1 | grep -q .; then echo "ERROR: Potential private key found in staged files"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        stages: [commit]
