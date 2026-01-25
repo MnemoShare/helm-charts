@@ -798,3 +798,103 @@ networkPolicy:
   oauth:
     # Enable egress to OAuth providers (required for SSO)
     enabled: true
+
+# ============================================================================
+# MCP Admin Server - AI-Assisted Configuration Management
+# ============================================================================
+# The MCP (Model Context Protocol) server enables Claude Code and other
+# AI assistants to manage MnemoShare configuration through a compliance-friendly
+# Change Management Request (CMR) workflow.
+#
+# Setup:
+#   1. Enable MCP in this values file
+#   2. Deploy with Helm
+#   3. Create MCP API key in MnemoShare Admin UI (Settings → MCP Access)
+#   4. Create Kubernetes secret with the API key
+#   5. Configure Claude Code with the MCP server endpoint
+#
+# See: docs/MCP_SETUP.md for complete setup guide
+mcp:
+  # Enable/disable MCP admin server deployment
+  enabled: false
+
+  image:
+    # Uses same image as main app (mcp-admin is a separate entrypoint)
+    repository: mnemoshare/mnemoshare
+    tag: ""  # Defaults to chart appVersion
+    pullPolicy: IfNotPresent
+
+  # Transport configuration
+  transport:
+    # Transport type: "stdio" or "http"
+    # - stdio: For direct Claude Code integration via kubectl exec
+    # - http: For HTTP-based MCP clients
+    type: "http"
+
+    # HTTP transport settings (when transport.type = "http")
+    http:
+      # Port for HTTP transport
+      port: 9222
+      # Container port (internal)
+      containerPort: 9222
+
+  # MCP API key configuration
+  # The MCP API key is created in MnemoShare Admin UI and stored in a secret
+  apiKey:
+    # Use existing secret for MCP API key
+    # Secret must contain 'mcp-api-key' key
+    # REQUIRED: Create this secret with the key from MnemoShare Admin UI
+    existingSecret: ""
+    # Alternative: provide key directly (not recommended for production)
+    # key: "mcp_..."
+
+  # MnemoShare API URL for the MCP server to connect to
+  # Defaults to the internal headless service URL
+  # Override only if using external API endpoint
+  apiUrl: ""  # Leave empty to use internal headless service
+
+  # Logging configuration
+  logging:
+    # Log level: debug, info, warn, error
+    level: "info"
+    # Log format: json or console
+    format: "json"
+
+  # Service configuration
+  service:
+    # Service type
+    type: ClusterIP
+    # Service port
+    port: 9222
+
+  # Optional: Expose MCP via Ingress (internal network only recommended)
+  ingress:
+    enabled: false
+    className: "nginx"
+    annotations: {}
+    # Example annotations:
+    # nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    hosts:
+      - host: mcp.internal.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+    # - secretName: mcp-tls
+    #   hosts:
+    #     - mcp.internal.example.com
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # Node selector for MCP pods
+  nodeSelector: {}
+
+  # Tolerations for MCP pods
+  tolerations: []

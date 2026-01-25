@@ -280,4 +280,60 @@ spec:
         - protocol: UDP
           port: 53
 {{- end }}
+---
+{{- if .Values.mcp.enabled }}
+# MCP Admin Server NetworkPolicy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-mcp
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mcp
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- if and (eq .Values.mcp.transport.type "http") .Values.mcp.ingress.enabled }}
+    # Allow traffic from ingress controller (for external MCP access)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | default "ingress-nginx" }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.mcp.transport.http.containerPort }}
+    {{- end }}
+    # Allow traffic from within the namespace (for kubectl port-forward, internal access)
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.mcp.transport.http.containerPort | default 9222 }}
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # MnemoShare API (headless service)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+{{- end }}
 {{- end }}
