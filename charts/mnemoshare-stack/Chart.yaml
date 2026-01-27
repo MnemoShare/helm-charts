@@ -39,5 +39,5 @@ dependencies:
 
   # MnemoShare - Main application (includes Redis and Workflow Workers)
   - name: mnemoshare
-    version: "1.9.x"
+    version: "1.8.x"
     repository: "https://mnemoshare.github.io/helm-charts"
