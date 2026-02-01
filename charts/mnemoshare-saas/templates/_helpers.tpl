@@ -74,12 +74,31 @@ Get the database name (auto-generate from customer ID if not set)
 
 {{/*
 Get the S3 prefix for this customer
+For dedicated buckets (Enterprise), no prefix needed
+For shared bucket (all other tiers), use customer prefix
 */}}
 {{- define "mnemoshare-saas.storagePrefix" -}}
 {{- if .Values.storage.prefix }}
 {{- .Values.storage.prefix }}
+{{- else if or .Values.storage.dedicatedBucket (eq .Values.tier "enterprise") }}
+{{- /* Enterprise tier with dedicated bucket: no prefix */ -}}
+{{- "" }}
 {{- else }}
 {{- printf "customers/%s/" .Values.customer.id }}
+{{- end }}
+{{- end }}
+
+{{/*
+Get the S3 bucket name
+For Enterprise tier, auto-generate dedicated bucket name if not specified
+*/}}
+{{- define "mnemoshare-saas.storageBucket" -}}
+{{- if .Values.storage.bucket }}
+{{- .Values.storage.bucket }}
+{{- else if or .Values.storage.dedicatedBucket (eq .Values.tier "enterprise") }}
+{{- printf "mnemoshare-%s" .Values.customer.id }}
+{{- else }}
+{{- "mnemoshare-saas" }}
 {{- end }}
 {{- end }}
 

@@ -56,7 +56,7 @@ spec:
         - name: S3_REGION
           value: {{ .Values.storage.region | quote }}
         - name: S3_BUCKET
-          value: {{ .Values.storage.bucket | quote }}
+          value: {{ include "mnemoshare-saas.storageBucket" . | quote }}
         - name: S3_PREFIX
           value: {{ include "mnemoshare-saas.storagePrefix" . | quote }}
         - name: S3_ACCESS_KEY

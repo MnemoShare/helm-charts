@@ -100,7 +100,8 @@ tiers:
 
   enterprise:
     users: 0  # Unlimited
-    storage: "0"  # Custom
+    storage: "0"  # Custom (dedicated bucket)
+    dedicatedBucket: true  # Enterprise gets dedicated S3 bucket
     app:
       replicas: 2
       resources:
@@ -189,10 +190,19 @@ storage:
   endpoint: "https://sfo3.digitaloceanspaces.com"
   region: "sfo3"
   
-  # Bucket name (shared bucket, customer data isolated by prefix)
+  # Bucket configuration varies by tier:
+  # - Starter/Professional/Business: Shared bucket with customer prefix
+  # - Enterprise: Dedicated bucket per customer
+  #
+  # For Enterprise tier, set dedicatedBucket: true and specify the bucket name
+  dedicatedBucket: false  # Enterprise tier should set this to true
+  
+  # Bucket name
+  # Shared mode: "mnemoshare-saas" (all non-Enterprise tiers)
+  # Enterprise mode: customer-specific bucket (e.g., "mnemoshare-acme-clinic")
   bucket: "mnemoshare-saas"
   
-  # Customer prefix within bucket (auto-generated if empty)
+  # Customer prefix within bucket (auto-generated if empty, ignored for dedicatedBucket)
   # Convention: customers/{customer.id}/
   prefix: ""
   
@@ -207,11 +217,12 @@ existingStorageSecret: ""
 # -----------------------------------------------------------------------------
 # Centralized Services (NOT deployed by this chart)
 # -----------------------------------------------------------------------------
-# These services are deployed once for the entire SaaS platform
+# These services are deployed once for the entire SaaS platform.
+# All customers share these centralized services.
 
 # Step-CA (mTLS certificate authority)
-# QUESTION: Should we point to centralized Step-CA URL, or is mTLS per-customer?
-# For now, assuming centralized with platform-wide CA
+# Architecture Decision: Centralized CA for all SaaS customers.
+# This simplifies certificate management and is sufficient for expected load.
 stepCA:
   # URL to centralized Step-CA service
   url: ""  # e.g., "https://step-ca.mnemoshare-platform.svc.cluster.local"
@@ -219,9 +230,10 @@ stepCA:
   fingerprint: ""
 
 # ClamAV ICAP (virus scanning)
-# Centralized ICAP service for all tenants
+# Architecture Decision: Consistent URL across all regions.
+# Single ICAP endpoint for uniform virus scanning.
 icap:
-  # URL to centralized ICAP service
+  # URL to centralized ICAP service (consistent across regions)
   url: "icap://clamav.mnemoshare-platform.svc.cluster.local:1344"
   # ICAP service name
   service: "avscan"

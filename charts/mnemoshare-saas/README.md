@@ -235,15 +235,25 @@ autoscaling:
     listLengthTarget: 5  # Tasks per worker
 ```
 
-## Questions for Platform Team
+## Architecture Decisions
 
-1. **Step-CA**: Should mTLS certificates be per-customer or centralized? Current assumption is centralized with platform-wide CA.
+### Centralized Services
 
-2. **ICAP/ClamAV**: Is the centralized ICAP service URL consistent across all deployments, or should it be parameterized per region?
+1. **Step-CA (mTLS)**: Centralized CA for all SaaS customers. A single platform-wide certificate authority handles all mTLS signing. This simplifies certificate management and is sufficient for expected request volumes.
 
-3. **MinIO/Storage**: Confirmed using DigitalOcean Spaces with per-customer S3 prefix. Should we support customer-dedicated buckets for Enterprise tier?
+2. **ICAP/ClamAV**: Consistent URL across all regions. A single ICAP endpoint (`icap://clamav.mnemoshare-platform.svc.cluster.local:1344`) handles virus scanning for all tenants.
 
-4. **Redis Queue Isolation**: Are customer queues isolated via queue name prefix (e.g., `asynq:{customer_id}:*`), or should we use separate Redis databases?
+### Storage
+
+3. **S3 Bucket Strategy**:
+   - **Starter/Professional/Business**: Shared bucket (`mnemoshare-saas`) with per-customer prefix (`customers/{customer_id}/`)
+   - **Enterprise**: Dedicated bucket per customer (`mnemoshare-{customer_id}`)
+   
+   Enterprise tier automatically gets a dedicated bucket when `tier: enterprise` or when `storage.dedicatedBucket: true` is set.
+
+### Pending Decisions
+
+4. **Redis Queue Isolation**: TBD - prefix-based (`asynq:{customer_id}:*`) vs. separate Redis databases.
 
 ## Troubleshooting
 
