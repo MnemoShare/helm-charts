@@ -251,9 +251,12 @@ autoscaling:
    
    Enterprise tier automatically gets a dedicated bucket when `tier: enterprise` or when `storage.dedicatedBucket: true` is set.
 
-### Pending Decisions
+### Redis Queue Isolation
 
-4. **Redis Queue Isolation**: TBD - prefix-based (`asynq:{customer_id}:*`) vs. separate Redis databases.
+4. **Redis Queues**: Prefix-based isolation using `asynq:{customer_id}:*` pattern.
+   - Workers only consume jobs from their customer's queues
+   - Shared Redis Sentinel cluster for all customers
+   - **Note**: Requires mnemoshare code changes (see MNS-36)
 
 ## Troubleshooting
 
