@@ -1,0 +1,20 @@
+apiVersion: v2
+name: mnemoshare-saas
+description: MnemoShare SaaS Customer Deployment - Parameterized Helm chart for deploying isolated customer instances
+type: application
+version: 0.1.0
+appVersion: "0.8.0"
+keywords:
+  - mnemoshare
+  - saas
+  - secure-file-transfer
+  - mft
+  - multi-tenant
+home: https://mnemoshare.com
+sources:
+  - https://github.com/mnemoshare/helm-charts
+maintainers:
+  - name: MnemoShare
+    email: support@mnemoshare.com
+annotations:
+  category: security

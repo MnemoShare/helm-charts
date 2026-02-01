@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare-saas.fullname" . }}-headless
+  labels:
+    {{- include "mnemoshare-saas.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "mnemoshare-saas.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api

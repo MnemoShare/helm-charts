@@ -1,0 +1,15 @@
+{{- $workerEnabled := include "mnemoshare-saas.workflowWorkerEnabled" . }}
+{{- if and .Values.autoscaling.enabled (eq $workerEnabled "true") .Values.autoscaling.workflowWorker.enabled }}
+# KEDA TriggerAuthentication for Redis Sentinel
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ include "mnemoshare-saas.fullname" . }}-redis-auth
+  labels:
+    {{- include "mnemoshare-saas.labels" . | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: password
+      name: {{ .Values.existingRedisSecret | default (include "mnemoshare-saas.secretsName" .) }}
+      key: redis-password
+{{- end }}

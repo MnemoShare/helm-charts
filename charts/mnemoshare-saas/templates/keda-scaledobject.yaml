@@ -1,0 +1,62 @@
+{{- if .Values.autoscaling.enabled }}
+{{- if .Values.autoscaling.app.enabled }}
+# KEDA ScaledObject for main application
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "mnemoshare-saas.fullname" . }}-app
+  labels:
+    {{- include "mnemoshare-saas.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "mnemoshare-saas.fullname" . }}
+  pollingInterval: {{ .Values.autoscaling.app.pollingInterval | default 15 }}
+  cooldownPeriod: {{ .Values.autoscaling.app.cooldownPeriod | default 60 }}
+  minReplicaCount: {{ .Values.autoscaling.app.minReplicas | default 2 }}
+  maxReplicaCount: {{ include "mnemoshare-saas.maxReplicas" . }}
+  triggers:
+  {{- if .Values.autoscaling.app.memory.enabled }}
+  # Memory-based scaling
+  - type: memory
+    metricType: Utilization
+    metadata:
+      value: {{ .Values.autoscaling.app.memory.targetUtilization | default 80 | quote }}
+  {{- end }}
+  {{- if .Values.autoscaling.app.tcp.enabled }}
+  # TCP connections-based scaling (requires KEDA metrics server)
+  - type: kubernetes-workload
+    metadata:
+      podSelector: 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=api'
+      value: {{ .Values.autoscaling.app.tcp.targetValue | default 100 | quote }}
+  {{- end }}
+{{- end }}
+---
+{{- $workerEnabled := include "mnemoshare-saas.workflowWorkerEnabled" . }}
+{{- if and (eq $workerEnabled "true") .Values.autoscaling.workflowWorker.enabled }}
+# KEDA ScaledObject for workflow worker
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "mnemoshare-saas.fullname" . }}-worker
+  labels:
+    {{- include "mnemoshare-saas.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "mnemoshare-saas.fullname" . }}-worker
+  pollingInterval: {{ .Values.autoscaling.workflowWorker.pollingInterval | default 15 }}
+  cooldownPeriod: {{ .Values.autoscaling.workflowWorker.cooldownPeriod | default 60 }}
+  minReplicaCount: {{ .Values.autoscaling.workflowWorker.minReplicas | default 1 }}
+  maxReplicaCount: {{ .Values.autoscaling.workflowWorker.maxReplicas | default 5 }}
+  triggers:
+  # Redis list length trigger for queue-based scaling
+  - type: redis-sentinel
+    metadata:
+      # Queue name pattern: asynq:{customer_id}:pending
+      listName: "asynq:{{ .Values.customer.id }}:pending"
+      listLength: {{ .Values.autoscaling.workflowWorker.listLengthTarget | default 5 | quote }}
+      sentinelMaster: "mymaster"
+      sentinelAddresses: {{ include "mnemoshare-saas.redisSentinelAddresses" . | quote }}
+    authenticationRef:
+      name: {{ include "mnemoshare-saas.fullname" . }}-redis-auth
+{{- end }}
+{{- end }}

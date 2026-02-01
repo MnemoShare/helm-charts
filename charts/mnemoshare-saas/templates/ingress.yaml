@@ -1,0 +1,68 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "mnemoshare-saas.fullname" . }}
+  labels:
+    {{- include "mnemoshare-saas.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.customer.subdomain }}.{{ .Values.ingress.domainSuffix }}
+      {{- if .Values.ingress.tls.wildcardSecretName }}
+      secretName: {{ .Values.ingress.tls.wildcardSecretName }}
+      {{- else }}
+      secretName: {{ include "mnemoshare-saas.fullname" . }}-tls
+      {{- end }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.customer.subdomain }}.{{ .Values.ingress.domainSuffix }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "mnemoshare-saas.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}
+---
+{{- if and .Values.ingress.enabled .Values.customer.customDomain }}
+# Custom domain ingress (Enterprise tier)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "mnemoshare-saas.fullname" . }}-custom
+  labels:
+    {{- include "mnemoshare-saas.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    # Override cert-manager to generate certificate for custom domain
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts:
+        - {{ .Values.customer.customDomain }}
+      secretName: {{ include "mnemoshare-saas.fullname" . }}-custom-tls
+  rules:
+    - host: {{ .Values.customer.customDomain }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "mnemoshare-saas.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

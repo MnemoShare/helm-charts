@@ -1,0 +1,428 @@
+# =============================================================================
+# MnemoShare SaaS Customer Deployment
+# =============================================================================
+# This Helm chart deploys an isolated MnemoShare instance for a SaaS customer.
+# Centralized services (Step-CA, ClamAV, Redis) are NOT deployed by this chart.
+#
+# Usage:
+#   helm install acme-clinic mnemoshare-saas \
+#     --set customer.id=acme-clinic \
+#     --set customer.subdomain=acme-clinic \
+#     --set tier=professional \
+#     -f customer-secrets.yaml
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Customer Configuration
+# -----------------------------------------------------------------------------
+customer:
+  # Unique customer/organization ID (used for resource naming, S3 bucket paths)
+  id: ""  # Required: e.g., "acme-clinic"
+  
+  # Subdomain for this customer (e.g., "acme-clinic" -> acme-clinic.mnemoshare.io)
+  subdomain: ""  # Required: e.g., "acme-clinic"
+  
+  # Customer display name (shown in UI)
+  name: ""  # Optional: e.g., "ACME Medical Clinic"
+  
+  # Custom domain (Enterprise tier only)
+  # When set, creates additional ingress for custom domain
+  customDomain: ""  # Optional: e.g., "files.acmeclinic.com"
+
+# -----------------------------------------------------------------------------
+# Tier Configuration
+# -----------------------------------------------------------------------------
+# Tier determines resource limits, features, and scaling parameters
+# Valid values: starter, professional, business, enterprise
+tier: professional
+
+# Tier presets (override individual settings below if needed)
+# These are automatically applied based on the 'tier' value
+tiers:
+  starter:
+    users: 10
+    storage: "100Gi"
+    app:
+      replicas: 2
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+    workflowWorker:
+      enabled: false
+    autoscaling:
+      maxReplicas: 3
+
+  professional:
+    users: 50
+    storage: "500Gi"
+    app:
+      replicas: 2
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 2000m
+          memory: 2Gi
+    workflowWorker:
+      enabled: false
+    autoscaling:
+      maxReplicas: 5
+
+  business:
+    users: 200
+    storage: "2Ti"
+    app:
+      replicas: 2
+      resources:
+        requests:
+          cpu: 1000m
+          memory: 2Gi
+        limits:
+          cpu: 4000m
+          memory: 4Gi
+    workflowWorker:
+      enabled: true
+      replicas: 2
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: 2000m
+          memory: 2Gi
+    autoscaling:
+      maxReplicas: 10
+
+  enterprise:
+    users: 0  # Unlimited
+    storage: "0"  # Custom
+    app:
+      replicas: 2
+      resources:
+        requests:
+          cpu: 2000m
+          memory: 4Gi
+        limits:
+          cpu: 8000m
+          memory: 8Gi
+    workflowWorker:
+      enabled: true
+      replicas: 3
+      resources:
+        requests:
+          cpu: 1000m
+          memory: 2Gi
+        limits:
+          cpu: 4000m
+          memory: 4Gi
+    autoscaling:
+      maxReplicas: 20
+
+# -----------------------------------------------------------------------------
+# Application Configuration
+# -----------------------------------------------------------------------------
+app:
+  # Number of app replicas (default: 2, overridden by tier)
+  replicas: 2
+
+  image:
+    repository: mnemoshare/mnemoshare
+    pullPolicy: IfNotPresent
+    # Tag defaults to chart appVersion
+    tag: ""
+
+  # Resource limits (overridden by tier if not explicitly set)
+  resources: {}
+
+  # Pod annotations
+  podAnnotations: {}
+
+  # Node selector
+  nodeSelector: {}
+
+  # Tolerations
+  tolerations: []
+
+  # Affinity rules
+  affinity: {}
+
+# -----------------------------------------------------------------------------
+# Database Configuration
+# -----------------------------------------------------------------------------
+# Shared MongoDB cluster - connection string provided by platform
+database:
+  # MongoDB connection URI
+  # Format: mongodb://admin:<password>@mnemodb:27017,mongo-nyc:27017,mongo-atl:27017/<db>?authSource=admin&replicaSet=rs0
+  uri: ""  # Required
+  
+  # Database name (customer-specific database within shared cluster)
+  # Convention: mnemoshare-saas-{customer.id}
+  name: ""  # Leave empty to auto-generate from customer.id
+
+# Use existing secret for database credentials
+# Secret must contain 'mongodb-uri' key
+existingDatabaseSecret: ""
+
+# -----------------------------------------------------------------------------
+# Redis Configuration (Shared Sentinel Cluster)
+# -----------------------------------------------------------------------------
+# Shared Redis Sentinel cluster - connection string provided by platform
+redis:
+  # Redis Sentinel URL
+  # Format: redis+sentinel://:<password>@node-0:26379,node-1:26379,node-2:26379/mymaster/0
+  url: ""  # Required for workflow worker
+
+# Use existing secret for Redis credentials
+# Secret must contain 'redis-url' key
+existingRedisSecret: ""
+
+# -----------------------------------------------------------------------------
+# Object Storage Configuration (DigitalOcean Spaces)
+# -----------------------------------------------------------------------------
+storage:
+  # S3 endpoint (DigitalOcean Spaces)
+  endpoint: "https://sfo3.digitaloceanspaces.com"
+  region: "sfo3"
+  
+  # Bucket name (shared bucket, customer data isolated by prefix)
+  bucket: "mnemoshare-saas"
+  
+  # Customer prefix within bucket (auto-generated if empty)
+  # Convention: customers/{customer.id}/
+  prefix: ""
+  
+  # Access credentials
+  accessKey: ""
+  secretKey: ""
+
+# Use existing secret for S3 credentials
+# Secret must contain 's3-access-key' and 's3-secret-key' keys
+existingStorageSecret: ""
+
+# -----------------------------------------------------------------------------
+# Centralized Services (NOT deployed by this chart)
+# -----------------------------------------------------------------------------
+# These services are deployed once for the entire SaaS platform
+
+# Step-CA (mTLS certificate authority)
+# QUESTION: Should we point to centralized Step-CA URL, or is mTLS per-customer?
+# For now, assuming centralized with platform-wide CA
+stepCA:
+  # URL to centralized Step-CA service
+  url: ""  # e.g., "https://step-ca.mnemoshare-platform.svc.cluster.local"
+  # Fingerprint for certificate verification
+  fingerprint: ""
+
+# ClamAV ICAP (virus scanning)
+# Centralized ICAP service for all tenants
+icap:
+  # URL to centralized ICAP service
+  url: "icap://clamav.mnemoshare-platform.svc.cluster.local:1344"
+  # ICAP service name
+  service: "avscan"
+
+# -----------------------------------------------------------------------------
+# Encryption & Security
+# -----------------------------------------------------------------------------
+encryption:
+  # Customer-specific encryption key (32 bytes)
+  # Each customer has unique encryption key for data-at-rest
+  key: ""  # Required
+
+# Use existing secret for encryption key
+# Secret must contain 'encryption-key' key
+existingEncryptionSecret: ""
+
+# JWT configuration
+jwt:
+  # Customer-specific JWT secret (minimum 32 characters)
+  secret: ""  # Required
+  expiration: "24h"
+
+# Use existing secret for JWT
+# Secret must contain 'jwt-secret' key
+existingJWTSecret: ""
+
+# -----------------------------------------------------------------------------
+# License Configuration
+# -----------------------------------------------------------------------------
+license:
+  # Customer's license key
+  key: ""  # Required
+
+# Use existing secret for license
+# Secret must contain 'license-key' key
+existingLicenseSecret: ""
+
+# -----------------------------------------------------------------------------
+# Ingress Configuration
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+  
+  # Domain suffix for customer subdomains
+  # Customer URL: {customer.subdomain}.{domainSuffix}
+  domainSuffix: "mnemoshare.io"
+  
+  # TLS configuration
+  tls:
+    enabled: true
+    # Use wildcard certificate (recommended for SaaS)
+    wildcardSecretName: "mnemoshare-io-wildcard-tls"
+    # Or generate per-customer certificate
+    generateCertificate: false
+
+# -----------------------------------------------------------------------------
+# Workflow Worker (Business+ Tier)
+# -----------------------------------------------------------------------------
+workflowWorker:
+  # Enable workflow worker (auto-enabled for Business+ tiers)
+  enabled: false
+  
+  # Number of worker replicas (overridden by tier)
+  replicas: 2
+  
+  image:
+    repository: mnemoshare/mnemoshare
+    pullPolicy: IfNotPresent
+    tag: ""
+  
+  # Worker concurrency
+  concurrency: 10
+  
+  # Resource limits (overridden by tier if not explicitly set)
+  resources: {}
+  
+  # Node selector
+  nodeSelector: {}
+  
+  # Tolerations
+  tolerations: []
+
+# -----------------------------------------------------------------------------
+# KEDA Autoscaling
+# -----------------------------------------------------------------------------
+# Requires KEDA to be installed in the cluster
+autoscaling:
+  enabled: true
+  
+  # App autoscaling (TCP connections + memory based)
+  app:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5  # Overridden by tier
+    
+    # Scale based on TCP connections
+    tcp:
+      enabled: true
+      targetValue: 100  # Connections per pod
+    
+    # Scale based on memory utilization
+    memory:
+      enabled: true
+      targetUtilization: 80
+    
+    # Cooldown periods
+    pollingInterval: 15
+    cooldownPeriod: 60
+  
+  # Workflow worker autoscaling (Redis queue depth based)
+  workflowWorker:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    
+    # Scale based on Redis queue length
+    listLengthTarget: 5
+    
+    pollingInterval: 15
+    cooldownPeriod: 60
+
+# -----------------------------------------------------------------------------
+# Service Configuration
+# -----------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# -----------------------------------------------------------------------------
+# Service Account
+# -----------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# -----------------------------------------------------------------------------
+# Security Context
+# -----------------------------------------------------------------------------
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  seccompProfile:
+    type: RuntimeDefault
+
+# -----------------------------------------------------------------------------
+# Probes
+# -----------------------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# -----------------------------------------------------------------------------
+# Additional Environment Variables
+# -----------------------------------------------------------------------------
+extraEnv: []
+# - name: CUSTOM_VAR
+#   value: "custom_value"
+
+# -----------------------------------------------------------------------------
+# Addons (Optional Features)
+# -----------------------------------------------------------------------------
+addons:
+  # MCP AI integration (Professional+ tier)
+  mcp:
+    enabled: false
+    # API key is created in MnemoShare admin UI
+    existingSecret: ""
+  
+  # Custom branding (Professional+ tier)
+  branding:
+    enabled: false
+    logoUrl: ""
+    primaryColor: ""
+    companyName: ""

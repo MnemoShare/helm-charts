@@ -1,0 +1,114 @@
+{{- $workerEnabled := include "mnemoshare-saas.workflowWorkerEnabled" . }}
+{{- if eq $workerEnabled "true" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mnemoshare-saas.fullname" . }}-worker
+  labels:
+    {{- include "mnemoshare-saas.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.workflowWorker.enabled }}
+  replicas: {{ .Values.workflowWorker.replicas | default 2 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "mnemoshare-saas.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: workflow-worker
+  template:
+    metadata:
+      annotations:
+        checksum/secrets: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+      labels:
+        {{- include "mnemoshare-saas.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: workflow-worker
+        mnemoshare.io/customer-id: {{ .Values.customer.id | quote }}
+        mnemoshare.io/tier: {{ .Values.tier | quote }}
+    spec:
+      serviceAccountName: {{ include "mnemoshare-saas.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: workflow-worker
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.workflowWorker.image.repository }}:{{ .Values.workflowWorker.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.workflowWorker.image.pullPolicy }}
+        command: ["mnemoshare", "workflow-worker"]
+        env:
+        # Database Configuration
+        - name: DB_DRIVER
+          value: "mongodb"
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.existingDatabaseSecret | default (include "mnemoshare-saas.secretsName" .) }}
+              key: mongodb-uri
+        - name: MONGODB_DATABASE
+          value: {{ include "mnemoshare-saas.databaseName" . | quote }}
+        
+        # S3 Storage
+        - name: S3_ENDPOINT
+          value: {{ .Values.storage.endpoint | quote }}
+        - name: S3_REGION
+          value: {{ .Values.storage.region | quote }}
+        - name: S3_BUCKET
+          value: {{ .Values.storage.bucket | quote }}
+        - name: S3_PREFIX
+          value: {{ include "mnemoshare-saas.storagePrefix" . | quote }}
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.existingStorageSecret | default (include "mnemoshare-saas.secretsName" .) }}
+              key: s3-access-key
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.existingStorageSecret | default (include "mnemoshare-saas.secretsName" .) }}
+              key: s3-secret-key
+        - name: S3_USE_SSL
+          value: "true"
+        
+        # Encryption
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.existingEncryptionSecret | default (include "mnemoshare-saas.secretsName" .) }}
+              key: encryption-key
+        
+        # Redis (Required for workflow worker)
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.existingRedisSecret | default (include "mnemoshare-saas.secretsName" .) }}
+              key: redis-url
+        
+        # Worker settings
+        - name: WORKER_CONCURRENCY
+          value: {{ .Values.workflowWorker.concurrency | quote }}
+        - name: LOG_LEVEL
+          value: "info"
+        
+        # Customer metadata
+        - name: CUSTOMER_ID
+          value: {{ .Values.customer.id | quote }}
+        - name: CUSTOMER_TIER
+          value: {{ .Values.tier | quote }}
+        
+        resources:
+          {{- include "mnemoshare-saas.workflowWorkerResources" . | nindent 12 }}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 5Gi
+      {{- with .Values.workflowWorker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.workflowWorker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
