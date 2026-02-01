@@ -623,6 +623,32 @@ entries:
     urls:
     - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-1.0.0/mnemoshare-1.0.0.tgz
     version: 1.0.0
+  mnemoshare-saas:
+  - annotations:
+      category: security
+    apiVersion: v2
+    appVersion: 0.8.0
+    created: "2026-02-01T22:32:31.465568797Z"
+    description: MnemoShare SaaS Customer Deployment - Parameterized Helm chart for
+      deploying isolated customer instances
+    digest: 0ee19d4659f281e4f74a090b2022d39757a3725a6adbc2425866773e54e15e2c
+    home: https://mnemoshare.com
+    keywords:
+    - mnemoshare
+    - saas
+    - secure-file-transfer
+    - mft
+    - multi-tenant
+    maintainers:
+    - email: support@mnemoshare.com
+      name: MnemoShare
+    name: mnemoshare-saas
+    sources:
+    - https://github.com/mnemoshare/helm-charts
+    type: application
+    urls:
+    - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-saas-0.1.0/mnemoshare-saas-0.1.0.tgz
+    version: 0.1.0
   mnemoshare-stack:
   - apiVersion: v2
     appVersion: 0.8.0
@@ -1083,4 +1109,4 @@ entries:
     urls:
     - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-stack-1.0.0/mnemoshare-stack-1.0.0.tgz
     version: 1.0.0
-generated: "2026-01-27T21:56:42.639783962Z"
+generated: "2026-02-01T22:32:31.465653159Z"
