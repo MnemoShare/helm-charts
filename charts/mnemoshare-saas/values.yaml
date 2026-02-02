@@ -300,6 +300,8 @@ ingress:
 # -----------------------------------------------------------------------------
 workflowWorker:
   # Enable workflow worker (auto-enabled for Business+ tiers)
+  # When enabled, deploys a separate workflow-worker deployment
+  # that processes tasks from Redis queues (external/distributed mode)
   enabled: false
   
   # Number of worker replicas (overridden by tier)
@@ -310,8 +312,18 @@ workflowWorker:
     pullPolicy: IfNotPresent
     tag: ""
   
-  # Worker concurrency
+  # Worker concurrency (tasks per worker)
   concurrency: 10
+  
+  # Log level (debug, info, warn, error)
+  logLevel: "info"
+  
+  # Temp disk size for file processing
+  tempDiskSize: "5Gi"
+  
+  # Graceful shutdown timeout (seconds)
+  # Workers get this long to finish processing before being killed
+  terminationGracePeriodSeconds: 60
   
   # Resource limits (overridden by tier if not explicitly set)
   resources: {}
@@ -321,6 +333,9 @@ workflowWorker:
   
   # Tolerations
   tolerations: []
+  
+  # Affinity rules (for pod placement)
+  affinity: {}
 
 # -----------------------------------------------------------------------------
 # KEDA Autoscaling

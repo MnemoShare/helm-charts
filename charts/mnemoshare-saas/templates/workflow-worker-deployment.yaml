@@ -27,6 +27,7 @@ spec:
       serviceAccountName: {{ include "mnemoshare-saas.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.workflowWorker.terminationGracePeriodSeconds | default 60 }}
       containers:
       - name: workflow-worker
         securityContext:
@@ -75,6 +76,13 @@ spec:
               name: {{ .Values.existingEncryptionSecret | default (include "mnemoshare-saas.secretsName" .) }}
               key: encryption-key
         
+        # JWT Secret (for worker token generation)
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.existingJWTSecret | default (include "mnemoshare-saas.secretsName" .) }}
+              key: jwt-secret
+        
         # Redis (Required for workflow worker)
         - name: REDIS_URL
           valueFrom:
@@ -84,15 +92,46 @@ spec:
         
         # Worker settings
         - name: WORKER_CONCURRENCY
-          value: {{ .Values.workflowWorker.concurrency | quote }}
+          value: {{ .Values.workflowWorker.concurrency | default 10 | quote }}
         - name: LOG_LEVEL
-          value: "info"
+          value: {{ .Values.workflowWorker.logLevel | default "info" | quote }}
         
-        # Customer metadata
+        # API connection (for file uploads)
+        - name: API_BASE_URL
+          value: "http://{{ include "mnemoshare-saas.fullname" . }}:{{ .Values.service.port | default 3000 }}/api/v1"
+        - name: APP_URL
+          value: "https://{{ .Values.customer.subdomain }}.{{ .Values.ingress.domain | default "mnemoshare.com" }}"
+        
+        # Customer metadata (for SaaS multi-tenant queue isolation)
         - name: CUSTOMER_ID
           value: {{ .Values.customer.id | quote }}
         - name: CUSTOMER_TIER
           value: {{ .Values.tier | quote }}
+        
+        # Health check probes
+        # Note: workflow-worker doesn't have HTTP server, using exec probes
+        # The process will exit on Redis/DB connection failure, so container restart
+        # is the primary health mechanism
+        startupProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep 'workflow-worker' || exit 1"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 30
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep -v grep | grep 'workflow-worker' || exit 1"
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
         
         resources:
           {{- include "mnemoshare-saas.workflowWorkerResources" . | nindent 12 }}
@@ -102,13 +141,17 @@ spec:
       volumes:
       - name: tmp
         emptyDir:
-          sizeLimit: 5Gi
+          sizeLimit: {{ .Values.workflowWorker.tempDiskSize | default "5Gi" }}
       {{- with .Values.workflowWorker.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.workflowWorker.tolerations }}
       tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.workflowWorker.affinity }}
+      affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
 {{- end }}
