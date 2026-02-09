@@ -6,8 +6,8 @@ description: |
   Includes PostgreSQL, Redis, MinIO (S3), ClamAV, and Workflow Workers.
 
 type: application
-version: 1.9.0
-appVersion: "0.8.6"
+version: 1.10.0
+appVersion: "0.8.7"
 
 keywords:
   - mnemoshare
@@ -39,5 +39,5 @@ dependencies:
 
   # MnemoShare - Main application (includes Redis and Workflow Workers)
   - name: mnemoshare
-    version: "1.10.x"
+    version: "1.11.x"
     repository: "https://mnemoshare.github.io/helm-charts"
