@@ -2,8 +2,8 @@ apiVersion: v2
 name: mnemoshare
 description: Zero-trust MFT system enforcing encryption-at-rest, knowledge-based authentication
 type: application
-version: 1.9.0
-appVersion: "0.8.0"
+version: 1.9.1
+appVersion: "0.8.5"
 keywords:
   - secure-file-transfer
   - hipaa
