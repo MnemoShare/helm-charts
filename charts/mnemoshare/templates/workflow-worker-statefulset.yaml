@@ -179,6 +179,10 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml .Values.dnsConfig | nindent 8 }}
+      {{- end }}
   # Per-pod PVC for workflow data (temp files, downloads, etc.)
   volumeClaimTemplates:
   - metadata:

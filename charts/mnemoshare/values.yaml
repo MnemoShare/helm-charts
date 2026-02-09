@@ -84,6 +84,14 @@ tolerations: []
 
 affinity: {}
 
+# DNS configuration for pods
+# Useful for SaaS deployments where MongoDB is accessed via Tailscale egress services
+# Example for Tailscale egress:
+#   dnsConfig:
+#     searches:
+#       - tailscale.svc.cluster.local
+dnsConfig: {}
+
 # Database configuration (v0.6.0+)
 # Supports: mongodb (default), postgres, sqlite
 database:
