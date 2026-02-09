@@ -3,7 +3,7 @@ name: mnemoshare
 description: Zero-trust MFT system enforcing encryption-at-rest, knowledge-based authentication
 type: application
 version: 1.11.0
-appVersion: "0.8.7"
+appVersion: "0.8.8"
 keywords:
   - secure-file-transfer
   - hipaa
