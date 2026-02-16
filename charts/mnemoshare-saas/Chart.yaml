@@ -2,8 +2,8 @@ apiVersion: v2
 name: mnemoshare-saas
 description: MnemoShare SaaS Customer Deployment - Parameterized Helm chart for deploying isolated customer instances
 type: application
-version: 0.1.1
-appVersion: "0.8.15"
+version: 0.1.2
+appVersion: "0.8.17"
 keywords:
   - mnemoshare
   - saas
