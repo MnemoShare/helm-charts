@@ -2,6 +2,39 @@ apiVersion: v1
 entries:
   mnemoshare:
   - apiVersion: v2
+    appVersion: 0.8.17
+    created: "2026-02-16T02:04:28.955483266Z"
+    dependencies:
+    - condition: minio.enabled
+      name: minio
+      repository: https://charts.min.io/
+      version: 5.2.0
+    description: Zero-trust MFT system enforcing encryption-at-rest, knowledge-based
+      authentication
+    digest: dfb51b1749263e5b121b08228972438ad15e9b391a2b259b765dd3dce314623b
+    home: https://mnemoshare.com
+    icon: https://mnemoshare.com/logo.png
+    keywords:
+    - secure-file-transfer
+    - hipaa
+    - healthcare
+    - encryption
+    - file-sharing
+    - hsm
+    - pkcs11
+    - mtls
+    maintainers:
+    - email: support@mnemoshare.com
+      name: MnemoShare
+      url: https://mnemoshare.com
+    name: mnemoshare
+    sources:
+    - https://github.com/mnemoshare/mnemoshare
+    type: application
+    urls:
+    - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-1.11.7/mnemoshare-1.11.7.tgz
+    version: 1.11.7
+  - apiVersion: v2
     appVersion: 0.8.13
     created: "2026-02-12T05:26:31.813860491Z"
     dependencies:
@@ -726,6 +759,31 @@ entries:
   - annotations:
       category: security
     apiVersion: v2
+    appVersion: 0.8.17
+    created: "2026-02-16T02:04:29.281517453Z"
+    description: MnemoShare SaaS Customer Deployment - Parameterized Helm chart for
+      deploying isolated customer instances
+    digest: c54d9e7e3722d3b5d93a3858ea285af2f5f932d73ff503fbcf75879d036818b4
+    home: https://mnemoshare.com
+    keywords:
+    - mnemoshare
+    - saas
+    - secure-file-transfer
+    - mft
+    - multi-tenant
+    maintainers:
+    - email: support@mnemoshare.com
+      name: MnemoShare
+    name: mnemoshare-saas
+    sources:
+    - https://github.com/mnemoshare/helm-charts
+    type: application
+    urls:
+    - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-saas-0.1.2/mnemoshare-saas-0.1.2.tgz
+    version: 0.1.2
+  - annotations:
+      category: security
+    apiVersion: v2
     appVersion: 0.8.0
     created: "2026-02-01T22:32:31.465568797Z"
     description: MnemoShare SaaS Customer Deployment - Parameterized Helm chart for
@@ -749,6 +807,42 @@ entries:
     - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-saas-0.1.0/mnemoshare-saas-0.1.0.tgz
     version: 0.1.0
   mnemoshare-stack:
+  - apiVersion: v2
+    appVersion: 0.8.17
+    created: "2026-02-16T02:04:29.478389095Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: https://charts.bitnami.com/bitnami
+      version: 15.x.x
+    - condition: minio.enabled
+      name: minio
+      repository: https://charts.min.io/
+      version: 5.2.0
+    - name: mnemoshare
+      repository: https://mnemoshare.github.io/helm-charts
+      version: 1.11.x
+    description: 'Complete MnemoShare deployment stack for quick evaluation and production
+      use. Zero-trust MFT system enforcing encryption-at-rest, knowledge-based authentication.
+      Includes PostgreSQL, Redis, MinIO (S3), ClamAV, and Workflow Workers. '
+    digest: e535e513c0554b46897b3f0214881433dd14e39e6f0156a579007bef178a4b3a
+    home: https://mnemoshare.com
+    keywords:
+    - mnemoshare
+    - secure-file-transfer
+    - hipaa
+    - compliance
+    - encryption
+    maintainers:
+    - email: support@mnemoshare.com
+      name: MnemoShare
+    name: mnemoshare-stack
+    sources:
+    - https://github.com/MnemoShare/helm-charts
+    type: application
+    urls:
+    - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-stack-1.10.5/mnemoshare-stack-1.10.5.tgz
+    version: 1.10.5
   - apiVersion: v2
     appVersion: 0.8.0
     created: "2026-01-27T21:56:42.639615196Z"
@@ -1208,4 +1302,4 @@ entries:
     urls:
     - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-stack-1.0.0/mnemoshare-stack-1.0.0.tgz
     version: 1.0.0
-generated: "2026-02-12T05:26:31.813992438Z"
+generated: "2026-02-16T02:04:29.478651044Z"
