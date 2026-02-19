@@ -6,8 +6,8 @@ description: |
   Includes PostgreSQL, Redis, MinIO (S3), ClamAV, and Workflow Workers.
 
 type: application
-version: 1.10.5
-appVersion: "0.8.17"
+version: 1.10.6
+appVersion: "0.8.19"
 
 keywords:
   - mnemoshare
