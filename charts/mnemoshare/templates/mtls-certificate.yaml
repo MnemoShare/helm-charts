@@ -1,0 +1,23 @@
+{{- if and .Values.mtls.enabled .Values.mtls.certificate.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-mtls-cert
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.mtls.tls.existingSecret | default (printf "%s-mtls-tls" (include "mnemoshare.fullname" .)) }}
+  issuerRef:
+    name: {{ .Values.mtls.certificate.issuer | default "letsencrypt-production" }}
+    kind: ClusterIssuer
+  dnsNames:
+    {{- if .Values.mtls.certificate.dnsNames }}
+    {{- range .Values.mtls.certificate.dnsNames }}
+    - {{ . | quote }}
+    {{- end }}
+    {{- else }}
+    {{- range .Values.mtls.ingress.hosts }}
+    - {{ .host }}
+    {{- end }}
+    {{- end }}
+{{- end }}

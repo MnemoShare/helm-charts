@@ -278,6 +278,17 @@ existingSecrets:
   jwt: ""      # Name of existing secret with 'jwt-secret' key
   encryption: ""  # Name of existing secret with 'encryption-key' key
   license: ""  # Name of existing secret with 'license-key' key
+  redis: ""      # Name of existing secret with Redis password (key configurable via existingSecretKeys)
+  siem: ""       # Name of existing secret with SIEM S3 credentials (keys configurable via existingSecretKeys)
+  turnstile: ""  # Name of existing secret with 'turnstile-secret-key' key
+  sendgrid: ""   # Name of existing secret with 'sendgrid-api-key' key
+
+# Configurable key names within existing secrets
+# Override these when your existing secrets use different key names
+existingSecretKeys:
+  redisPassword: "redis-password"     # Key in redis/existingSecrets.redis secret
+  siemAccessKey: "siem-access-key"    # Key in existingSecrets.siem secret
+  siemSecretKey: "siem-secret-key"    # Key in existingSecrets.siem secret
 
 # ClamAV ICAP antivirus scanning (optional)
 # Provides free, open-source virus scanning for uploaded files
@@ -322,6 +333,13 @@ clamav:
     requests:
       cpu: 200m
       memory: 1Gi
+
+  # External ClamAV ICAP (when clamav.enabled=false)
+  # Use this to connect to a ClamAV instance running outside this chart
+  external:
+    enabled: false
+    url: ""        # e.g., "icap://clamav.mnemoshare-clamav.svc.cluster.local:1344"
+    service: "avscan"
 
   # Node selector for ClamAV pods
   nodeSelector: {}
@@ -501,6 +519,102 @@ stepCA:
   tolerations: []
 
 # ============================================================================
+# mTLS Configuration (Hardware Key Authentication)
+# ============================================================================
+# Configures the mTLS listener on API pods for hardware-bound client certificates.
+# Separate from stepCA deployment — stepCA provides the CA, this configures the listener.
+mtls:
+  # Enable mTLS listener on API pods (port 8443)
+  enabled: false
+
+  # Port for mTLS listener
+  port: 8443
+
+  # Require client certificates (vs optional)
+  requireClientCert: false
+
+  # Verify certificate revocation via OCSP
+  verifyRevocation: true
+
+  # TLS server certificate for the mTLS listener
+  # The pod needs a TLS cert to serve on port 8443
+  tls:
+    # Existing secret with tls.crt and tls.key (e.g., from cert-manager)
+    existingSecret: ""  # e.g., "mnemoshare-mtls-tls"
+
+  # CA certificate for verifying client certificates
+  ca:
+    # Path to CA cert file (if mounted via volume)
+    certPath: ""
+    # CA cert PEM content (inline - takes precedence over certPath)
+    certPEM: ""
+    # Existing secret containing CA cert (key: 'ca.crt')
+    existingSecret: ""
+
+  # CA provider settings (how the app issues/manages client certs)
+  caProvider:
+    # Provider type: "smallstep", "vault", "ejbca"
+    type: "smallstep"
+    # Smallstep CA URL (auto-set to internal service when stepCA.enabled)
+    url: ""
+    # Root cert path (auto-set when stepCA.enabled)
+    rootCert: ""
+    # Root cert PEM content
+    rootCertPEM: ""
+    # Provisioner name
+    provisioner: "mnemoshare"
+    # Provisioner key (encrypted JWK)
+    provisionerKey: ""
+    # Provisioner password
+    provisionerPass: ""
+    # Existing secret for CA provider credentials
+    # Secret should have keys: 'provisioner-key', 'provisioner-pass', optionally 'root-ca-cert'
+    existingSecret: ""
+
+  # cert-manager Certificate resource for mTLS TLS cert
+  certificate:
+    enabled: false
+    # ClusterIssuer name (DNS-01 recommended since ssl-passthrough prevents HTTP-01)
+    issuer: "letsencrypt-production"
+
+  # mTLS Ingress - separate ingress with TLS passthrough for mTLS traffic
+  ingress:
+    enabled: false
+    className: "nginx"
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    hosts:
+      - host: mtls.mnemoshare.example.com
+    tls:
+      - secretName: mnemoshare-mtls-tls
+        hosts:
+          - mtls.mnemoshare.example.com
+
+# ============================================================================
+# SIEM Export Configuration (Immutable Audit Logging)
+# ============================================================================
+# Exports audit logs to S3-compatible storage for SIEM integration.
+# Supports Object Lock for immutable audit trails (Regulated tier).
+siem:
+  enabled: false
+  endpoint: ""       # S3 endpoint for audit log export
+  region: "us-east-1"
+  bucket: ""         # S3 bucket name
+  useSSL: true
+  pathPrefix: "audit-logs/"
+  exportInterval: "5m"
+  batchSize: 1000
+  # Object Lock for immutable audit logs
+  objectLock:
+    enabled: false
+    mode: "governance"    # "governance" or "compliance"
+    retentionDays: 2555   # ~7 years
+  # Credentials - use existingSecrets.siem for production
+  accessKey: ""
+  secretKey: ""
+
+# ============================================================================
 # Alternative CA Providers (External Integration)
 # ============================================================================
 # MnemoShare can integrate with external Certificate Authorities for
@@ -667,6 +781,20 @@ redis:
     limits:
       cpu: 500m
       memory: 512Mi
+
+  # External Redis (when redis.enabled=false)
+  # Use this to connect to a Redis instance running outside this chart
+  # (e.g., shared Redis Sentinel in another namespace)
+  external:
+    enabled: false
+    # Full Redis URL (takes precedence over host/port if set)
+    url: ""  # e.g., "redis://:password@redis-host:6379/0"
+    # Alternatively, construct URL from parts:
+    host: ""
+    port: 6379
+    db: 0
+    # Existing secret with Redis password (key configurable via existingSecretKeys.redisPassword)
+    existingSecret: ""
 
   # Node selector for Redis pods
   nodeSelector: {}

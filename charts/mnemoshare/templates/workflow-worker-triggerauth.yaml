@@ -1,4 +1,24 @@
-{{- if and .Values.workflowWorker.enabled .Values.workflowWorker.autoscaling.enabled (or .Values.redis.password .Values.redis.existingSecret) }}
+{{- if and .Values.workflowWorker.enabled .Values.workflowWorker.autoscaling.enabled }}
+{{- $hasAuth := false }}
+{{- $secretName := "" }}
+{{- $secretKey := "redis-password" }}
+{{- if .Values.redis.external.enabled }}
+{{- if or .Values.redis.external.existingSecret .Values.existingSecrets.redis }}
+{{- $hasAuth = true }}
+{{- $secretName = (.Values.redis.external.existingSecret | default .Values.existingSecrets.redis) }}
+{{- $secretKey = (.Values.existingSecretKeys.redisPassword | default "redis-password") }}
+{{- end }}
+{{- else }}
+{{- if or .Values.redis.password .Values.redis.existingSecret }}
+{{- $hasAuth = true }}
+{{- if .Values.redis.existingSecret }}
+{{- $secretName = .Values.redis.existingSecret }}
+{{- else }}
+{{- $secretName = (printf "%s-redis" (include "mnemoshare.fullname" .)) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if $hasAuth }}
 apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication
 metadata:
@@ -9,6 +29,7 @@ metadata:
 spec:
   secretTargetRef:
   - parameter: password
-    name: {{ if .Values.redis.existingSecret }}{{ .Values.redis.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-redis{{ end }}
-    key: redis-password
+    name: {{ $secretName }}
+    key: {{ $secretKey }}
+{{- end }}
 {{- end }}

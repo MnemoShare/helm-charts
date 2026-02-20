@@ -39,9 +39,9 @@ spec:
         - name: http
           containerPort: {{ .Values.service.targetPort }}
           protocol: TCP
-        {{- if .Values.stepCA.enabled }}
+        {{- if .Values.mtls.enabled }}
         - name: mtls
-          containerPort: 8443
+          containerPort: {{ .Values.mtls.port | default 8443 }}
           protocol: TCP
         {{- end }}
         env:
@@ -119,9 +119,30 @@ spec:
               key: jwt-secret
         - name: JWT_EXPIRATION
           value: {{ .Values.jwt.expiration | quote }}
-        {{- if .Values.redis.enabled }}
+        {{- if or .Values.redis.enabled .Values.redis.external.enabled }}
         # Redis - for workflow task enqueueing (manual triggers)
         # Note: REDIS_PASSWORD must be defined BEFORE REDIS_URL for $(REDIS_PASSWORD) substitution to work
+        {{- if .Values.redis.external.enabled }}
+        # External Redis
+        {{- if .Values.redis.external.url }}
+        - name: REDIS_URL
+          value: {{ .Values.redis.external.url | quote }}
+        {{- else }}
+        {{- if or .Values.redis.external.existingSecret .Values.existingSecrets.redis }}
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.redis.external.existingSecret | default .Values.existingSecrets.redis }}
+              key: {{ .Values.existingSecretKeys.redisPassword | default "redis-password" }}
+        - name: REDIS_URL
+          value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.external.host }}:{{ .Values.redis.external.port | default 6379 }}/{{ .Values.redis.external.db | default 0 }}"
+        {{- else }}
+        - name: REDIS_URL
+          value: "redis://{{ .Values.redis.external.host }}:{{ .Values.redis.external.port | default 6379 }}/{{ .Values.redis.external.db | default 0 }}"
+        {{- end }}
+        {{- end }}
+        {{- else }}
+        # Embedded Redis
         {{- if or .Values.redis.password .Values.redis.existingSecret }}
         - name: REDIS_PASSWORD
           valueFrom:
@@ -133,6 +154,7 @@ spec:
         {{- else }}
         - name: REDIS_URL
           value: "redis://{{ include "mnemoshare.fullname" . }}-redis:6379/0"
+        {{- end }}
         {{- end }}
         {{- end }}
         # Encryption
@@ -205,11 +227,11 @@ spec:
         - name: RATE_LIMIT_WINDOW
           value: {{ .Values.rateLimit.window | quote }}
         # SendGrid (optional)
-        {{- if .Values.sendgrid.apiKey }}
+        {{- if or .Values.sendgrid.apiKey .Values.existingSecrets.sendgrid }}
         - name: SENDGRID_API_KEY
           valueFrom:
             secretKeyRef:
-              name: {{ include "mnemoshare.fullname" . }}-secrets
+              name: {{ if .Values.existingSecrets.sendgrid }}{{ .Values.existingSecrets.sendgrid }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: sendgrid-api-key
         - name: SENDGRID_FROM_EMAIL
           value: {{ .Values.sendgrid.fromEmail | quote }}
@@ -221,11 +243,11 @@ spec:
         - name: TURNSTILE_SITE_KEY
           value: {{ .Values.turnstile.siteKey | quote }}
         {{- end }}
-        {{- if .Values.turnstile.secretKey }}
+        {{- if or .Values.turnstile.secretKey .Values.existingSecrets.turnstile }}
         - name: TURNSTILE_SECRET_KEY
           valueFrom:
             secretKeyRef:
-              name: {{ include "mnemoshare.fullname" . }}-secrets
+              name: {{ if .Values.existingSecrets.turnstile }}{{ .Values.existingSecrets.turnstile }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: turnstile-secret-key
         {{- end }}
         # Session inactivity timeout (seconds before warning modal appears)
@@ -233,12 +255,17 @@ spec:
         - name: INACTIVITY_TIMEOUT_SECONDS
           value: {{ .Values.session.inactivityTimeoutSeconds | default 300 | quote }}
         {{- end }}
-        # ClamAV ICAP endpoint (when built-in ClamAV is enabled)
+        # ClamAV ICAP endpoint
         {{- if .Values.clamav.enabled }}
         - name: DEFAULT_ICAP_URL
           value: "icap://{{ include "mnemoshare.fullname" . }}-clamav:1344"
         - name: DEFAULT_ICAP_SERVICE
           value: "avscan"
+        {{- else if .Values.clamav.external.enabled }}
+        - name: DEFAULT_ICAP_URL
+          value: {{ .Values.clamav.external.url | quote }}
+        - name: DEFAULT_ICAP_SERVICE
+          value: {{ .Values.clamav.external.service | default "avscan" | quote }}
         {{- end }}
         # Disk buffer configuration (memory management for large uploads)
         {{- if .Values.diskBuffer.enabled }}
@@ -248,6 +275,104 @@ spec:
           value: "/mnt/disk-buffer"
         - name: DISK_BUFFER_ENCRYPT
           value: {{ .Values.diskBuffer.encrypt | quote }}
+        {{- end }}
+        # mTLS Configuration
+        {{- if .Values.mtls.enabled }}
+        - name: MTLS_PORT
+          value: {{ .Values.mtls.port | default 8443 | quote }}
+        - name: MTLS_REQUIRE_CLIENT_CERT
+          value: {{ .Values.mtls.requireClientCert | quote }}
+        - name: MTLS_VERIFY_REVOCATION
+          value: {{ .Values.mtls.verifyRevocation | quote }}
+        {{- if .Values.mtls.tls.existingSecret }}
+        - name: TLS_CERT_PATH
+          value: "/etc/mtls-tls/tls.crt"
+        - name: TLS_KEY_PATH
+          value: "/etc/mtls-tls/tls.key"
+        {{- end }}
+        {{- if .Values.mtls.ca.certPath }}
+        - name: MTLS_CA_CERT_PATH
+          value: {{ .Values.mtls.ca.certPath | quote }}
+        {{- else if .Values.mtls.ca.existingSecret }}
+        - name: MTLS_CA_CERT_PATH
+          value: "/etc/mtls-ca/ca.crt"
+        {{- end }}
+        {{- if .Values.mtls.ca.certPEM }}
+        - name: CA_SMALLSTEP_ROOT_CERT_PEM
+          value: {{ .Values.mtls.ca.certPEM | quote }}
+        {{- end }}
+        # CA Provider
+        - name: CA_PROVIDER
+          value: {{ .Values.mtls.caProvider.type | default "smallstep" | quote }}
+        {{- if .Values.mtls.caProvider.url }}
+        - name: CA_SMALLSTEP_URL
+          value: {{ .Values.mtls.caProvider.url | quote }}
+        {{- else if .Values.stepCA.enabled }}
+        - name: CA_SMALLSTEP_URL
+          value: "https://{{ include "mnemoshare.fullname" . }}-step-ca:9000"
+        {{- end }}
+        - name: CA_SMALLSTEP_PROVISIONER
+          value: {{ .Values.mtls.caProvider.provisioner | default "mnemoshare" | quote }}
+        {{- if .Values.mtls.caProvider.existingSecret }}
+        - name: CA_SMALLSTEP_PROVISIONER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.mtls.caProvider.existingSecret }}
+              key: provisioner-key
+        - name: CA_SMALLSTEP_PROVISIONER_PASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.mtls.caProvider.existingSecret }}
+              key: provisioner-pass
+        {{- else }}
+        {{- if .Values.mtls.caProvider.provisionerKey }}
+        - name: CA_SMALLSTEP_PROVISIONER_KEY
+          value: {{ .Values.mtls.caProvider.provisionerKey | quote }}
+        {{- end }}
+        {{- if .Values.mtls.caProvider.provisionerPass }}
+        - name: CA_SMALLSTEP_PROVISIONER_PASS
+          value: {{ .Values.mtls.caProvider.provisionerPass | quote }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.mtls.caProvider.rootCertPEM }}
+        - name: CA_SMALLSTEP_ROOT_CERT_PEM
+          value: {{ .Values.mtls.caProvider.rootCertPEM | quote }}
+        {{- end }}
+        {{- end }}
+        # SIEM Export Configuration
+        {{- if .Values.siem.enabled }}
+        - name: SIEM_EXPORT_ENABLED
+          value: "true"
+        - name: SIEM_EXPORT_ENDPOINT
+          value: {{ .Values.siem.endpoint | quote }}
+        - name: SIEM_EXPORT_REGION
+          value: {{ .Values.siem.region | default "us-east-1" | quote }}
+        - name: SIEM_EXPORT_BUCKET
+          value: {{ .Values.siem.bucket | quote }}
+        - name: SIEM_EXPORT_USE_SSL
+          value: {{ .Values.siem.useSSL | quote }}
+        - name: SIEM_EXPORT_PATH_PREFIX
+          value: {{ .Values.siem.pathPrefix | default "audit-logs/" | quote }}
+        - name: SIEM_EXPORT_INTERVAL
+          value: {{ .Values.siem.exportInterval | default "5m" | quote }}
+        - name: SIEM_EXPORT_BATCH_SIZE
+          value: {{ .Values.siem.batchSize | default 1000 | quote }}
+        - name: SIEM_EXPORT_OBJECT_LOCK
+          value: {{ .Values.siem.objectLock.enabled | quote }}
+        - name: SIEM_EXPORT_OBJECT_LOCK_MODE
+          value: {{ .Values.siem.objectLock.mode | default "governance" | quote }}
+        - name: SIEM_EXPORT_RETENTION_DAYS
+          value: {{ .Values.siem.objectLock.retentionDays | default 2555 | quote }}
+        - name: SIEM_EXPORT_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.siem }}{{ .Values.existingSecrets.siem }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: {{ .Values.existingSecretKeys.siemAccessKey | default "siem-access-key" }}
+        - name: SIEM_EXPORT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.siem }}{{ .Values.existingSecrets.siem }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: {{ .Values.existingSecretKeys.siemSecretKey | default "siem-secret-key" }}
         {{- end }}
         # Extra environment variables
         {{- with .Values.extraEnv }}
@@ -266,6 +391,16 @@ spec:
         {{- if .Values.diskBuffer.enabled }}
         - name: disk-buffer
           mountPath: /mnt/disk-buffer
+        {{- end }}
+        {{- if and .Values.mtls.enabled .Values.mtls.tls.existingSecret }}
+        - name: mtls-tls
+          mountPath: /etc/mtls-tls
+          readOnly: true
+        {{- end }}
+        {{- if and .Values.mtls.enabled .Values.mtls.ca.existingSecret }}
+        - name: mtls-ca
+          mountPath: /etc/mtls-ca
+          readOnly: true
         {{- end }}
       volumes:
       # Temporary directory for runtime files
@@ -297,6 +432,16 @@ spec:
         persistentVolumeClaim:
           claimName: {{ .Values.diskBuffer.volume.existingClaim.claimName }}
         {{- end }}
+      {{- end }}
+      {{- if and .Values.mtls.enabled .Values.mtls.tls.existingSecret }}
+      - name: mtls-tls
+        secret:
+          secretName: {{ .Values.mtls.tls.existingSecret }}
+      {{- end }}
+      {{- if and .Values.mtls.enabled .Values.mtls.ca.existingSecret }}
+      - name: mtls-ca
+        secret:
+          secretName: {{ .Values.mtls.ca.existingSecret }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

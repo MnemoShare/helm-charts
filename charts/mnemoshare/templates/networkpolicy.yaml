@@ -40,9 +40,9 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
-        {{- if .Values.stepCA.enabled }}
+        {{- if .Values.mtls.enabled }}
         - protocol: TCP
-          port: 8443
+          port: {{ .Values.mtls.port | default 8443 }}
         {{- end }}
     # Allow internal pod-to-pod communication (for license sync, health checks)
     - from:
@@ -121,7 +121,7 @@ spec:
         - protocol: TCP
           port: 9000
     {{- end }}
-    # ClamAV ICAP
+    # ClamAV ICAP (embedded)
     {{- if .Values.clamav.enabled }}
     - to:
         - podSelector:
@@ -131,7 +131,15 @@ spec:
         - protocol: TCP
           port: 1344
     {{- end }}
-    # Redis (for workflow workers)
+    # ClamAV ICAP (external)
+    {{- if .Values.clamav.external.enabled }}
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 1344
+    {{- end }}
+    # Redis (embedded)
     {{- if .Values.redis.enabled }}
     - to:
         - podSelector:
@@ -140,6 +148,14 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+    {{- end }}
+    # Redis (external)
+    {{- if .Values.redis.external.enabled }}
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.redis.external.port | default 6379 }}
     {{- end }}
     # Step CA (for mTLS)
     {{- if .Values.stepCA.enabled }}

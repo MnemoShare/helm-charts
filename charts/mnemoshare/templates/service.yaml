@@ -11,5 +11,11 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+    {{- if .Values.mtls.enabled }}
+    - port: {{ .Values.mtls.port | default 8443 }}
+      targetPort: mtls
+      protocol: TCP
+      name: mtls
+    {{- end }}
   selector:
     {{- include "mnemoshare.selectorLabels" . | nindent 4 }}

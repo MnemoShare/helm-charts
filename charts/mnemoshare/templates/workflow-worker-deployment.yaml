@@ -1,8 +1,8 @@
 {{- if .Values.workflowWorker.enabled }}
 {{- if not .Values.workflowWorker.persistence.enabled }}
 {{- /* Use Deployment when persistence is disabled; StatefulSet is used when persistence.enabled=true */}}
-{{- if not .Values.redis.enabled }}
-{{- fail "workflowWorker.enabled requires redis.enabled=true" }}
+{{- if not (or .Values.redis.enabled .Values.redis.external.enabled) }}
+{{- fail "workflowWorker.enabled requires redis.enabled=true or redis.external.enabled=true" }}
 {{- end }}
 {{- if eq .Values.database.driver "sqlite" }}
 {{- fail "workflowWorker.enabled is not compatible with database.driver=sqlite. Use mongodb or postgres." }}
@@ -66,6 +66,27 @@ spec:
         {{- end }}
         # Redis Connection
         # Note: REDIS_PASSWORD must be defined BEFORE REDIS_URL for $(REDIS_PASSWORD) substitution to work
+        {{- if .Values.redis.external.enabled }}
+        # External Redis
+        {{- if .Values.redis.external.url }}
+        - name: REDIS_URL
+          value: {{ .Values.redis.external.url | quote }}
+        {{- else }}
+        {{- if or .Values.redis.external.existingSecret .Values.existingSecrets.redis }}
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.redis.external.existingSecret | default .Values.existingSecrets.redis }}
+              key: {{ .Values.existingSecretKeys.redisPassword | default "redis-password" }}
+        - name: REDIS_URL
+          value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.external.host }}:{{ .Values.redis.external.port | default 6379 }}/{{ .Values.redis.external.db | default 0 }}"
+        {{- else }}
+        - name: REDIS_URL
+          value: "redis://{{ .Values.redis.external.host }}:{{ .Values.redis.external.port | default 6379 }}/{{ .Values.redis.external.db | default 0 }}"
+        {{- end }}
+        {{- end }}
+        {{- else }}
+        # Embedded Redis
         {{- if or .Values.redis.password .Values.redis.existingSecret }}
         - name: REDIS_PASSWORD
           valueFrom:
@@ -77,6 +98,7 @@ spec:
         {{- else }}
         - name: REDIS_URL
           value: "redis://{{ include "mnemoshare.fullname" . }}-redis:6379/0"
+        {{- end }}
         {{- end }}
         # Worker Configuration
         - name: WORKER_CONCURRENCY

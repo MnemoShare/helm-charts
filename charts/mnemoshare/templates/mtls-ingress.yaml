@@ -1,0 +1,37 @@
+{{- if and .Values.mtls.enabled .Values.mtls.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-mtls
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+  {{- with .Values.mtls.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.mtls.ingress.className | default "nginx" }}
+  {{- if .Values.mtls.ingress.tls }}
+  tls:
+    {{- range .Values.mtls.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.mtls.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "mnemoshare.fullname" $ }}
+                port:
+                  number: {{ $.Values.mtls.port | default 8443 }}
+    {{- end }}
+{{- end }}
