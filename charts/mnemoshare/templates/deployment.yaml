@@ -293,8 +293,12 @@ spec:
         {{- if .Values.mtls.ca.certPath }}
         - name: MTLS_CA_CERT_PATH
           value: {{ .Values.mtls.ca.certPath | quote }}
+        - name: CA_SMALLSTEP_ROOT_CERT
+          value: {{ .Values.mtls.ca.certPath | quote }}
         {{- else if .Values.mtls.ca.existingSecret }}
         - name: MTLS_CA_CERT_PATH
+          value: "/etc/mtls-ca/ca.crt"
+        - name: CA_SMALLSTEP_ROOT_CERT
           value: "/etc/mtls-ca/ca.crt"
         {{- end }}
         {{- if .Values.mtls.ca.certPEM }}
