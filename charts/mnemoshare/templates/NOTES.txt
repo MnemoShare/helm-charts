@@ -1,0 +1,43 @@
+
+MnemoShare {{ .Chart.AppVersion }} deployed successfully.
+
+Release: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+
+{{- if .Values.ingress.enabled }}
+
+ACCESS
+------
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+
+ACCESS (port-forward)
+---------------------
+  kubectl port-forward svc/{{ include "mnemoshare.fullname" . }} 8080:80 -n {{ .Release.Namespace }}
+  Then open: http://localhost:8080
+{{- end }}
+
+{{- if .Values.mtls.enabled }}
+
+mTLS (HARDWARE KEY AUTHENTICATION)
+-----------------------------------
+  mTLS listener enabled on pod port {{ .Values.mtls.port | default 8443 }}.
+{{- if .Values.mtls.ingress.enabled }}
+{{- range .Values.mtls.ingress.hosts }}
+  mTLS endpoint: https://{{ .host }}
+{{- end }}
+{{- end }}
+
+  IMPORTANT: mTLS uses SSL passthrough through port 443 (SNI-based routing).
+  Your nginx-ingress controller must have --enable-ssl-passthrough enabled.
+
+  WARNING: Do NOT add port {{ .Values.mtls.port | default 8443 }} to the nginx-ingress
+  LoadBalancer service. This exposes the nginx admission webhook and leaks
+  internal cluster service names. SSL passthrough handles all mTLS traffic
+  through port 443 automatically.
+
+  Verify your nginx-ingress controller service only exposes ports 80 and 443:
+    kubectl get svc -n ingress-nginx ingress-nginx-controller
+{{- end }}
