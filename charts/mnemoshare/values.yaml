@@ -523,11 +523,19 @@ stepCA:
 # ============================================================================
 # Configures the mTLS listener on API pods for hardware-bound client certificates.
 # Separate from stepCA deployment — stepCA provides the CA, this configures the listener.
+#
+# IMPORTANT - nginx-ingress prerequisites:
+#   1. The nginx-ingress controller MUST have --enable-ssl-passthrough in its args
+#   2. Do NOT add port 8443 to the nginx-ingress LoadBalancer service.
+#      SSL passthrough routes mTLS traffic through port 443 using SNI-based
+#      routing (hostname matching). Adding port 8443 to the LoadBalancer
+#      exposes the nginx admission webhook, leaking internal cluster names.
+#   3. Traffic flow: client:443 → nginx (SNI match) → pod:8443 (TLS termination + mTLS)
 mtls:
   # Enable mTLS listener on API pods (port 8443)
   enabled: false
 
-  # Port for mTLS listener
+  # Port for mTLS listener (internal to cluster — NOT exposed on LoadBalancer)
   port: 8443
 
   # Require client certificates (vs optional)
@@ -578,6 +586,11 @@ mtls:
     issuer: "letsencrypt-production"
 
   # mTLS Ingress - separate ingress with TLS passthrough for mTLS traffic
+  # SSL passthrough means nginx does NOT terminate TLS — it passes the raw TCP
+  # connection to the pod based on SNI hostname matching, all through port 443.
+  # The pod terminates TLS and performs client certificate (mTLS) verification.
+  # The tls.secretName below is NOT used by nginx in passthrough mode — it exists
+  # only if cert-manager needs it to issue/renew the pod's TLS certificate.
   ingress:
     enabled: false
     className: "nginx"
