@@ -7,6 +7,6 @@ dependencies:
   version: 5.2.0
 - name: mnemoshare
   repository: https://mnemoshare.github.io/helm-charts
-  version: 1.11.5
-digest: sha256:476119e75b4ba8b4928c27705dfaa0622507f3eca47fc0379568a52db106c521
-generated: "2026-02-15T20:03:25.200386-06:00"
+  version: 1.12.0
+digest: sha256:327b9fcb566d6a3f62c9df966a276a54b275aa52ac84d680190eb4dc220abc34
+generated: "2026-02-28T17:10:45.401051-06:00"
