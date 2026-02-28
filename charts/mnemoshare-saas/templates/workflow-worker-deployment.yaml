@@ -35,6 +35,11 @@ spec:
         image: "{{ .Values.workflowWorker.image.repository }}:{{ .Values.workflowWorker.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.workflowWorker.image.pullPolicy }}
         command: ["mnemoshare", "workflow-worker"]
+        {{- if .Values.existingConfigMap }}
+        envFrom:
+        - configMapRef:
+            name: {{ .Values.existingConfigMap }}
+        {{- end }}
         env:
         # Database Configuration
         - name: DB_DRIVER

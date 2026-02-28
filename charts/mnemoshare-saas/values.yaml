@@ -224,10 +224,29 @@ existingStorageSecret: ""
 # Architecture Decision: Centralized CA for all SaaS customers.
 # This simplifies certificate management and is sufficient for expected load.
 stepCA:
+  # Enable Step-CA mTLS certificate authority
+  enabled: false
   # URL to centralized Step-CA service
   url: ""  # e.g., "https://step-ca.mnemoshare-platform.svc.cluster.local"
-  # Fingerprint for certificate verification
+  # Fingerprint for certificate verification (legacy, URL+provisioner via ConfigMap)
   fingerprint: ""
+
+# Use existing secret for Step-CA credentials
+# Secret must contain: provisioner-encrypted-key, provisioner-password, root-ca-cert
+existingStepCASecret: ""
+
+# Use existing ConfigMap for operator-managed configuration
+# ConfigMap provides: CA_SMALLSTEP_URL, CA_SMALLSTEP_PROVISIONER, MTLS_ENABLED,
+# SIEM_EXPORT_*, ICAP_URL, PRESIDIO_ENABLED, PRESIDIO_URL, SAAS_MODE, SAAS_CUSTOMER_ID, SAAS_TIER, etc.
+existingConfigMap: ""
+
+# MCP Server configuration
+mcp:
+  enabled: false
+  apiKey:
+    # Use existing secret for MCP API key
+    # Secret must contain 'mcp-api-key' key
+    existingSecret: ""
 
 # ClamAV ICAP (virus scanning)
 # Architecture Decision: Consistent URL across all regions.
@@ -237,6 +256,15 @@ icap:
   url: "icap://clamav.mnemoshare-platform.svc.cluster.local:1344"
   # ICAP service name
   service: "avscan"
+
+# Presidio Analyzer (NER-based DLP scanning)
+# Architecture Decision: Consistent URL across all regions.
+# Single Presidio endpoint for uniform NER-based PII detection.
+presidio:
+  # URL to centralized Presidio Analyzer service
+  url: "http://presidio-analyzer.mnemoshare-presidio.svc.cluster.local:3000"
+  # Minimum confidence threshold (0.0-1.0)
+  minConfidence: 0.5
 
 # -----------------------------------------------------------------------------
 # Encryption & Security

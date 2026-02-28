@@ -38,6 +38,11 @@ spec:
         - name: http
           containerPort: {{ .Values.service.targetPort }}
           protocol: TCP
+        {{- if .Values.existingConfigMap }}
+        envFrom:
+        - configMapRef:
+            name: {{ .Values.existingConfigMap }}
+        {{- end }}
         env:
         # Database Configuration
         - name: DB_DRIVER
@@ -111,15 +116,47 @@ spec:
         - name: DEFAULT_ICAP_SERVICE
           value: {{ .Values.icap.service | quote }}
         {{- end }}
-        
-        # Centralized Step-CA
-        {{- if .Values.stepCA.url }}
-        - name: STEP_CA_URL
-          value: {{ .Values.stepCA.url | quote }}
-        - name: STEP_CA_FINGERPRINT
-          value: {{ .Values.stepCA.fingerprint | quote }}
+
+        # Centralized Presidio (NER-based DLP scanning)
+        {{- if .Values.presidio.url }}
+        - name: PRESIDIO_ENABLED
+          value: "true"
+        - name: PRESIDIO_URL
+          value: {{ .Values.presidio.url | quote }}
+        {{- if .Values.presidio.minConfidence }}
+        - name: PRESIDIO_MIN_CONFIDENCE
+          value: {{ .Values.presidio.minConfidence | quote }}
         {{- end }}
-        
+        {{- end }}
+
+        # Centralized Step-CA (sensitive credentials from secret)
+        {{- if and .Values.stepCA .Values.stepCA.enabled .Values.existingStepCASecret }}
+        - name: CA_SMALLSTEP_PROVISIONER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.existingStepCASecret }}
+              key: provisioner-encrypted-key
+        - name: CA_SMALLSTEP_PROVISIONER_PASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.existingStepCASecret }}
+              key: provisioner-password
+        - name: CA_SMALLSTEP_ROOT_CERT_PEM
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.existingStepCASecret }}
+              key: root-ca-cert
+        {{- end }}
+
+        # MCP Server API key
+        {{- if and .Values.mcp .Values.mcp.enabled .Values.mcp.apiKey .Values.mcp.apiKey.existingSecret }}
+        - name: MCP_SHARED_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.mcp.apiKey.existingSecret }}
+              key: mcp-api-key
+        {{- end }}
+
         # Application settings
         - name: API_HOST
           value: "0.0.0.0"
