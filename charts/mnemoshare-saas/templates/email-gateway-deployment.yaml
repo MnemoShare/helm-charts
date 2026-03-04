@@ -1,0 +1,141 @@
+{{- if .Values.emailGateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mnemoshare-saas.fullname" . }}-email-gateway
+  labels:
+    {{- include "mnemoshare-saas.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "mnemoshare-saas.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: email-gateway
+  template:
+    metadata:
+      annotations:
+        checksum/secrets: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+      labels:
+        {{- include "mnemoshare-saas.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: email-gateway
+        mnemoshare.io/customer-id: {{ .Values.customer.id | quote }}
+        mnemoshare.io/tier: {{ .Values.tier | quote }}
+    spec:
+      serviceAccountName: {{ include "mnemoshare-saas.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: email-gateway
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.app.image.repository | default "mnemoshare/mnemoshare" }}:{{ .Values.app.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.app.image.pullPolicy | default "IfNotPresent" }}
+        command: ["/usr/local/bin/email-gateway"]
+        ports:
+        - name: smtp
+          containerPort: 25
+          protocol: TCP
+        - name: health
+          containerPort: 8081
+          protocol: TCP
+        {{- if .Values.existingConfigMap }}
+        envFrom:
+        - configMapRef:
+            name: {{ .Values.existingConfigMap }}
+        {{- end }}
+        env:
+        {{- if .Values.emailGateway.tls.existingSecret }}
+        - name: LISTEN_PORTS
+          value: "25:starttls"
+        - name: TLS_CERT_PATH
+          value: "/etc/tls/tls.crt"
+        - name: TLS_KEY_PATH
+          value: "/etc/tls/tls.key"
+        {{- else }}
+        - name: LISTEN_PORTS
+          value: "25:plain"
+        {{- end }}
+        - name: GATEWAY_HOSTNAME
+          value: "smtp-{{ .Values.customer.subdomain }}.{{ .Values.ingress.domain | default "mnemoshare.com" }}"
+        # Upstream SMTP relay
+        {{- if .Values.emailGateway.upstream.host }}
+        - name: UPSTREAM_HOST
+          value: {{ .Values.emailGateway.upstream.host | quote }}
+        {{- end }}
+        - name: UPSTREAM_PORT
+          value: {{ .Values.emailGateway.upstream.port | default 587 | quote }}
+        - name: UPSTREAM_TLS
+          value: {{ .Values.emailGateway.upstream.tls | default "starttls" | quote }}
+        {{- if .Values.emailGateway.existingUpstreamSecret }}
+        - name: UPSTREAM_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.existingUpstreamSecret }}
+              key: upstream-username
+        - name: UPSTREAM_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.existingUpstreamSecret }}
+              key: upstream-password
+        {{- end }}
+        # MnemoShare API connection
+        - name: MNEMOSHARE_API_URL
+          value: "http://{{ include "mnemoshare-saas.fullname" . }}:{{ .Values.service.port | default 80 }}"
+        {{- if .Values.emailGateway.existingAPIKeySecret }}
+        - name: MNEMOSHARE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.existingAPIKeySecret }}
+              key: gateway-api-key
+        {{- end }}
+        # Worker pool
+        - name: WORKER_COUNT
+          value: {{ .Values.emailGateway.workerCount | default 2 | quote }}
+        - name: QUEUE_SIZE
+          value: {{ .Values.emailGateway.queueSize | default 500 | quote }}
+        # Health port
+        - name: HEALTH_PORT
+          value: "8081"
+        # Customer metadata
+        - name: CUSTOMER_ID
+          value: {{ .Values.customer.id | quote }}
+        - name: CUSTOMER_TIER
+          value: {{ .Values.tier | quote }}
+        - name: PROXY_PROTOCOL
+          value: "true"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.emailGateway.resources | nindent 12 }}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        {{- if .Values.emailGateway.tls.existingSecret }}
+        - name: tls-certs
+          mountPath: /etc/tls
+          readOnly: true
+        {{- end }}
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: "1Gi"
+      {{- if .Values.emailGateway.tls.existingSecret }}
+      - name: tls-certs
+        secret:
+          secretName: {{ .Values.emailGateway.tls.existingSecret }}
+      {{- end }}
+{{- end }}

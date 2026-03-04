@@ -1,0 +1,165 @@
+{{- if .Values.emailGateway.enabled }}
+{{- /* Resolve TLS secret: emailGateway.tls.existingSecret → mtls.tls.existingSecret → none */}}
+{{- $tlsSecret := .Values.emailGateway.tls.existingSecret }}
+{{- if and (not $tlsSecret) .Values.mtls.tls.existingSecret }}
+{{- $tlsSecret = .Values.mtls.tls.existingSecret }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-email-gateway
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: email-gateway
+spec:
+  replicas: {{ .Values.emailGateway.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: email-gateway
+  template:
+    metadata:
+      labels:
+        {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: email-gateway
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: email-gateway
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: ["/usr/local/bin/email-gateway"]
+        ports:
+        - name: smtp
+          containerPort: 25
+          protocol: TCP
+        - name: health
+          containerPort: 8081
+          protocol: TCP
+        env:
+        {{- if $tlsSecret }}
+        - name: LISTEN_PORTS
+          value: {{ .Values.emailGateway.listenPorts | quote }}
+        - name: TLS_CERT_PATH
+          value: "/etc/tls/tls.crt"
+        - name: TLS_KEY_PATH
+          value: "/etc/tls/tls.key"
+        {{- else }}
+        - name: LISTEN_PORTS
+          value: "25:plain"
+        {{- end }}
+        - name: GATEWAY_HOSTNAME
+          value: {{ .Values.emailGateway.hostname | quote }}
+        # Upstream SMTP relay
+        {{- if .Values.emailGateway.upstream.host }}
+        - name: UPSTREAM_HOST
+          value: {{ .Values.emailGateway.upstream.host | quote }}
+        {{- end }}
+        - name: UPSTREAM_PORT
+          value: {{ .Values.emailGateway.upstream.port | quote }}
+        - name: UPSTREAM_TLS
+          value: {{ .Values.emailGateway.upstream.tls | quote }}
+        {{- if .Values.emailGateway.upstream.existingSecret }}
+        - name: UPSTREAM_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.upstream.existingSecret }}
+              key: username
+        - name: UPSTREAM_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.upstream.existingSecret }}
+              key: password
+        {{- else }}
+        {{- if .Values.emailGateway.upstream.username }}
+        - name: UPSTREAM_USERNAME
+          value: {{ .Values.emailGateway.upstream.username | quote }}
+        {{- end }}
+        {{- if .Values.emailGateway.upstream.password }}
+        - name: UPSTREAM_PASSWORD
+          value: {{ .Values.emailGateway.upstream.password | quote }}
+        {{- end }}
+        {{- end }}
+        # MnemoShare API connection
+        - name: MNEMOSHARE_API_URL
+          value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}"
+        {{- if .Values.emailGateway.existingAPIKeySecret }}
+        - name: MNEMOSHARE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.existingAPIKeySecret }}
+              key: gateway-api-key
+        {{- else if .Values.emailGateway.apiKey }}
+        - name: MNEMOSHARE_API_KEY
+          value: {{ .Values.emailGateway.apiKey | quote }}
+        {{- end }}
+        # ICAP virus scanning
+        {{- $icapURL := .Values.emailGateway.icap.url }}
+        {{- if and (not $icapURL) .Values.clamav.enabled }}
+        {{- $icapURL = printf "icap://%s-clamav:1344/avscan" (include "mnemoshare.fullname" .) }}
+        {{- end }}
+        {{- if $icapURL }}
+        - name: ICAP_URL
+          value: {{ $icapURL | quote }}
+        {{- end }}
+        - name: ICAP_REQUIRED
+          value: {{ .Values.emailGateway.icap.required | quote }}
+        # Worker pool
+        - name: WORKER_COUNT
+          value: {{ .Values.emailGateway.workerCount | quote }}
+        - name: QUEUE_SIZE
+          value: {{ .Values.emailGateway.queueSize | quote }}
+        # Health port
+        - name: HEALTH_PORT
+          value: "8081"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.emailGateway.resources | nindent 12 }}
+        {{- if $tlsSecret }}
+        volumeMounts:
+        - name: tls-certs
+          mountPath: /etc/tls
+          readOnly: true
+        {{- end }}
+      {{- if $tlsSecret }}
+      volumes:
+      - name: tls-certs
+        secret:
+          secretName: {{ $tlsSecret }}
+      {{- end }}
+      {{- with .Values.emailGateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.emailGateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml .Values.dnsConfig | nindent 8 }}
+      {{- end }}
+{{- end }}

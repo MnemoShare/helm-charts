@@ -366,6 +366,47 @@ workflowWorker:
   affinity: {}
 
 # -----------------------------------------------------------------------------
+# Email Gateway (Outbound SMTP Relay)
+# -----------------------------------------------------------------------------
+# Deploys a separate email-gateway pod for outbound SMTP relay with
+# DLP scanning and policy enforcement. Operator manages TLS and secrets.
+emailGateway:
+  # Enable email gateway (operator sets this based on capability)
+  enabled: false
+
+  # TLS certificate for STARTTLS (operator-copied secret)
+  tls:
+    existingSecret: ""
+
+  # Upstream SMTP relay (non-sensitive config from configmap)
+  upstream:
+    host: ""
+    port: 587
+    tls: "starttls"
+
+  # Secrets (operator-managed)
+  existingUpstreamSecret: ""   # Secret with keys: upstream-username, upstream-password
+  existingAPIKeySecret: ""     # Secret with key: gateway-api-key
+
+  # Worker pool settings
+  workerCount: 2
+  queueSize: 500
+
+  # Service (LoadBalancer for SaaS — external mail services must reach the gateway)
+  service:
+    type: LoadBalancer
+    port: 25
+
+  # Resource requests/limits
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# -----------------------------------------------------------------------------
 # KEDA Autoscaling
 # -----------------------------------------------------------------------------
 # Requires KEDA to be installed in the cluster

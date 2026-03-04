@@ -908,6 +908,80 @@ workflowWorker:
     cooldownPeriod: 60
 
 # ============================================================================
+# Email Gateway (Outbound SMTP Relay with DLP/Policy Enforcement)
+# ============================================================================
+# Deploys a separate email-gateway pod (same image, different binary).
+# Acts as an outbound SMTP relay with DLP scanning, policy enforcement,
+# and spam/malware filtering before forwarding to upstream SMTP.
+emailGateway:
+  # Enable the email gateway deployment
+  enabled: false
+
+  # Number of gateway replicas
+  replicas: 1
+
+  # SMTP listen configuration (format: "port:mode" — "25:starttls" or "25:plain")
+  listenPorts: "25:starttls"
+
+  # Gateway hostname (used in SMTP EHLO/HELO)
+  hostname: "smtp.mnemoshare.example.com"
+
+  # TLS certificate for STARTTLS
+  tls:
+    # Existing secret with tls.crt + tls.key; falls back to mtls.tls.existingSecret
+    existingSecret: ""
+
+  # Upstream SMTP relay configuration
+  upstream:
+    # Required: upstream SMTP relay host
+    host: ""
+    port: 587
+    # TLS mode: "starttls", "tls", or "plain"
+    tls: "starttls"
+    # SMTP auth credentials (inline — prefer existingSecret for production)
+    username: ""
+    password: ""
+    # Existing secret with keys: username, password
+    existingSecret: ""
+
+  # MnemoShare API key for gateway-to-API communication
+  apiKey: ""
+  # Existing secret with key: gateway-api-key
+  existingAPIKeySecret: ""
+
+  # ICAP/ClamAV settings for email attachment scanning
+  icap:
+    # ICAP URL (auto-set to chart ClamAV if clamav.enabled and empty)
+    url: ""
+    # Whether ICAP scanning is required (reject if scanner unavailable)
+    required: false
+
+  # Worker pool settings
+  workerCount: 4
+  queueSize: 1000
+
+  # Kubernetes Service (SMTP is L4 TCP — needs LoadBalancer/NLB, not Ingress)
+  service:
+    type: LoadBalancer
+    port: 25
+    # Annotations for cloud load balancer config
+    # e.g., service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    annotations: {}
+
+  # Resource requests/limits
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+  # Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+
+# ============================================================================
 # Network Policies - Defense in Depth
 # ============================================================================
 # Restricts pod-to-pod communication using Kubernetes NetworkPolicies.

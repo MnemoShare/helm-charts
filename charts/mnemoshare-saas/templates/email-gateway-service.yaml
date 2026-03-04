@@ -1,0 +1,25 @@
+{{- if .Values.emailGateway.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare-saas.fullname" . }}-email-gateway
+  labels:
+    {{- include "mnemoshare-saas.labels" . | nindent 4 }}
+    app.kubernetes.io/component: email-gateway
+  {{- if eq ((.Values.emailGateway.service).type | default "LoadBalancer") "LoadBalancer" }}
+  annotations:
+    service.beta.kubernetes.io/do-loadbalancer-protocol: "tcp"
+    service.beta.kubernetes.io/do-loadbalancer-name: "mnemo-eg-{{ .Values.customer.subdomain }}"
+    service.beta.kubernetes.io/do-loadbalancer-enable-proxy-protocol: "true"
+  {{- end }}
+spec:
+  type: {{ .Values.emailGateway.service.type | default "LoadBalancer" }}
+  ports:
+  - name: smtp
+    port: {{ .Values.emailGateway.service.port | default 25 }}
+    targetPort: smtp
+    protocol: TCP
+  selector:
+    {{- include "mnemoshare-saas.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: email-gateway
+{{- end }}

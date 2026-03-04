@@ -1,0 +1,23 @@
+{{- if .Values.emailGateway.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-email-gateway
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: email-gateway
+  {{- with .Values.emailGateway.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.emailGateway.service.type }}
+  ports:
+  - name: smtp
+    port: {{ .Values.emailGateway.service.port }}
+    targetPort: smtp
+    protocol: TCP
+  selector:
+    {{- include "mnemoshare.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: email-gateway
+{{- end }}
