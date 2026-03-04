@@ -14,6 +14,9 @@ metadata:
   {{- end }}
 spec:
   type: {{ .Values.emailGateway.service.type | default "LoadBalancer" }}
+  {{- if eq ((.Values.emailGateway.service).type | default "LoadBalancer") "LoadBalancer" }}
+  externalTrafficPolicy: Local
+  {{- end }}
   ports:
   - name: smtp
     port: {{ .Values.emailGateway.service.port | default 25 }}
