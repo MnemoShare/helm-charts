@@ -182,7 +182,23 @@ spec:
           value: {{ .Values.customer.id | quote }}
         - name: CUSTOMER_TIER
           value: {{ .Values.tier | quote }}
-        
+
+        # Email relay DKIM API (optional, for pushing DKIM keys to shared relay)
+        {{- if and .Values.emailGateway .Values.emailGateway.enabled }}
+        - name: RELAY_API_URL
+          valueFrom:
+            secretKeyRef:
+              name: mnemoshare-email-gateway-secrets
+              key: relay-api-url
+              optional: true
+        - name: RELAY_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mnemoshare-email-gateway-secrets
+              key: relay-api-key
+              optional: true
+        {{- end }}
+
         {{- with .Values.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
