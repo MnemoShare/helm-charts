@@ -3,7 +3,7 @@ name: mnemoshare-saas
 description: MnemoShare SaaS Customer Deployment - Parameterized Helm chart for deploying isolated customer instances
 type: application
 version: 0.1.4
-appVersion: "0.8.25"
+appVersion: "0.8.26"
 keywords:
   - mnemoshare
   - saas
