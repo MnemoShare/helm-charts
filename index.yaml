@@ -2,6 +2,39 @@ apiVersion: v1
 entries:
   mnemoshare:
   - apiVersion: v2
+    appVersion: 0.9.0
+    created: "2026-03-10T00:47:36.841020242Z"
+    dependencies:
+    - condition: minio.enabled
+      name: minio
+      repository: https://charts.min.io/
+      version: 5.2.0
+    description: Zero-trust MFT system enforcing encryption-at-rest, knowledge-based
+      authentication
+    digest: 0b0ca541f0b58a15a8e259a47f0f8426413465ec9eeb634caf64642ac879547c
+    home: https://mnemoshare.com
+    icon: https://mnemoshare.com/logo.png
+    keywords:
+    - secure-file-transfer
+    - hipaa
+    - healthcare
+    - encryption
+    - file-sharing
+    - hsm
+    - pkcs11
+    - mtls
+    maintainers:
+    - email: support@mnemoshare.com
+      name: MnemoShare
+      url: https://mnemoshare.com
+    name: mnemoshare
+    sources:
+    - https://github.com/mnemoshare/mnemoshare
+    type: application
+    urls:
+    - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-1.13.0/mnemoshare-1.13.0.tgz
+    version: 1.13.0
+  - apiVersion: v2
     appVersion: 0.8.26
     created: "2026-03-10T00:12:47.664449769Z"
     dependencies:
@@ -924,6 +957,31 @@ entries:
   - annotations:
       category: security
     apiVersion: v2
+    appVersion: 0.9.0
+    created: "2026-03-10T00:47:36.984342206Z"
+    description: MnemoShare SaaS Customer Deployment - Parameterized Helm chart for
+      deploying isolated customer instances
+    digest: cb3fe22b9a718d1ddc28d4a5a9e46a83c6d01f8d6b5f4be86fbb5a96b913e316
+    home: https://mnemoshare.com
+    keywords:
+    - mnemoshare
+    - saas
+    - secure-file-transfer
+    - mft
+    - multi-tenant
+    maintainers:
+    - email: support@mnemoshare.com
+      name: MnemoShare
+    name: mnemoshare-saas
+    sources:
+    - https://github.com/mnemoshare/helm-charts
+    type: application
+    urls:
+    - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-saas-0.1.5/mnemoshare-saas-0.1.5.tgz
+    version: 0.1.5
+  - annotations:
+      category: security
+    apiVersion: v2
     appVersion: 0.8.20
     created: "2026-02-28T23:11:46.29343899Z"
     description: MnemoShare SaaS Customer Deployment - Parameterized Helm chart for
@@ -1589,4 +1647,4 @@ entries:
     urls:
     - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-stack-1.0.0/mnemoshare-stack-1.0.0.tgz
     version: 1.0.0
-generated: "2026-03-10T00:12:47.878552328Z"
+generated: "2026-03-10T00:47:36.984756457Z"
