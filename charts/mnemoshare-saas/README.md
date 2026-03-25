@@ -72,7 +72,10 @@ encryption:
   key: "32-byte-encryption-key-here-xxx"
 
 jwt:
-  secret: "32-character-jwt-secret-here-xx"
+  ecPrivateKey: |
+    -----BEGIN EC PRIVATE KEY-----
+    ... your ECDSA P-256 private key for ES256 JWT signing ...
+    -----END EC PRIVATE KEY-----
 
 license:
   key: "customer-license-key"
@@ -175,7 +178,7 @@ autoscaling:
 | `storage.accessKey` | S3 access key |
 | `storage.secretKey` | S3 secret key |
 | `encryption.key` | 32-byte encryption key |
-| `jwt.secret` | JWT signing secret |
+| `jwt.ecPrivateKey` | PEM-encoded ECDSA P-256 private key for ES256 JWT signing |
 | `license.key` | Customer license key |
 
 ### Optional Values
@@ -197,7 +200,7 @@ For production, use existing Kubernetes secrets:
 existingDatabaseSecret: "acme-clinic-db"
 existingStorageSecret: "acme-clinic-s3"
 existingEncryptionSecret: "acme-clinic-encryption"
-existingJWTSecret: "acme-clinic-jwt"
+existingJWTSecret: "acme-clinic-jwt"       # Must have 'jwt-ec-private-key' key
 existingLicenseSecret: "acme-clinic-license"
 existingRedisSecret: "acme-clinic-redis"
 ```

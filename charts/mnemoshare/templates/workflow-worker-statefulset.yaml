@@ -121,12 +121,12 @@ spec:
               name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: old-encryption-key
         {{- end }}
-        # JWT Secret (same as API server - for generating worker tokens)
-        - name: JWT_SECRET
+        # JWT EC private key (same as API server - for generating worker tokens)
+        - name: JWT_EC_PRIVATE_KEY
           valueFrom:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.jwt }}{{ .Values.existingSecrets.jwt }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
-              key: jwt-secret
+              key: jwt-ec-private-key
         # API Base URL (for uploading files to MnemoShare)
         - name: API_BASE_URL
           value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}/api/v1"

@@ -121,9 +121,9 @@ mnemoshare:
   license:
     key: ""
 
-  # Security settings
+  # Security settings (ES256 / ECDSA P-256)
   jwt:
-    secret: ""  # Auto-generated if empty
+    ecPrivateKey: ""  # PEM-encoded EC P-256 private key for ES256 JWT signing (auto-generated if empty)
     expiration: "24h"
 
   encryption:

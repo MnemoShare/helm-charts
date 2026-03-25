@@ -103,13 +103,13 @@ icap://{{ include "mnemoshare-stack.fullname" . }}-clamav:1344/avscan
 {{- end }}
 
 {{/*
-Generate a random string for secrets if not provided
+Generate JWT EC private key (ECDSA P-256) if not provided
 */}}
-{{- define "mnemoshare-stack.jwtSecret" -}}
-{{- if .Values.mnemoshare.jwt.secret }}
-{{- .Values.mnemoshare.jwt.secret }}
+{{- define "mnemoshare-stack.jwtECKey" -}}
+{{- if .Values.mnemoshare.jwt.ecPrivateKey }}
+{{- .Values.mnemoshare.jwt.ecPrivateKey }}
 {{- else }}
-{{- randAlphaNum 64 }}
+{{- genPrivateKey "ecdsa" }}
 {{- end }}
 {{- end }}
 

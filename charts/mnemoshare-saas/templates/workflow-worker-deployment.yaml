@@ -81,12 +81,12 @@ spec:
               name: {{ .Values.existingEncryptionSecret | default (include "mnemoshare-saas.secretsName" .) }}
               key: encryption-key
         
-        # JWT Secret (for worker token generation)
-        - name: JWT_SECRET
+        # JWT EC private key (for worker token generation)
+        - name: JWT_EC_PRIVATE_KEY
           valueFrom:
             secretKeyRef:
               name: {{ .Values.existingJWTSecret | default (include "mnemoshare-saas.secretsName" .) }}
-              key: jwt-secret
+              key: jwt-ec-private-key
         
         # Redis (Required for workflow worker)
         - name: REDIS_URL

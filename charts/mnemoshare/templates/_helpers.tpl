@@ -60,13 +60,13 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Generate JWT secret - use provided value or auto-generate
+Generate JWT EC private key (ECDSA P-256) - use provided value or auto-generate
 */}}
-{{- define "mnemoshare.jwtSecret" -}}
-{{- if .Values.jwt.secret }}
-{{- .Values.jwt.secret }}
+{{- define "mnemoshare.jwtECKey" -}}
+{{- if .Values.jwt.ecPrivateKey }}
+{{- .Values.jwt.ecPrivateKey }}
 {{- else }}
-{{- randAlphaNum 64 }}
+{{- genPrivateKey "ecdsa" }}
 {{- end }}
 {{- end }}
 

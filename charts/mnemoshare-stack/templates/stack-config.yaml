@@ -37,8 +37,8 @@ stringData:
   DEFAULT_ICAP_SERVICE: "avscan"
   {{- end }}
 
-  # Security (auto-generated if not provided)
-  JWT_SECRET: {{ include "mnemoshare-stack.jwtSecret" . | quote }}
+  # Security (auto-generated ECDSA P-256 key if not provided)
+  JWT_EC_PRIVATE_KEY: {{ include "mnemoshare-stack.jwtECKey" . | quote }}
   JWT_EXPIRATION: {{ .Values.mnemoshare.jwt.expiration | default "24h" | quote }}
   ENCRYPTION_KEY: {{ include "mnemoshare-stack.encryptionKey" . | quote }}
 

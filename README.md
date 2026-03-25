@@ -57,7 +57,7 @@ helm install mnemoshare mnemoshare/mnemoshare \
   --set s3.bucket="your-bucket" \
   --set s3.accessKey="your-key" \
   --set s3.secretKey="your-secret" \
-  --set jwt.secret="your-jwt-secret-min-32-chars" \
+  --set-file jwt.ecPrivateKey=path/to/ec-private-key.pem \
   --set encryption.key="your-32-byte-key" \
   --set license.key="your-license-key" \
   --set appUrl="https://mnemoshare.example.com" \

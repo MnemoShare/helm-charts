@@ -52,7 +52,7 @@ jobs:
             --set s3.bucket="test-bucket" \
             --set s3.accessKey="test-key" \
             --set s3.secretKey="test-secret" \
-            --set jwt.secret="test-jwt-secret-minimum-32-characters-long" \
+            --set-string jwt.ecPrivateKey="test-ec-key-auto-generated-if-empty" \
             --set encryption.key="test-encryption-key-exactly-32by" \
             --set license.key="test-license-key" \
             --set appUrl="https://test.example.com" \

@@ -44,7 +44,7 @@ helm install mnemoshare mnemoshare/mnemoshare \
   --set s3.bucket="your-bucket" \
   --set s3.accessKey="your-access-key" \
   --set s3.secretKey="your-secret-key" \
-  --set jwt.secret="your-jwt-secret-minimum-32-chars" \
+  --set jwt.ecPrivateKey="$(openssl ecparam -genkey -name prime256v1 -noout 2>/dev/null | openssl ec 2>/dev/null)" \
   --set encryption.key="your-32-byte-encryption-key" \
   --set license.key="your-license-key" \
   --set appUrl="https://mnemoshare.example.com" \
@@ -69,7 +69,7 @@ s3:
   secretKey: "xxx"
 
 jwt:
-  secret: "your-super-secret-jwt-key-min-32-characters"
+  ecPrivateKey: ""  # Leave empty to auto-generate an ECDSA P-256 key for ES256 JWT signing
 
 encryption:
   key: "your-32-byte-encryption-key-here!"
@@ -118,7 +118,7 @@ helm install mnemoshare mnemoshare/mnemoshare \
 | `s3.bucket` | S3 bucket name | `mnemoshare-files` |
 | `s3.accessKey` | S3 access key | `AKIA...` |
 | `s3.secretKey` | S3 secret key | `xxx` |
-| `jwt.secret` | JWT signing secret (min 32 chars) | `your-secret` |
+| `jwt.ecPrivateKey` | PEM-encoded ECDSA P-256 private key for ES256 JWT signing (auto-generated if empty) | `""` |
 | `encryption.key` | File encryption key (32 bytes) | `your-key` |
 | `license.key` | MnemoShare license key | `your-license` |
 | `appUrl` | Application URL | `https://example.com` |
@@ -145,7 +145,7 @@ Instead of storing sensitive data in values, use existing Kubernetes secrets:
 existingSecrets:
   mongodb: "my-mongodb-secret"  # Must have 'mongodb-uri' key
   s3: "my-s3-secret"            # Must have 's3-access-key' and 's3-secret-key' keys
-  jwt: "my-jwt-secret"          # Must have 'jwt-secret' key
+  jwt: "my-jwt-secret"          # Must have 'jwt-ec-private-key' key
   encryption: "my-encryption-secret"  # Must have 'encryption-key' key
   license: "my-license-secret"  # Must have 'license-key' key
 ```

@@ -77,12 +77,12 @@ spec:
         - name: S3_USE_SSL
           value: "true"
         
-        # JWT Authentication
-        - name: JWT_SECRET
+        # JWT Authentication (ES256 / ECDSA P-256)
+        - name: JWT_EC_PRIVATE_KEY
           valueFrom:
             secretKeyRef:
               name: {{ .Values.existingJWTSecret | default (include "mnemoshare-saas.secretsName" .) }}
-              key: jwt-secret
+              key: jwt-ec-private-key
         - name: JWT_EXPIRATION
           value: {{ .Values.jwt.expiration | quote }}
         

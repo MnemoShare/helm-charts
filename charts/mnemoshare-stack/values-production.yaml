@@ -103,9 +103,9 @@ mnemoshare:
   license:
     key: "YOUR_LICENSE_KEY"
 
-  # Strong secrets (generate with: openssl rand -base64 48)
+  # JWT signing key (generate with: openssl ecparam -genkey -name prime256v1 -noout)
   jwt:
-    secret: "YOUR_64_CHAR_JWT_SECRET_HERE"
+    ecPrivateKey: ""  # PEM-encoded ECDSA P-256 private key for ES256 JWT signing (auto-generated if empty)
     expiration: "8h"  # Shorter for production
 
   encryption:

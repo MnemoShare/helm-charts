@@ -164,7 +164,7 @@ serviceAccount:
 existingSecrets:
   mongodb: "mnemoshare-mongodb-secret"
   s3: "mnemoshare-s3-secret"
-  jwt: "mnemoshare-jwt-secret"
+  jwt: "mnemoshare-jwt-secret"       # Must have 'jwt-ec-private-key' key
   encryption: "mnemoshare-encryption-secret"
   license: "mnemoshare-license-secret"
 

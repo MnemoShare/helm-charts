@@ -278,14 +278,14 @@ encryption:
 # Secret must contain 'encryption-key' key
 existingEncryptionSecret: ""
 
-# JWT configuration
+# JWT configuration (ES256 / ECDSA P-256)
 jwt:
-  # Customer-specific JWT secret (minimum 32 characters)
-  secret: ""  # Required
+  # Customer-specific PEM-encoded EC P-256 private key for ES256 JWT signing
+  ecPrivateKey: ""  # Required
   expiration: "24h"
 
 # Use existing secret for JWT
-# Secret must contain 'jwt-secret' key
+# Secret must contain 'jwt-ec-private-key' key
 existingJWTSecret: ""
 
 # -----------------------------------------------------------------------------

@@ -125,9 +125,9 @@ s3:
   secretKey: ""  # Required: AWS_SECRET_ACCESS_KEY
   useSSL: true
 
-# JWT authentication
+# JWT authentication (ES256 / ECDSA P-256)
 jwt:
-  secret: ""  # Required: minimum 32 characters
+  ecPrivateKey: ""  # PEM-encoded EC P-256 private key for ES256 JWT signing (auto-generated if empty)
   expiration: "24h"
 
 # Encryption
@@ -275,7 +275,7 @@ existingSecrets:
   mongodb: ""  # Name of existing secret with 'mongodb-uri' key
   postgres: ""  # Name of existing secret with 'postgres-dsn' key
   s3: ""       # Name of existing secret with 's3-access-key' and 's3-secret-key' keys
-  jwt: ""      # Name of existing secret with 'jwt-secret' key
+  jwt: ""      # Name of existing secret with 'jwt-ec-private-key' key
   encryption: ""  # Name of existing secret with 'encryption-key' key
   license: ""  # Name of existing secret with 'license-key' key
   redis: ""      # Name of existing secret with Redis password (key configurable via existingSecretKeys)

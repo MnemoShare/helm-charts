@@ -111,12 +111,12 @@ spec:
         - name: S3_USE_SSL
           value: {{ .Values.s3.useSSL | quote }}
         {{- end }}
-        # JWT
-        - name: JWT_SECRET
+        # JWT (ES256 / ECDSA P-256)
+        - name: JWT_EC_PRIVATE_KEY
           valueFrom:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.jwt }}{{ .Values.existingSecrets.jwt }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
-              key: jwt-secret
+              key: jwt-ec-private-key
         - name: JWT_EXPIRATION
           value: {{ .Values.jwt.expiration | quote }}
         {{- if or .Values.redis.enabled .Values.redis.external.enabled }}
