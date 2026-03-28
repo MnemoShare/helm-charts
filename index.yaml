@@ -3,6 +3,39 @@ entries:
   mnemoshare:
   - apiVersion: v2
     appVersion: 0.11.2
+    created: "2026-03-28T15:26:51.643392987Z"
+    dependencies:
+    - condition: minio.enabled
+      name: minio
+      repository: https://charts.min.io/
+      version: 5.2.0
+    description: Zero-trust MFT system enforcing encryption-at-rest, knowledge-based
+      authentication
+    digest: f1b790a5d99d93226db98a3629a3c3f2ef36a9741c0de9e68f257235e16970d0
+    home: https://mnemoshare.com
+    icon: https://mnemoshare.com/logo.png
+    keywords:
+    - secure-file-transfer
+    - hipaa
+    - healthcare
+    - encryption
+    - file-sharing
+    - hsm
+    - pkcs11
+    - mtls
+    maintainers:
+    - email: support@mnemoshare.com
+      name: MnemoShare
+      url: https://mnemoshare.com
+    name: mnemoshare
+    sources:
+    - https://github.com/mnemoshare/mnemoshare
+    type: application
+    urls:
+    - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-1.13.11/mnemoshare-1.13.11.tgz
+    version: 1.13.11
+  - apiVersion: v2
+    appVersion: 0.11.2
     created: "2026-03-28T02:33:08.786624468Z"
     dependencies:
     - condition: minio.enabled
@@ -1977,4 +2010,4 @@ entries:
     urls:
     - https://github.com/MnemoShare/helm-charts/releases/download/mnemoshare-stack-1.0.0/mnemoshare-stack-1.0.0.tgz
     version: 1.0.0
-generated: "2026-03-28T02:33:08.786891751Z"
+generated: "2026-03-28T15:26:51.643789976Z"
