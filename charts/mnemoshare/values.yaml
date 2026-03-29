@@ -801,8 +801,12 @@ redis:
   external:
     enabled: false
     # Full Redis URL (takes precedence over host/port if set)
-    url: ""  # e.g., "redis://:password@redis-host:6379/0"
-    # Alternatively, construct URL from parts:
+    # Standard:  redis://:password@redis-host:6379/0
+    # Sentinel:  redis-sentinel://:password@sentinel1:26379,sentinel2:26379/0?master=mymaster
+    #            redis+sentinel://:password@sentinel1:26379,sentinel2:26379/0?master=mymaster
+    # Sentinel URLs enable automatic master failover — recommended for HA production deployments.
+    url: ""
+    # Alternatively, construct URL from parts (standard Redis only, not Sentinel):
     host: ""
     port: 6379
     db: 0
