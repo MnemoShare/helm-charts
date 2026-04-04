@@ -1,0 +1,32 @@
+{{- if .Values.inboundGateway.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare-saas.fullname" . }}-inbound-gateway
+  labels:
+    {{- include "mnemoshare-saas.labels" . | nindent 4 }}
+    app.kubernetes.io/component: inbound-gateway
+  {{- if eq ((.Values.inboundGateway.service).type | default "LoadBalancer") "LoadBalancer" }}
+  annotations:
+    service.beta.kubernetes.io/do-loadbalancer-protocol: "tcp"
+    service.beta.kubernetes.io/do-loadbalancer-name: "mnemo-ig-{{ .Values.customer.subdomain }}"
+    service.beta.kubernetes.io/do-loadbalancer-enable-proxy-protocol: "true"
+  {{- end }}
+spec:
+  type: {{ .Values.inboundGateway.service.type | default "LoadBalancer" }}
+  {{- if eq ((.Values.inboundGateway.service).type | default "LoadBalancer") "LoadBalancer" }}
+  externalTrafficPolicy: Local
+  {{- end }}
+  ports:
+  - name: smtp
+    port: {{ .Values.inboundGateway.service.port | default 25 }}
+    targetPort: content-filter
+    protocol: TCP
+  - name: socketmap
+    port: {{ .Values.inboundGateway.socketmapPort | default 10070 }}
+    targetPort: socketmap
+    protocol: TCP
+  selector:
+    {{- include "mnemoshare-saas.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: inbound-gateway
+{{- end }}

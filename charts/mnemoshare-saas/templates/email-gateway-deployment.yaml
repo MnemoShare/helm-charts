@@ -103,6 +103,23 @@ spec:
           value: {{ .Values.tier | quote }}
         - name: PROXY_PROTOCOL
           value: "true"
+        # ICAP virus scanning
+        {{- if .Values.emailGateway.icap.url }}
+        - name: ICAP_URL
+          value: {{ .Values.emailGateway.icap.url | quote }}
+        - name: ICAP_SERVICE
+          value: {{ .Values.emailGateway.icap.service | default "avscan" | quote }}
+        - name: ICAP_REQUIRED
+          value: {{ .Values.emailGateway.icap.required | default false | quote }}
+        {{- end }}
+        # Encryption key (for internal API secret derivation)
+        {{- if .Values.existingSecrets }}
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.existingSecrets }}
+              key: encryption-key
+        {{- end }}
         livenessProbe:
           httpGet:
             path: /healthz

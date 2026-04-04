@@ -1,0 +1,23 @@
+{{- if .Values.inboundGateway.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-inbound-gateway
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: inbound-gateway
+  {{- with .Values.inboundGateway.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.inboundGateway.service.type }}
+  ports:
+  - name: smtp
+    port: {{ .Values.inboundGateway.service.port }}
+    targetPort: content-filter
+    protocol: TCP
+  selector:
+    {{- include "mnemoshare.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: inbound-gateway
+{{- end }}

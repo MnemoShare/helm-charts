@@ -986,6 +986,51 @@ emailGateway:
   tolerations: []
 
 # ============================================================================
+# Inbound Email Gateway (Receive + DLP + Anti-Spam)
+# ============================================================================
+# Deploys the inbound-gateway pod for receiving, scanning, and delivering
+# inbound email. Shares API key, TLS, ICAP, and encryption key with the
+# outbound email gateway.
+inboundGateway:
+  # Enable the inbound gateway deployment
+  enabled: false
+
+  # Number of gateway replicas
+  replicas: 1
+
+  # Processing and delivery worker counts
+  processingWorkers: 4
+  deliveryWorkers: 4
+
+  # TLS certificate for STARTTLS (falls back to emailGateway.tls → mtls.tls)
+  tls:
+    existingSecret: ""
+
+  # ICAP/ClamAV settings (defaults to emailGateway.icap settings if empty)
+  icap:
+    url: ""
+    required: false
+
+  # Kubernetes Service
+  service:
+    type: LoadBalancer
+    port: 25
+    annotations: {}
+
+  # Resource requests/limits
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+  # Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+
+# ============================================================================
 # Network Policies - Defense in Depth
 # ============================================================================
 # Restricts pod-to-pod communication using Kubernetes NetworkPolicies.

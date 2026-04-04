@@ -392,7 +392,45 @@ emailGateway:
   workerCount: 2
   queueSize: 500
 
+  # ICAP/ClamAV virus scanning (shared ClamAV instance)
+  icap:
+    url: ""           # e.g., "icap://clamav.mnemoshare-clamav.svc.cluster.local:1344"
+    service: "avscan"
+    required: false
+
   # Service (LoadBalancer for SaaS — external mail services must reach the gateway)
+  service:
+    type: LoadBalancer
+    port: 25
+
+  # Resource requests/limits
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# -----------------------------------------------------------------------------
+# Inbound Email Gateway (Receive + DLP + Spam Scoring)
+# -----------------------------------------------------------------------------
+# Deploys the inbound-gateway pod for receiving, scanning, and delivering
+# inbound email. Automatically enabled when emailGateway is enabled.
+# Shares API key, TLS, ICAP, and encryption key with the outbound gateway.
+inboundGateway:
+  # Enable inbound gateway (defaults to emailGateway.enabled)
+  enabled: false
+
+  # Processing and delivery worker counts
+  processingWorkers: 4
+  deliveryWorkers: 4
+
+  # Postfix content filter and socketmap ports (internal, not exposed)
+  contentFilterPort: 10025
+  socketmapPort: 10070
+
+  # Service (receives inbound SMTP from MX records)
   service:
     type: LoadBalancer
     port: 25

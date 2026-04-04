@@ -1,0 +1,119 @@
+{{- if .Values.inboundGateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mnemoshare-saas.fullname" . }}-inbound-gateway
+  labels:
+    {{- include "mnemoshare-saas.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "mnemoshare-saas.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: inbound-gateway
+  template:
+    metadata:
+      annotations:
+        checksum/secrets: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+      labels:
+        {{- include "mnemoshare-saas.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: inbound-gateway
+        mnemoshare.io/customer-id: {{ .Values.customer.id | quote }}
+        mnemoshare.io/tier: {{ .Values.tier | quote }}
+    spec:
+      serviceAccountName: {{ include "mnemoshare-saas.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: inbound-gateway
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.app.image.repository | default "mnemoshare/mnemoshare" }}:{{ .Values.app.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.app.image.pullPolicy | default "IfNotPresent" }}
+        command: ["/usr/local/bin/inbound-gateway"]
+        ports:
+        - name: health
+          containerPort: 8080
+          protocol: TCP
+        - name: content-filter
+          containerPort: {{ .Values.inboundGateway.contentFilterPort | default 10025 }}
+          protocol: TCP
+        - name: socketmap
+          containerPort: {{ .Values.inboundGateway.socketmapPort | default 10070 }}
+          protocol: TCP
+        {{- if .Values.existingConfigMap }}
+        envFrom:
+        - configMapRef:
+            name: {{ .Values.existingConfigMap }}
+        {{- end }}
+        env:
+        # Inbound gateway ports
+        - name: CONTENT_FILTER_PORT
+          value: {{ .Values.inboundGateway.contentFilterPort | default 10025 | quote }}
+        - name: SOCKETMAP_PORT
+          value: {{ .Values.inboundGateway.socketmapPort | default 10070 | quote }}
+        - name: HEALTH_PORT
+          value: "8080"
+        # Worker pool
+        - name: PROCESSING_WORKERS
+          value: {{ .Values.inboundGateway.processingWorkers | default 4 | quote }}
+        - name: DELIVERY_WORKERS
+          value: {{ .Values.inboundGateway.deliveryWorkers | default 4 | quote }}
+        # MnemoShare API connection (shared with outbound gateway)
+        - name: MNEMOSHARE_API_URL
+          value: "http://{{ include "mnemoshare-saas.fullname" . }}:{{ .Values.service.port | default 80 }}"
+        {{- if .Values.emailGateway.existingAPIKeySecret }}
+        - name: MNEMOSHARE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.existingAPIKeySecret }}
+              key: gateway-api-key
+        {{- end }}
+        # Encryption key (shared with outbound gateway)
+        {{- if .Values.existingSecrets }}
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.existingSecrets }}
+              key: encryption-key
+        {{- end }}
+        # ICAP virus scanning (shared with outbound gateway)
+        {{- if .Values.emailGateway.icap.url }}
+        - name: ICAP_URL
+          value: {{ .Values.emailGateway.icap.url | quote }}
+        - name: ICAP_SERVICE
+          value: {{ .Values.emailGateway.icap.service | default "avscan" | quote }}
+        - name: ICAP_REQUIRED
+          value: {{ .Values.emailGateway.icap.required | default false | quote }}
+        {{- end }}
+        # Customer metadata
+        - name: CUSTOMER_ID
+          value: {{ .Values.customer.id | quote }}
+        - name: CUSTOMER_TIER
+          value: {{ .Values.tier | quote }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.inboundGateway.resources | nindent 12 }}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: "1Gi"
+{{- end }}
