@@ -16,8 +16,8 @@ postgresql:
   auth:
     database: mnemoshare
     username: mnemoshare
-    password: "mnemoshare-secret-change-me"
-    postgresPassword: "postgres-admin-change-me"
+    password: ""  # REQUIRED: Set a strong password (e.g., --set postgresql.auth.password=$(openssl rand -base64 32))
+    postgresPassword: ""  # REQUIRED: Set a strong admin password
   primary:
     persistence:
       enabled: true
@@ -56,7 +56,7 @@ minio:
   enabled: true
   mode: standalone
   rootUser: "minioadmin"
-  rootPassword: "minio-secret-change-me"
+  rootPassword: ""  # REQUIRED: Set a strong password (e.g., --set minio.rootPassword=$(openssl rand -base64 32))
   persistence:
     enabled: true
     size: 50Gi
@@ -136,7 +136,7 @@ mnemoshare:
   # Redis - enabled for workflow workers (uses mnemoshare chart's built-in Redis)
   redis:
     enabled: true
-    password: "redis-secret-change-me"
+    password: ""  # REQUIRED: Set a strong password (e.g., --set mnemoshare.redis.password=$(openssl rand -base64 32))
     persistence:
       enabled: true
       size: 5Gi

@@ -33,6 +33,15 @@ spec:
       - name: clamav-icap
         image: "{{ .Values.clamav.image.repository }}:{{ .Values.clamav.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.clamav.image.pullPolicy }}
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 101
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
         ports:
         - name: icap
           containerPort: 1344

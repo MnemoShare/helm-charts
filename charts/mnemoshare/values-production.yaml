@@ -7,7 +7,7 @@ replicaCount: 3
 image:
   repository: mnemoshare/mnemoshare
   pullPolicy: IfNotPresent
-  tag: "latest"  # Use specific version tags in production (e.g., "0.3.1")
+  tag: ""  # Defaults to Chart.AppVersion — pin to a specific version for production
 
 # MongoDB - Use managed service (MongoDB Atlas) in production
 mongodb:
