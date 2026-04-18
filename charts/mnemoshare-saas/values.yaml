@@ -430,7 +430,23 @@ emailGateway:
   icap:
     url: ""           # e.g., "icap://clamav.mnemoshare-clamav.svc.cluster.local:1344"
     service: "avscan"
+    timeout: 30
     required: false
+
+  # DLP / scanning tunables (per-gateway — operator-copied configmap may override)
+  dlp:
+    # Presidio NER endpoint
+    presidioUrl: ""
+    # Apache Tika text-extraction endpoint
+    tikaUrl: ""
+    # Enable AI-powered DLP classification
+    aiEnabled: false
+    # LLM provider: "openai", "anthropic", "azure-openai"
+    aiProvider: ""
+    # Provider-specific model ID
+    aiModel: ""
+    # Existing secret (operator-managed) with key: ai-api-key
+    existingAISecret: ""
 
   # Service (LoadBalancer for SaaS — external mail services must reach the gateway)
   service:
@@ -469,6 +485,18 @@ inboundGateway:
 
   # DLP timeout buffer (Go duration — safety margin before hard cutoff)
   dlpTimeoutBuffer: "5s"
+
+  # DLP / scanning tunables (fall back to emailGateway.dlp.* when empty)
+  dlp:
+    presidioUrl: ""
+    tikaUrl: ""
+
+  # ARC (Authenticated Received Chain) signing for modified inbound messages
+  arc:
+    domain: ""
+    selector: ""
+    # Existing secret (operator-managed) with key: arc-private-key
+    existingSecret: ""
 
   # Service (receives inbound SMTP from MX records)
   service:

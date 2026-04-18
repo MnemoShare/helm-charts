@@ -133,8 +133,36 @@ spec:
           value: {{ .Values.emailGateway.icap.url | quote }}
         - name: ICAP_SERVICE
           value: {{ .Values.emailGateway.icap.service | default "avscan" | quote }}
+        - name: ICAP_TIMEOUT
+          value: {{ .Values.emailGateway.icap.timeout | default 30 | quote }}
         - name: ICAP_REQUIRED
           value: {{ .Values.emailGateway.icap.required | default false | quote }}
+        {{- end }}
+        # DLP / scanning
+        {{- if .Values.emailGateway.dlp.presidioUrl }}
+        - name: PRESIDIO_URL
+          value: {{ .Values.emailGateway.dlp.presidioUrl | quote }}
+        {{- end }}
+        {{- if .Values.emailGateway.dlp.tikaUrl }}
+        - name: TIKA_URL
+          value: {{ .Values.emailGateway.dlp.tikaUrl | quote }}
+        {{- end }}
+        - name: DLP_AI_ENABLED
+          value: {{ .Values.emailGateway.dlp.aiEnabled | default false | quote }}
+        {{- if .Values.emailGateway.dlp.aiProvider }}
+        - name: AI_PROVIDER
+          value: {{ .Values.emailGateway.dlp.aiProvider | quote }}
+        {{- end }}
+        {{- if .Values.emailGateway.dlp.aiModel }}
+        - name: AI_MODEL
+          value: {{ .Values.emailGateway.dlp.aiModel | quote }}
+        {{- end }}
+        {{- if .Values.emailGateway.dlp.existingAISecret }}
+        - name: AI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.dlp.existingAISecret }}
+              key: ai-api-key
         {{- end }}
         # Encryption key (for internal API secret derivation)
         {{- if .Values.existingSecrets }}

@@ -958,8 +958,29 @@ emailGateway:
   icap:
     # ICAP URL (auto-set to chart ClamAV if clamav.enabled and empty)
     url: ""
+    # ClamAV service name on the ICAP server
+    service: "avscan"
+    # ICAP scan timeout in seconds
+    timeout: 30
     # Whether ICAP scanning is required (reject if scanner unavailable)
     required: false
+
+  # DLP / scanning tunables
+  dlp:
+    # Presidio NER endpoint (e.g., "http://presidio.presidio.svc.cluster.local:3000")
+    presidioUrl: ""
+    # Apache Tika text-extraction endpoint (e.g., "http://tika.tika.svc.cluster.local:9998")
+    tikaUrl: ""
+    # Enable AI-powered DLP classification layer
+    aiEnabled: false
+    # LLM provider: "openai", "anthropic", "azure-openai"
+    aiProvider: ""
+    # Provider-specific model ID
+    aiModel: ""
+    # API key (inline — prefer existingAISecret for production)
+    aiApiKey: ""
+    # Existing secret with key: ai-api-key
+    existingAISecret: ""
 
   # Worker pool settings
   workerCount: 4
@@ -1050,6 +1071,22 @@ inboundGateway:
 
   # DLP timeout buffer (Go duration — safety margin before hard cutoff)
   dlpTimeoutBuffer: "5s"
+
+  # DLP / scanning tunables (fall back to emailGateway.dlp.* when empty)
+  dlp:
+    presidioUrl: ""
+    tikaUrl: ""
+
+  # ARC (Authenticated Received Chain) signing for modified inbound messages
+  arc:
+    # ARC signing domain (e.g., "example.com")
+    domain: ""
+    # Selector name (e.g., "arc2024")
+    selector: ""
+    # Private key (inline PEM — prefer existingSecret for production)
+    privateKey: ""
+    # Existing secret with key: arc-private-key
+    existingSecret: ""
 
   # Kubernetes Service
   service:

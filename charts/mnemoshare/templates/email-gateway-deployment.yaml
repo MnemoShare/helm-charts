@@ -110,8 +110,41 @@ spec:
         - name: ICAP_URL
           value: {{ $icapURL | quote }}
         {{- end }}
+        - name: ICAP_SERVICE
+          value: {{ .Values.emailGateway.icap.service | quote }}
+        - name: ICAP_TIMEOUT
+          value: {{ .Values.emailGateway.icap.timeout | quote }}
         - name: ICAP_REQUIRED
           value: {{ .Values.emailGateway.icap.required | quote }}
+        # DLP / scanning
+        {{- if .Values.emailGateway.dlp.presidioUrl }}
+        - name: PRESIDIO_URL
+          value: {{ .Values.emailGateway.dlp.presidioUrl | quote }}
+        {{- end }}
+        {{- if .Values.emailGateway.dlp.tikaUrl }}
+        - name: TIKA_URL
+          value: {{ .Values.emailGateway.dlp.tikaUrl | quote }}
+        {{- end }}
+        - name: DLP_AI_ENABLED
+          value: {{ .Values.emailGateway.dlp.aiEnabled | quote }}
+        {{- if .Values.emailGateway.dlp.aiProvider }}
+        - name: AI_PROVIDER
+          value: {{ .Values.emailGateway.dlp.aiProvider | quote }}
+        {{- end }}
+        {{- if .Values.emailGateway.dlp.aiModel }}
+        - name: AI_MODEL
+          value: {{ .Values.emailGateway.dlp.aiModel | quote }}
+        {{- end }}
+        {{- if .Values.emailGateway.dlp.existingAISecret }}
+        - name: AI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.dlp.existingAISecret }}
+              key: ai-api-key
+        {{- else if .Values.emailGateway.dlp.aiApiKey }}
+        - name: AI_API_KEY
+          value: {{ .Values.emailGateway.dlp.aiApiKey | quote }}
+        {{- end }}
         # Worker pool
         - name: WORKER_COUNT
           value: {{ .Values.emailGateway.workerCount | quote }}

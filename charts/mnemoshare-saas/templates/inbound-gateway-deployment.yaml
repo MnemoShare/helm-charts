@@ -83,6 +83,8 @@ spec:
           value: {{ .Values.emailGateway.icap.url | quote }}
         - name: ICAP_SERVICE
           value: {{ .Values.emailGateway.icap.service | default "avscan" | quote }}
+        - name: ICAP_TIMEOUT
+          value: {{ .Values.emailGateway.icap.timeout | default 30 | quote }}
         - name: ICAP_REQUIRED
           value: {{ .Values.emailGateway.icap.required | default false | quote }}
         {{- end }}
@@ -91,6 +93,39 @@ spec:
           value: {{ .Values.inboundGateway.dlpPipelineTimeout | default "60s" | quote }}
         - name: DLP_TIMEOUT_BUFFER
           value: {{ .Values.inboundGateway.dlpTimeoutBuffer | default "5s" | quote }}
+        # DLP / scanning (falls back to emailGateway.dlp.* when empty)
+        {{- $presidioURL := .Values.inboundGateway.dlp.presidioUrl }}
+        {{- if and (not $presidioURL) .Values.emailGateway.dlp.presidioUrl }}
+        {{- $presidioURL = .Values.emailGateway.dlp.presidioUrl }}
+        {{- end }}
+        {{- if $presidioURL }}
+        - name: PRESIDIO_URL
+          value: {{ $presidioURL | quote }}
+        {{- end }}
+        {{- $tikaURL := .Values.inboundGateway.dlp.tikaUrl }}
+        {{- if and (not $tikaURL) .Values.emailGateway.dlp.tikaUrl }}
+        {{- $tikaURL = .Values.emailGateway.dlp.tikaUrl }}
+        {{- end }}
+        {{- if $tikaURL }}
+        - name: TIKA_URL
+          value: {{ $tikaURL | quote }}
+        {{- end }}
+        # ARC signing (for modified messages)
+        {{- if .Values.inboundGateway.arc.domain }}
+        - name: ARC_DOMAIN
+          value: {{ .Values.inboundGateway.arc.domain | quote }}
+        {{- end }}
+        {{- if .Values.inboundGateway.arc.selector }}
+        - name: ARC_SELECTOR
+          value: {{ .Values.inboundGateway.arc.selector | quote }}
+        {{- end }}
+        {{- if .Values.inboundGateway.arc.existingSecret }}
+        - name: ARC_PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.inboundGateway.arc.existingSecret }}
+              key: arc-private-key
+        {{- end }}
         # Customer metadata
         - name: CUSTOMER_ID
           value: {{ .Values.customer.id | quote }}
