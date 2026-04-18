@@ -226,7 +226,7 @@ spec:
         - name: ENCRYPTION_KEY
           valueFrom:
             secretKeyRef:
-              name: {{ .Values.existingSecrets | default (printf "%s-secrets" (include "mnemoshare.fullname" .)) }}
+              name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: encryption-key
         livenessProbe:
           httpGet:
