@@ -96,10 +96,27 @@ spec:
         # Limits
         - name: MAX_RECIPIENTS
           value: {{ .Values.emailGateway.maxRecipients | default 100 | quote }}
+        - name: MAX_MESSAGE_SIZE
+          value: {{ .Values.emailGateway.maxMessageSize | default "25MB" | quote }}
+        - name: MAX_ATTACHMENT_SIZE
+          value: {{ .Values.emailGateway.maxAttachmentSize | default "50MB" | quote }}
         {{- if .Values.emailGateway.requireTlsDomains }}
         - name: REQUIRE_TLS_DOMAINS
           value: {{ .Values.emailGateway.requireTlsDomains | quote }}
         {{- end }}
+        # SMTP auth and sender validation
+        - name: SMTP_AUTH_REQUIRED
+          value: {{ .Values.emailGateway.smtpAuthRequired | default true | quote }}
+        {{- if .Values.emailGateway.smtpAllowedSenderDomains }}
+        - name: SMTP_ALLOWED_SENDER_DOMAINS
+          value: {{ .Values.emailGateway.smtpAllowedSenderDomains | quote }}
+        {{- end }}
+        - name: LISTEN_TLS_REQUIRED
+          value: {{ .Values.emailGateway.listenTlsRequired | default true | quote }}
+        - name: AUTH_CACHE_TTL
+          value: {{ .Values.emailGateway.authCacheTTL | default 300 | quote }}
+        - name: SENDER_CACHE_TTL
+          value: {{ .Values.emailGateway.senderCacheTTL | default 60 | quote }}
         # Health port
         - name: HEALTH_PORT
           value: "8081"
@@ -109,7 +126,7 @@ spec:
         - name: CUSTOMER_TIER
           value: {{ .Values.tier | quote }}
         - name: PROXY_PROTOCOL
-          value: "true"
+          value: {{ .Values.emailGateway.proxyProtocol | default true | quote }}
         # ICAP virus scanning
         {{- if .Values.emailGateway.icap.url }}
         - name: ICAP_URL

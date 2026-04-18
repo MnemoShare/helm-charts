@@ -972,6 +972,32 @@ emailGateway:
   # Applies only in relay / inbound-relay modes.
   requireTlsDomains: ""
 
+  # Require SMTP AUTH credentials for submission. Set to false when routing
+  # from Google Workspace / M365 via sender-domain allowlist instead.
+  smtpAuthRequired: true
+
+  # Comma-separated sender domains allowed when smtpAuthRequired is false.
+  smtpAllowedSenderDomains: ""
+
+  # Require TLS on SMTP listeners (STARTTLS or implicit TLS).
+  listenTlsRequired: true
+
+  # Enable HAProxy PROXY protocol to recover the real client IP when behind a
+  # TCP load balancer (AWS NLB, GCP TCP LB, HAProxy).
+  proxyProtocol: false
+
+  # Auth result cache TTL in seconds.
+  authCacheTTL: 300
+
+  # Sender lookup cache TTL in seconds.
+  senderCacheTTL: 60
+
+  # Maximum message size (accepts suffixes: KB, MB, GB).
+  maxMessageSize: "25MB"
+
+  # Maximum attachment size (accepts suffixes: KB, MB, GB).
+  maxAttachmentSize: "50MB"
+
   # Kubernetes Service (SMTP is L4 TCP — needs LoadBalancer/NLB, not Ingress)
   service:
     type: LoadBalancer

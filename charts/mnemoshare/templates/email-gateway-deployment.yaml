@@ -120,10 +120,29 @@ spec:
         # Limits
         - name: MAX_RECIPIENTS
           value: {{ .Values.emailGateway.maxRecipients | quote }}
+        - name: MAX_MESSAGE_SIZE
+          value: {{ .Values.emailGateway.maxMessageSize | quote }}
+        - name: MAX_ATTACHMENT_SIZE
+          value: {{ .Values.emailGateway.maxAttachmentSize | quote }}
         {{- if .Values.emailGateway.requireTlsDomains }}
         - name: REQUIRE_TLS_DOMAINS
           value: {{ .Values.emailGateway.requireTlsDomains | quote }}
         {{- end }}
+        # SMTP auth and sender validation
+        - name: SMTP_AUTH_REQUIRED
+          value: {{ .Values.emailGateway.smtpAuthRequired | quote }}
+        {{- if .Values.emailGateway.smtpAllowedSenderDomains }}
+        - name: SMTP_ALLOWED_SENDER_DOMAINS
+          value: {{ .Values.emailGateway.smtpAllowedSenderDomains | quote }}
+        {{- end }}
+        - name: LISTEN_TLS_REQUIRED
+          value: {{ .Values.emailGateway.listenTlsRequired | quote }}
+        - name: PROXY_PROTOCOL
+          value: {{ .Values.emailGateway.proxyProtocol | quote }}
+        - name: AUTH_CACHE_TTL
+          value: {{ .Values.emailGateway.authCacheTTL | quote }}
+        - name: SENDER_CACHE_TTL
+          value: {{ .Values.emailGateway.senderCacheTTL | quote }}
         # Health port
         - name: HEALTH_PORT
           value: "8081"

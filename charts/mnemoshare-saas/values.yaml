@@ -400,6 +400,32 @@ emailGateway:
   # Applies only in relay / inbound-relay modes.
   requireTlsDomains: ""
 
+  # Require SMTP AUTH credentials for submission. Set to false when routing
+  # from Google Workspace / M365 via sender-domain allowlist instead.
+  smtpAuthRequired: true
+
+  # Comma-separated sender domains allowed when smtpAuthRequired is false.
+  smtpAllowedSenderDomains: ""
+
+  # Require TLS on SMTP listeners (STARTTLS or implicit TLS).
+  listenTlsRequired: true
+
+  # HAProxy PROXY protocol for real client IP recovery. Default true for SaaS —
+  # SaaS tenants sit behind a LoadBalancer/NLB and need the original client IP.
+  proxyProtocol: true
+
+  # Auth result cache TTL in seconds.
+  authCacheTTL: 300
+
+  # Sender lookup cache TTL in seconds.
+  senderCacheTTL: 60
+
+  # Maximum message size (accepts suffixes: KB, MB, GB).
+  maxMessageSize: "25MB"
+
+  # Maximum attachment size (accepts suffixes: KB, MB, GB).
+  maxAttachmentSize: "50MB"
+
   # ICAP/ClamAV virus scanning (shared ClamAV instance)
   icap:
     url: ""           # e.g., "icap://clamav.mnemoshare-clamav.svc.cluster.local:1344"
