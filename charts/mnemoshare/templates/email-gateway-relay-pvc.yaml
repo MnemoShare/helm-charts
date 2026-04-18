@@ -1,0 +1,24 @@
+{{- if .Values.emailGateway.enabled }}
+{{- if or (eq .Values.emailGateway.mode "relay") (eq .Values.emailGateway.mode "inbound-relay") }}
+{{- if and .Values.emailGateway.relay.persistence.enabled (not .Values.emailGateway.relay.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-relay-spool
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: email-gateway
+spec:
+  accessModes:
+    {{- range .Values.emailGateway.relay.persistence.accessModes }}
+    - {{ . }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.emailGateway.relay.persistence.size }}
+  {{- if .Values.emailGateway.relay.persistence.storageClass }}
+  storageClassName: {{ .Values.emailGateway.relay.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

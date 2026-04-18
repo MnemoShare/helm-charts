@@ -922,6 +922,13 @@ emailGateway:
   # Enable the email gateway deployment
   enabled: false
 
+  # Operating mode:
+  #   "gateway"       — outbound proxy to upstream SMTP relay (default)
+  #   "relay"         — outbound with DKIM signing and direct MX delivery
+  #                     from a persistent spool (requires persistence)
+  #   "inbound-relay" — accept external mail and forward to MnemoShare
+  mode: "gateway"
+
   # Number of gateway replicas
   replicas: 1
 
@@ -1018,6 +1025,41 @@ emailGateway:
 
   # Maximum attachment size (accepts suffixes: KB, MB, GB).
   maxAttachmentSize: "50MB"
+
+  # Relay mode configuration (applies when mode is "relay" or "inbound-relay")
+  relay:
+    # Round-robin destination hosts (host:port list, comma-separated).
+    # Leave empty in "relay" mode to use direct MX delivery.
+    # Required for "inbound-relay" mode.
+    hosts: ""
+    # Rate limit (messages/sec per destination domain)
+    rateLimit: 10
+    # Burst size
+    rateBurst: 20
+    # Custom DNS servers for MX lookups (comma-separated). Empty = node defaults.
+    dnsServers: ""
+    # Spool directory (PVC mount path — must be writable)
+    spoolDir: "/var/spool/mnemo-relay"
+    # PersistentVolumeClaim for relay spool
+    persistence:
+      enabled: true
+      size: "10Gi"
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+      # Use an existing PVC instead of creating one
+      existingClaim: ""
+    # MongoDB database for DKIM keys and relay state
+    db:
+      # MongoDB URI (inline — prefer existingSecret for production)
+      uri: ""
+      name: "relay"
+      # Existing secret with key: relay-db-uri
+      existingSecret: ""
+    # Relay admin API key (inline — prefer existingAdminKeySecret for production)
+    adminKey: ""
+    # Existing secret with key: relay-admin-key
+    existingAdminKeySecret: ""
 
   # Kubernetes Service (SMTP is L4 TCP — needs LoadBalancer/NLB, not Ingress)
   service:

@@ -4,6 +4,8 @@
 {{- if and (not $tlsSecret) .Values.mtls.tls.existingSecret }}
 {{- $tlsSecret = .Values.mtls.tls.existingSecret }}
 {{- end }}
+{{- $relayMode := or (eq .Values.emailGateway.mode "relay") (eq .Values.emailGateway.mode "inbound-relay") }}
+{{- $relayClaim := .Values.emailGateway.relay.persistence.existingClaim | default (printf "%s-relay-spool" (include "mnemoshare.fullname" .)) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -45,6 +47,8 @@ spec:
           containerPort: 8081
           protocol: TCP
         env:
+        - name: GATEWAY_MODE
+          value: {{ .Values.emailGateway.mode | quote }}
         {{- if $tlsSecret }}
         - name: LISTEN_PORTS
           value: {{ .Values.emailGateway.listenPorts | quote }}
@@ -176,6 +180,45 @@ spec:
           value: {{ .Values.emailGateway.authCacheTTL | quote }}
         - name: SENDER_CACHE_TTL
           value: {{ .Values.emailGateway.senderCacheTTL | quote }}
+        {{- if or (eq .Values.emailGateway.mode "relay") (eq .Values.emailGateway.mode "inbound-relay") }}
+        # Relay mode configuration
+        {{- if .Values.emailGateway.relay.hosts }}
+        - name: RELAY_HOSTS
+          value: {{ .Values.emailGateway.relay.hosts | quote }}
+        {{- end }}
+        - name: RELAY_SPOOL_DIR
+          value: {{ .Values.emailGateway.relay.spoolDir | quote }}
+        - name: RELAY_RATE_LIMIT
+          value: {{ .Values.emailGateway.relay.rateLimit | quote }}
+        - name: RELAY_RATE_BURST
+          value: {{ .Values.emailGateway.relay.rateBurst | quote }}
+        {{- if .Values.emailGateway.relay.dnsServers }}
+        - name: DNS_SERVERS
+          value: {{ .Values.emailGateway.relay.dnsServers | quote }}
+        {{- end }}
+        - name: RELAY_DB_NAME
+          value: {{ .Values.emailGateway.relay.db.name | quote }}
+        {{- if .Values.emailGateway.relay.db.existingSecret }}
+        - name: RELAY_DB_URI
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.relay.db.existingSecret }}
+              key: relay-db-uri
+        {{- else if .Values.emailGateway.relay.db.uri }}
+        - name: RELAY_DB_URI
+          value: {{ .Values.emailGateway.relay.db.uri | quote }}
+        {{- end }}
+        {{- if .Values.emailGateway.relay.existingAdminKeySecret }}
+        - name: RELAY_ADMIN_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.relay.existingAdminKeySecret }}
+              key: relay-admin-key
+        {{- else if .Values.emailGateway.relay.adminKey }}
+        - name: RELAY_ADMIN_KEY
+          value: {{ .Values.emailGateway.relay.adminKey | quote }}
+        {{- end }}
+        {{- end }}
         # Health port
         - name: HEALTH_PORT
           value: "8081"
@@ -203,17 +246,30 @@ spec:
           failureThreshold: 3
         resources:
           {{- toYaml .Values.emailGateway.resources | nindent 12 }}
-        {{- if $tlsSecret }}
+        {{- if or $tlsSecret $relayMode }}
         volumeMounts:
+        {{- if $tlsSecret }}
         - name: tls-certs
           mountPath: /etc/tls
           readOnly: true
         {{- end }}
-      {{- if $tlsSecret }}
+        {{- if $relayMode }}
+        - name: relay-spool
+          mountPath: {{ .Values.emailGateway.relay.spoolDir }}
+        {{- end }}
+        {{- end }}
+      {{- if or $tlsSecret $relayMode }}
       volumes:
+      {{- if $tlsSecret }}
       - name: tls-certs
         secret:
           secretName: {{ $tlsSecret }}
+      {{- end }}
+      {{- if $relayMode }}
+      - name: relay-spool
+        persistentVolumeClaim:
+          claimName: {{ $relayClaim }}
+      {{- end }}
       {{- end }}
       {{- with .Values.emailGateway.nodeSelector }}
       nodeSelector:
