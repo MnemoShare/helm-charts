@@ -393,6 +393,13 @@ emailGateway:
   workerCount: 2
   queueSize: 500
 
+  # Maximum SMTP recipients per message
+  maxRecipients: 100
+
+  # Comma-separated domains that must receive via TLS (e.g., "bank.com,healthcare.org")
+  # Applies only in relay / inbound-relay modes.
+  requireTlsDomains: ""
+
   # ICAP/ClamAV virus scanning (shared ClamAV instance)
   icap:
     url: ""           # e.g., "icap://clamav.mnemoshare-clamav.svc.cluster.local:1344"
@@ -430,6 +437,12 @@ inboundGateway:
   # Postfix content filter and socketmap ports (internal, not exposed)
   contentFilterPort: 10025
   socketmapPort: 10070
+
+  # DLP pipeline timeout (Go duration — total time for all DLP checks per message)
+  dlpPipelineTimeout: "60s"
+
+  # DLP timeout buffer (Go duration — safety margin before hard cutoff)
+  dlpTimeoutBuffer: "5s"
 
   # Service (receives inbound SMTP from MX records)
   service:

@@ -86,6 +86,11 @@ spec:
         - name: ICAP_REQUIRED
           value: {{ .Values.emailGateway.icap.required | default false | quote }}
         {{- end }}
+        # DLP pipeline timeouts
+        - name: DLP_PIPELINE_TIMEOUT
+          value: {{ .Values.inboundGateway.dlpPipelineTimeout | default "60s" | quote }}
+        - name: DLP_TIMEOUT_BUFFER
+          value: {{ .Values.inboundGateway.dlpTimeoutBuffer | default "5s" | quote }}
         # Customer metadata
         - name: CUSTOMER_ID
           value: {{ .Values.customer.id | quote }}

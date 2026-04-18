@@ -93,6 +93,13 @@ spec:
           value: {{ .Values.emailGateway.workerCount | default 2 | quote }}
         - name: QUEUE_SIZE
           value: {{ .Values.emailGateway.queueSize | default 500 | quote }}
+        # Limits
+        - name: MAX_RECIPIENTS
+          value: {{ .Values.emailGateway.maxRecipients | default 100 | quote }}
+        {{- if .Values.emailGateway.requireTlsDomains }}
+        - name: REQUIRE_TLS_DOMAINS
+          value: {{ .Values.emailGateway.requireTlsDomains | quote }}
+        {{- end }}
         # Health port
         - name: HEALTH_PORT
           value: "8081"

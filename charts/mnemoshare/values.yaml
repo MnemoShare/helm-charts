@@ -965,6 +965,13 @@ emailGateway:
   workerCount: 4
   queueSize: 1000
 
+  # Maximum SMTP recipients per message
+  maxRecipients: 100
+
+  # Comma-separated domains that must receive via TLS (e.g., "bank.com,healthcare.org")
+  # Applies only in relay / inbound-relay modes.
+  requireTlsDomains: ""
+
   # Kubernetes Service (SMTP is L4 TCP — needs LoadBalancer/NLB, not Ingress)
   service:
     type: LoadBalancer
@@ -1011,6 +1018,12 @@ inboundGateway:
   icap:
     url: ""
     required: false
+
+  # DLP pipeline timeout (Go duration — total time for all DLP checks per message)
+  dlpPipelineTimeout: "60s"
+
+  # DLP timeout buffer (Go duration — safety margin before hard cutoff)
+  dlpTimeoutBuffer: "5s"
 
   # Kubernetes Service
   service:

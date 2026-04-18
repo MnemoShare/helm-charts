@@ -94,6 +94,11 @@ spec:
         {{- end }}
         - name: ICAP_REQUIRED
           value: {{ .Values.inboundGateway.icap.required | quote }}
+        # DLP pipeline timeouts
+        - name: DLP_PIPELINE_TIMEOUT
+          value: {{ .Values.inboundGateway.dlpPipelineTimeout | quote }}
+        - name: DLP_TIMEOUT_BUFFER
+          value: {{ .Values.inboundGateway.dlpTimeoutBuffer | quote }}
         # Encryption key for internal API secret derivation
         - name: ENCRYPTION_KEY
           valueFrom:
