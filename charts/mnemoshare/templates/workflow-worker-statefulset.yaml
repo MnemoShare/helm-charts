@@ -176,7 +176,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - "pgrep -f /usr/local/bin/worker"
+            - "pgrep -x worker"
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
