@@ -167,7 +167,7 @@ spec:
         - protocol: TCP
           port: 9000
     {{- end }}
-    # License server (external)
+    # License server (external via public endpoint, or via ingress controller for in-cluster hairpin)
     {{- if .Values.networkPolicy.licenseServer.enabled }}
     - to:
         {{- if .Values.networkPolicy.licenseServer.cidr }}
@@ -181,6 +181,14 @@ spec:
               - 172.16.0.0/12
               - 192.168.0.0/16
         {{- end }}
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow traffic to ingress controller for license server hairpin NAT
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | default "ingress-nginx" }}
       ports:
         - protocol: TCP
           port: 443
