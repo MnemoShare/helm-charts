@@ -142,7 +142,7 @@ spec:
           value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}/api/v1"
         # Logging
         - name: LOG_LEVEL
-          value: "info"
+          value: {{ .Values.workflowWorker.logLevel | default "info" | quote }}
         # Disk buffer configuration (memory management for large file processing)
         {{- if .Values.diskBuffer.enabled }}
         - name: DISK_BUFFER_THRESHOLD_MB
@@ -164,7 +164,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - "pgrep workflow-worker"
+            - "pgrep -f /usr/local/bin/worker"
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
