@@ -41,9 +41,19 @@ spec:
           {{- toYaml .Values.securityContext | nindent 12 }}
         image: "{{ .Values.workflowWorker.image.repository }}:{{ .Values.workflowWorker.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.workflowWorker.image.pullPolicy }}
-        # Override command to run workflow-worker instead of API server
-        command: ["/usr/local/bin/workflow-worker"]
+        # Override command to run cmd/worker (MNI-27 unified hosted-binary).
+        # Pre-MNI-27 this was /usr/local/bin/workflow-worker; that entrypoint was
+        # retired in MNI-27 PR#4 (commit e6e243d). cmd/worker hosts every engine
+        # at compile time and activates the configured subset via FILTERED_PROCESS.
+        # For this Deployment we always activate workflow only.
+        command: ["/usr/local/bin/worker"]
         env:
+        # Tenant Identity — required for dispatch keyspace isolation.
+        - name: CUSTOMER_ID
+          value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
+        # Engine activation filter — workflow-only for this Deployment.
+        - name: FILTERED_PROCESS
+          value: "workflow"
         # Database Configuration (supports MongoDB and PostgreSQL for distributed workers)
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}

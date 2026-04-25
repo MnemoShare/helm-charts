@@ -45,6 +45,15 @@ spec:
           protocol: TCP
         {{- end }}
         env:
+        # Tenant Identity — required for dispatch keyspace isolation (MNI-26 onwards).
+        # cmd/api fatals at boot if CUSTOMER_ID is empty when a dispatch backend that
+        # needs tenant scoping (currently the Mongo backend) is constructed. The
+        # required pipeline below rejects an empty .Values.customerId unconditionally
+        # at install/upgrade — independent of database.driver — so misconfigurations
+        # surface up-front instead of crash-looping later when a tenant-scoped
+        # backend is added or activated.
+        - name: CUSTOMER_ID
+          value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
         # Database Configuration (v0.6.0+ supports MongoDB, PostgreSQL, SQLite)
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}
