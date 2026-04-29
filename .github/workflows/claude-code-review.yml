@@ -36,4 +36,4 @@ jobs:
             APPROVED review. If issues exist, leave review comments and either
             request changes or comment without approving — do not approve a PR
             with unresolved issues.
-          claude_args: '--allowed-tools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*)"'
+          claude_args: '--allowed-tools "Read,Glob,Grep,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*),Bash(gh pr checks:*),Bash(gh pr files:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git blame:*)"'
