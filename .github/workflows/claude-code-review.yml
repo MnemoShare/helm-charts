@@ -1,0 +1,39 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this pull request. Focus on:
+            - Bugs, logic errors, and edge cases
+            - Security concerns (injection, auth, secrets, IDOR)
+            - Test coverage for new behavior
+            - Adherence to repository conventions in CLAUDE.md when present
+            - Performance issues
+
+            Be specific: cite file paths and line numbers. Skip nits unless they
+            cluster into a real concern. If the PR is clean and ready, leave an
+            APPROVED review. If issues exist, leave review comments and either
+            request changes or comment without approving — do not approve a PR
+            with unresolved issues.
+          claude_args: '--allowed-tools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*)"'
