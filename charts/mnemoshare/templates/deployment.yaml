@@ -214,6 +214,16 @@ spec:
           value: "8080"
         - name: APP_URL
           value: {{ .Values.appUrl | quote }}
+        # Surfaced to the frontend via /env-config.js so MCPAuthorizePage
+        # accepts the MCP host in its callback allowlist. Only meaningful
+        # when mcp.enabled and an external URL is configured.
+        {{- if .Values.mcp.enabled }}
+        {{- $mcpExternalUrl := include "mnemoshare.mcpExternalUrl" . }}
+        {{- if $mcpExternalUrl }}
+        - name: MCP_EXTERNAL_URL
+          value: {{ $mcpExternalUrl | quote }}
+        {{- end }}
+        {{- end }}
         - name: MAX_FILE_SIZE
           value: {{ .Values.files.maxSize | quote }}
         - name: DEFAULT_LINK_EXPIRATION
