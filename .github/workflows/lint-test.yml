@@ -47,6 +47,7 @@ jobs:
           # Validate that chart templates render correctly with test values
           # Note: Full install test skipped because the app requires real MongoDB/S3
           helm template mnemoshare charts/mnemoshare \
+            --set customerId="ci-test" \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \

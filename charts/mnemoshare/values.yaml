@@ -2,6 +2,23 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
+# ============================================================================
+# Tenant Identity (REQUIRED)
+# ============================================================================
+# customerId scopes the dispatch substrate's keyspace to one tenant. Every
+# pod that participates in dispatch (cmd/api, cmd/worker, workflow-worker)
+# MUST share the same customerId — they all read CUSTOMER_ID from env at
+# boot and refuse to start if it's empty (tenancy isolation safety).
+#
+# Pick a stable slug per deployment. Recommended: match the SaaS tenant
+# slug, or a descriptive identifier for self-hosted deployments. Avoid
+# changing this after the deployment has processed any messages — the
+# dispatch outbox keys are namespaced under it and changing it will leak
+# pending work into a new keyspace.
+#
+# Examples: "acme-clinic", "demo-enterprise-sxc", "selfhosted-prod"
+customerId: ""
+
 replicaCount: 2
 
 image:
