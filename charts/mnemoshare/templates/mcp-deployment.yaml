@@ -67,6 +67,18 @@ spec:
           # Format: http://<service>.<namespace>.svc.cluster.local/api/v1
           value: "http://{{ include "mnemoshare.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local/api/v1"
           {{- end }}
+        # OAuth 2.1 browser-based authentication (skipped when both are empty).
+        # MCP_EXTERNAL_URL: cmd/mcp-admin gates OAuth handler registration on this.
+        # MNEMOSHARE_APP_URL: where the MCP server redirects users for SSO consent.
+        {{- $mcpExternalUrl := include "mnemoshare.mcpExternalUrl" . }}
+        {{- if $mcpExternalUrl }}
+        - name: MCP_EXTERNAL_URL
+          value: {{ $mcpExternalUrl | quote }}
+        {{- end }}
+        {{- if .Values.appUrl }}
+        - name: MNEMOSHARE_APP_URL
+          value: {{ .Values.appUrl | quote }}
+        {{- end }}
         {{- if eq .Values.mcp.transport.type "http" }}
         livenessProbe:
           httpGet:

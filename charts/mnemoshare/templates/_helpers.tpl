@@ -80,3 +80,21 @@ Generate encryption key - use provided value or auto-generate (must be exactly 3
 {{- randAlphaNum 32 }}
 {{- end }}
 {{- end }}
+
+{{/*
+Public MCP server URL used for OAuth callback construction and frontend
+callback-host validation. Resolution order:
+  1. mcp.externalUrl (explicit override)
+  2. https://<first mcp.ingress.hosts[].host> if ingress is enabled
+  3. empty (OAuth handler will not be registered — same as pre-OAuth behavior)
+*/}}
+{{- define "mnemoshare.mcpExternalUrl" -}}
+{{- if .Values.mcp.externalUrl -}}
+{{- .Values.mcp.externalUrl | trimSuffix "/" -}}
+{{- else if and .Values.mcp.ingress.enabled .Values.mcp.ingress.hosts -}}
+{{- $first := index .Values.mcp.ingress.hosts 0 -}}
+{{- if $first.host -}}
+{{- printf "https://%s" $first.host -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
