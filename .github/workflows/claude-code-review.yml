@@ -1,23 +1,43 @@
 name: Claude Code Review
 
+# Runs on `pull_request_target` (not `pull_request`) so secrets are available
+# even for PRs from forks. The workflow code itself runs from the BASE branch
+# (main), not from the fork — so a fork can't tamper with the workflow logic.
+# The checkout below pulls the fork's code purely as *data* for Claude to
+# read; the allowed-tools list does not permit any command that would execute
+# fork-controlled scripts (no `npm install`, no `make`, etc.).
 on:
-  pull_request:
-    types: [opened, synchronize]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
     branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: claude-review-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   claude-review:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: write
-      id-token: write
+    timeout-minutes: 15
     steps:
-      - name: Checkout repository
+      # Defense-in-depth: a malicious PR could theoretically include a file
+      # at the verdict path. Claude writes to /tmp (outside the workspace),
+      # but we clear it explicitly anyway.
+      - name: Reset verdict file
+        run: rm -f /tmp/claude-verdict.txt
+
+      - name: Checkout PR head (read-only)
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Run Claude Code Review
         uses: anthropics/claude-code-action@v1
@@ -31,9 +51,45 @@ jobs:
             - Adherence to repository conventions in CLAUDE.md when present
             - Performance issues
 
-            Be specific: cite file paths and line numbers. Skip nits unless they
-            cluster into a real concern. If the PR is clean and ready, leave an
-            APPROVED review. If issues exist, leave review comments and either
-            request changes or comment without approving — do not approve a PR
-            with unresolved issues.
-          claude_args: '--allowed-tools "Read,Glob,Grep,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*),Bash(gh pr checks:*),Bash(gh pr files:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git blame:*)"'
+            Be specific: cite file paths and line numbers. Skip nits unless
+            they cluster into a real concern.
+
+            **VERDICT REQUIREMENT** — after your review, write a single-line
+            verdict file at `/tmp/claude-verdict.txt`:
+              - `APPROVE` — the change is mergeable as-is. No blocking findings.
+              - `BLOCK: <one-line reason>` — at least one finding must be
+                addressed before merge. Post specifics as inline review
+                comments first, then write the BLOCK line.
+
+            Calibration: APPROVE only when you would genuinely sign off on
+            this from a colleague. If you would request changes, use BLOCK.
+            The verdict file is the merge gate — a real human will not be
+            clicking approve, so be honest. Trivial nits (typos, comment
+            wording, formatting preferences) are not BLOCK-worthy on their
+            own; bugs, security gaps, broken contracts, or missing tests for
+            new logic are.
+          claude_args: '--allowed-tools "Read,Glob,Grep,Write,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*),Bash(gh pr checks:*),Bash(gh pr files:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git blame:*)"'
+
+      - name: Enforce verdict
+        run: |
+          if [ ! -f /tmp/claude-verdict.txt ]; then
+            echo "::error::Claude did not produce /tmp/claude-verdict.txt — treating as BLOCK."
+            exit 1
+          fi
+          verdict=$(head -n1 /tmp/claude-verdict.txt | sed 's/[[:space:]]*$//')
+          echo "Claude verdict: $verdict"
+          case "$verdict" in
+            APPROVE)
+              echo "::notice::Claude approved — no blocking findings."
+              ;;
+            BLOCK*)
+              reason="${verdict#BLOCK}"
+              reason="${reason#:}"
+              echo "::error::Claude blocked merge:${reason}"
+              exit 1
+              ;;
+            *)
+              echo "::error::Unrecognized verdict: '$verdict' — treating as BLOCK."
+              exit 1
+              ;;
+          esac

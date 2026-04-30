@@ -1,14 +1,14 @@
 name: Lint and Test Charts
 
+# Runs on every PR (no path filter) so it can serve as a required status
+# check on `main` — a path-filtered workflow would never report on PRs that
+# only touch docs/CI, leaving branch protection in a "expected, never
+# arrived" state and blocking the merge.
 on:
   pull_request:
-    paths:
-      - 'charts/**'
   push:
     branches:
       - main
-    paths:
-      - 'charts/**'
 
 jobs:
   lint-test:
