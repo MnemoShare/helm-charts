@@ -90,7 +90,7 @@ callback-host validation. Resolution order:
 */}}
 {{- define "mnemoshare.mcpExternalUrl" -}}
 {{- if .Values.mcp.externalUrl -}}
-{{- .Values.mcp.externalUrl -}}
+{{- .Values.mcp.externalUrl | trimSuffix "/" -}}
 {{- else if and .Values.mcp.ingress.enabled .Values.mcp.ingress.hosts -}}
 {{- $first := index .Values.mcp.ingress.hosts 0 -}}
 {{- if $first.host -}}

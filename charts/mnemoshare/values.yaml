@@ -1248,6 +1248,9 @@ mcp:
   # browser-based authentication — when empty, the MCP server skips
   # registering the OAuth handler and clients cannot complete /oauth/authorize.
   # Resolution order: this value > derived from mcp.ingress.hosts[0].host > empty.
+  # The ingress-derived form always assumes https://; if TLS is terminated
+  # upstream and the ingress is HTTP-only, set this explicitly. Trailing
+  # slashes are stripped to avoid OAuth redirect-URI mismatches.
   # Example: "https://mcp.example.com"
   externalUrl: ""
 
