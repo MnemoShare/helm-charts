@@ -54,12 +54,28 @@ jobs:
             Be specific: cite file paths and line numbers. Skip nits unless
             they cluster into a real concern.
 
-            **VERDICT REQUIREMENT** — after your review, write a single-line
-            verdict file at `/tmp/claude-verdict.txt`:
+            **Submit a formal review.** Use `gh pr review` — not a plain comment:
+              - If clean with no blockers: `gh pr review --approve`
+              - If blockers exist: `gh pr review --request-changes`
+              - If only nits or unsure: `gh pr review --comment`
+
+            **End your review body with one of these exact lines:**
+              VERDICT: APPROVE
+              VERDICT: BLOCK
+              VERDICT: COMMENT
+
+            The VERDICT line is parsed by Darrin (the auto-approval mirror) to
+            post the human-account approval that satisfies branch protection.
+
+            **Also write a verdict file** at `/tmp/claude-verdict.txt`:
               - `APPROVE` — the change is mergeable as-is. No blocking findings.
               - `BLOCK: <one-line reason>` — at least one finding must be
                 addressed before merge. Post specifics as inline review
                 comments first, then write the BLOCK line.
+
+            The verdict file gates the CI status check; the gh pr review +
+            VERDICT line gates the branch-protection merge approval. Both
+            must agree (APPROVE in both, or BLOCK in both).
 
             Calibration: APPROVE only when you would genuinely sign off on
             this from a colleague. If you would request changes, use BLOCK.
