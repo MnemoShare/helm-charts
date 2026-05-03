@@ -1207,6 +1207,30 @@ networkPolicy:
     # Enable egress to OAuth providers (required for SSO)
     enabled: true
 
+  # External SMTP relay access (Gmail, Office365, SES, custom mail servers, etc.)
+  smtp:
+    # Enable egress to external SMTP servers on ports 25, 465, 587, 2525.
+    # Required if you configure outbound email via Settings → Email → SMTP/ESMTP.
+    enabled: true
+
+  # Workflow engine egress — broad outbound (RFC1918-deny only)
+  workflows:
+    # Enable broad outbound TCP egress (0.0.0.0/0 minus RFC1918) for workflow
+    # executors that dial arbitrary customer-supplied host:port: call_api,
+    # webhook, database_connect (PostgreSQL/MySQL/MSSQL/Oracle/MongoDB/DB2),
+    # sftp_*, ftps_*, rsync, as2_send, swift_*, ebics_*, oftp2, llm_prompt, etc.
+    #
+    # Off by default. Enable when the tenant has the Workflows feature licensed
+    # and you want the iPaaS-style egress posture (broad outbound, RFC1918-only
+    # deny). The substantive boundary in this mode lives at L7+ (DLP, audit
+    # chain, anomaly detection) — see MnemoCompliance MNC-1 (SC-7 Boundary
+    # Protection control narrative) for the rationale and compensating controls.
+    #
+    # If you keep this off but enable workflows in the application, customer-
+    # authored steps that dial outside the narrow port allowlist (443, SMTP)
+    # will fail at the network layer.
+    enabled: false
+
 # ============================================================================
 # MCP Admin Server - AI-Assisted Configuration Management
 # ============================================================================
