@@ -1,13 +1,14 @@
 name: Claude Code Review
 
-# Runs on `pull_request_target` (not `pull_request`) so secrets are available
-# even for PRs from forks. The workflow code itself runs from the BASE branch
-# (main), not from the fork — so a fork can't tamper with the workflow logic.
-# The checkout below pulls the fork's code purely as *data* for Claude to
-# read; the allowed-tools list does not permit any command that would execute
-# fork-controlled scripts (no `npm install`, no `make`, etc.).
+# Trigger: `pull_request`. We previously used `pull_request_target` to expose
+# secrets on fork PRs, but `anthropics/claude-code-action@v1`'s OIDC token
+# exchange does not accept tokens issued under `pull_request_target` events
+# (every run since the switch failed with `401 Invalid OIDC token`). Reverting
+# to `pull_request` restores the gate. Fork PRs from external contributors
+# will not auto-review under this trigger; if/when fork PR review becomes a
+# real need, switch to a `workflow_run`-driven pattern instead.
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened]
     branches: [main]
 

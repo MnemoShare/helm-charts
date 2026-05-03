@@ -219,6 +219,47 @@ spec:
         - protocol: TCP
           port: 443
     {{- end }}
+    # External SMTP (customer-configured outbound mail relays — Gmail, Office365, SES, etc.)
+    {{- if .Values.networkPolicy.smtp.enabled }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 25
+        - protocol: TCP
+          port: 465
+        - protocol: TCP
+          port: 587
+        - protocol: TCP
+          port: 2525
+    {{- end }}
+    # Workflow engine — broad egress for customer-authored workflow steps
+    # (call_api, webhook, database_connect, sftp_*, ftps_*, as2_send, swift_*,
+    # ebics_*, oftp2, llm_prompt, etc.) which accept arbitrary host:port.
+    # An L4 port allowlist is theatrical for a workflows-enabled tenant, so
+    # the substantive boundary moves up the stack to DLP, audit chain, and
+    # anomaly detection. Private ranges are excluded for cluster + IMDS
+    # isolation; UDP is denied (TCP-only) to block DNS exfil and QUIC.
+    # Off by default for self-hosted; flip to true if the tenant has Workflows
+    # licensed and you want the iPaaS-style egress posture.
+    {{- if and .Values.networkPolicy.workflows .Values.networkPolicy.workflows.enabled }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8       # RFC1918
+              - 172.16.0.0/12    # RFC1918
+              - 192.168.0.0/16   # RFC1918
+              - 169.254.0.0/16   # Link-local (cloud IMDS SSRF gate)
+              - 100.64.0.0/10    # Tailscale CGNAT
+      ports:
+        - protocol: TCP          # TCP only — block UDP egress
+    {{- end }}
 ---
 {{- if .Values.clamav.enabled }}
 # ClamAV NetworkPolicy - only allow traffic from MnemoShare pods
