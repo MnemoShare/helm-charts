@@ -243,7 +243,8 @@ spec:
     # ebics_*, oftp2, llm_prompt, etc.) which accept arbitrary host:port.
     # An L4 port allowlist is theatrical for a workflows-enabled tenant, so
     # the substantive boundary moves up the stack to DLP, audit chain, and
-    # anomaly detection. RFC1918 deny is preserved for cluster isolation.
+    # anomaly detection. Private ranges are excluded for cluster + IMDS
+    # isolation; UDP is denied (TCP-only) to block DNS exfil and QUIC.
     # Off by default for self-hosted; flip to true if the tenant has Workflows
     # licensed and you want the iPaaS-style egress posture.
     {{- if and .Values.networkPolicy.workflows .Values.networkPolicy.workflows.enabled }}
@@ -251,9 +252,13 @@ spec:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
+              - 10.0.0.0/8       # RFC1918
+              - 172.16.0.0/12    # RFC1918
+              - 192.168.0.0/16   # RFC1918
+              - 169.254.0.0/16   # Link-local (cloud IMDS SSRF gate)
+              - 100.64.0.0/10    # Tailscale CGNAT
+      ports:
+        - protocol: TCP          # TCP only — block UDP egress
     {{- end }}
 ---
 {{- if .Values.clamav.enabled }}
