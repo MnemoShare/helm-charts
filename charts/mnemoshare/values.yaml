@@ -1340,3 +1340,125 @@ mcp:
 
   # Tolerations for MCP pods
   tolerations: []
+
+# ============================================================================
+# SFTP Gateway (MNS-256)
+# ============================================================================
+# A Bearer-token SFTP front-end for the MnemoShare API. Lets legacy MFT
+# clients (or migration tooling like the GoAnywhere bridge) `put`/`get`
+# files into shared folders without the gateway ever touching MongoDB,
+# S3, or encryption keys directly. Every data-plane operation maps to
+# a Bearer-token call against the same /api/v1/folders/{id}/* surface
+# the web UI uses.
+#
+# When SFTP is being used as a migration bridge, the gateway sits next
+# to the API in the same namespace; production deployments expose it via
+# a LoadBalancer Service to an external IP with port 22 forwarded into
+# the Pod's :2222.
+#
+# Strict rule: enabling sftpGateway here does NOT bypass the
+# organization-level RequireHardwareKeyForFiles setting. If an org has
+# that flag on, the API still refuses every SFTP-originated upload at
+# the per-handler check — the gateway's role is to translate the protocol,
+# not to relax security. Use the org-level setting to opt-out of SFTP for
+# orgs that need hardware-key enforcement.
+sftpGateway:
+  # Enable the SFTP gateway deployment.
+  enabled: false
+
+  # Number of gateway replicas. Each Pod holds independent token state
+  # per session, so >1 is fine for HA. Recreate strategy is used during
+  # rollouts to avoid two Pods on the same Service briefly serving
+  # different host keys (some SFTP clients pin them).
+  replicas: 1
+
+  # Container image. Published separately from the all-in-one image
+  # because the gateway is a thin sidecar that only needs the SFTP
+  # binary and the Go SSH stack.
+  image:
+    repository: ghcr.io/mnemoshare/sftp-gateway
+    pullPolicy: IfNotPresent
+    # Defaults to chart appVersion when empty.
+    tag: ""
+
+  # The license-capability gate. The binary refuses to start unless
+  # this is the literal string "true". Operators / provisioners flip
+  # this on once the tier capability is provisioned. The MNS-172+
+  # signed-token flow will replace this stub.
+  licenseCapabilityEnabled: "false"
+
+  # SSH host key. The gateway requires an Ed25519 (or RSA) private key
+  # mounted at /etc/sftp-gateway/host_key. Generate one with:
+  #
+  #   ssh-keygen -t ed25519 -N "" -f host_key
+  #   kubectl create secret generic <release>-sftp-gateway-host-key \
+  #     --from-file=host_key=./host_key
+  #
+  # Then point existingSecret at that secret. The chart does NOT
+  # auto-generate the key — host-key churn at upgrade time would break
+  # every client that has pinned the previous fingerprint.
+  hostKey:
+    existingSecret: ""
+
+  # Internal API secret. The gateway's authclient sends this verbatim
+  # in the X-Internal-Secret header on every /internal/sftp/* call.
+  # The value MUST equal sha256("mnemoshare-internal-api:" + ENCRYPTION_KEY)
+  # hex — the same derivation the API does in NewPeerNotifier.
+  #
+  # When unset AND existingSecrets.encryption is also unset, the chart
+  # auto-derives it from the chart-managed encryption key into a chart-
+  # owned secret named <release>-sftp-gateway. When existingSecrets.encryption
+  # IS set, the chart can't see the encryption key value and the operator
+  # MUST provide a pre-derived secret here.
+  internalApiSecret:
+    existingSecret: ""
+
+  # Service shape. Default ClusterIP keeps the gateway inside the
+  # cluster (port-forward for local testing, internal LB for K8s clients).
+  # Set to LoadBalancer (and optionally loadBalancerIP) to expose it
+  # externally for SFTP from off-cluster.
+  service:
+    type: ClusterIP
+    port: 2222
+    loadBalancerIP: ""
+    annotations: {}
+
+  # Per-handle ring-buffer size for streaming GET responses. Default
+  # 4 MiB — covers most MFT use-cases without blowing per-session memory.
+  # Range: 64 KiB – 64 MiB. See docs/private/MNS-256-SFTP-GATEWAY-DESIGN.md.
+  readBufferBytes: 4194304
+
+  # Per-call timeout the gateway applies on the close-time POST that
+  # commits a multipart upload (the API runs synchronous DLP + AV scans
+  # there). Default 600 seconds. Increase for very large files; decrease
+  # to fail-fast against a hung API.
+  completeDeadlineSec: 600
+
+  # Per-call timeout for /internal/sftp/auth. Default 5 seconds — auth
+  # either lands fast or the API is in trouble.
+  authTimeoutSec: 5
+
+  # Audit-relay circuit breaker. The gateway POSTs every session-lifecycle
+  # event back to the API's audit chain. If the API is sick, the gateway
+  # trips its breaker and refuses new sessions rather than silently
+  # dropping audit (FedRAMP AU-3 / AU-9 / AU-12). Mirrors the API's
+  # AUDIT_FAILURE_THRESHOLD / AUDIT_FAILURE_WINDOW_SEC posture.
+  auditFailureThreshold: 50
+  auditFailureWindowSec: 60
+
+  # Pod annotations (e.g. for sidecar opt-out, prometheus scrape).
+  podAnnotations: {}
+
+  # Resource budget. Defaults are tuned for low-volume migration use;
+  # bump when serving many concurrent sessions.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # Extra env vars to inject (for one-off operator escapes; prefer the
+  # dedicated values above when adding a knob).
+  extraEnv: []

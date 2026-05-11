@@ -1,0 +1,130 @@
+{{- if .Values.sftpGateway.enabled }}
+{{- $hostKeySecret := .Values.sftpGateway.hostKey.existingSecret -}}
+{{- $internalSecret := .Values.sftpGateway.internalApiSecret.existingSecret -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-sftp-gateway
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sftp-gateway
+spec:
+  replicas: {{ .Values.sftpGateway.replicas }}
+  strategy:
+    # The SSH host key is mounted from a single secret; running two pods
+    # with the same key is fine, but a rolling update that briefly has
+    # two pods on the same Service can confuse SFTP clients that pin
+    # host keys. Recreate keeps it boring.
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sftp-gateway
+  template:
+    metadata:
+      labels:
+        {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: sftp-gateway
+      {{- with .Values.sftpGateway.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+      - name: sftp-gateway
+        image: "{{ .Values.sftpGateway.image.repository }}:{{ .Values.sftpGateway.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.sftpGateway.image.pullPolicy }}
+        ports:
+        - name: sftp
+          containerPort: 2222
+          protocol: TCP
+        - name: health
+          containerPort: 8090
+          protocol: TCP
+        env:
+        - name: SFTP_GATEWAY_LISTEN_ADDR
+          value: ":2222"
+        - name: SFTP_GATEWAY_HOST_KEY_PATH
+          value: /etc/sftp-gateway/host_key
+        - name: SFTP_GATEWAY_API_BASE_URL
+          value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}"
+        - name: SFTP_GATEWAY_HEALTH_PORT
+          value: "8090"
+        # The license-capability gate. Operator/provisioner injects this
+        # from the tier capability bundle. The binary refuses to start
+        # without an explicit "true" — a Pod that boots into an unlicensed
+        # steady state is worse than one that crashloops with a clear
+        # log line.
+        - name: SFTP_GATEWAY_LICENSE_CAPABILITY_ENABLED
+          value: {{ .Values.sftpGateway.licenseCapabilityEnabled | quote }}
+        - name: SFTP_GATEWAY_INTERNAL_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ $internalSecret | default (printf "%s-sftp-gateway" (include "mnemoshare.fullname" .)) }}
+              key: internal-api-secret
+        {{- with .Values.sftpGateway.readBufferBytes }}
+        - name: SFTP_GATEWAY_READ_BUFFER_BYTES
+          value: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.sftpGateway.completeDeadlineSec }}
+        - name: SFTP_GATEWAY_COMPLETE_DEADLINE_SEC
+          value: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.sftpGateway.authTimeoutSec }}
+        - name: SFTP_GATEWAY_AUTH_TIMEOUT_SEC
+          value: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.sftpGateway.auditFailureThreshold }}
+        - name: SFTP_GATEWAY_AUDIT_FAILURE_THRESHOLD
+          value: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.sftpGateway.auditFailureWindowSec }}
+        - name: SFTP_GATEWAY_AUDIT_FAILURE_WINDOW_SEC
+          value: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.sftpGateway.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        volumeMounts:
+        - name: host-key
+          mountPath: /etc/sftp-gateway
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 2
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 3
+          failureThreshold: 5
+        resources:
+          {{- toYaml .Values.sftpGateway.resources | nindent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+      volumes:
+      - name: host-key
+        secret:
+          secretName: {{ $hostKeySecret | required ".Values.sftpGateway.hostKey.existingSecret is required when sftpGateway.enabled is true. Generate a key with `ssh-keygen -t ed25519 -N \"\" -f host_key` and create a secret: `kubectl create secret generic <name> --from-file=host_key=./host_key`." }}
+          defaultMode: 0o400
+{{- end }}

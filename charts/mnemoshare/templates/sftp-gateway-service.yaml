@@ -1,0 +1,30 @@
+{{- if .Values.sftpGateway.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-sftp-gateway
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sftp-gateway
+  {{- with .Values.sftpGateway.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.sftpGateway.service.type }}
+  {{- if and (eq .Values.sftpGateway.service.type "LoadBalancer") .Values.sftpGateway.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.sftpGateway.service.loadBalancerIP }}
+  {{- end }}
+  ports:
+  - name: sftp
+    port: {{ .Values.sftpGateway.service.port }}
+    targetPort: sftp
+    protocol: TCP
+  - name: health
+    port: 8090
+    targetPort: health
+    protocol: TCP
+  selector:
+    {{- include "mnemoshare.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sftp-gateway
+{{- end }}
