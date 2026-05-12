@@ -95,10 +95,21 @@ spec:
         {{- with .Values.sftpGateway.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        - name: SFTP_GATEWAY_SPOOL_DIR
+          value: /var/spool/sftp-gateway
         volumeMounts:
         - name: host-key
           mountPath: /etc/sftp-gateway
           readOnly: true
+        # Writable scratch for in-flight PUTs. The gateway runs with
+        # readOnlyRootFilesystem=true, so we mount an emptyDir here so
+        # writeBuffer can stage uploads as temp files (the kernel handles
+        # the concurrent WriteAt calls SFTP clients dispatch). Sized
+        # implicitly by the node's ephemeral storage; bursty large
+        # uploads should set sftpGateway.spoolMedium=Memory if disk
+        # backpressure becomes a concern.
+        - name: spool
+          mountPath: /var/spool/sftp-gateway
         readinessProbe:
           httpGet:
             path: /readyz
@@ -127,4 +138,12 @@ spec:
         secret:
           secretName: {{ $hostKeySecret | required ".Values.sftpGateway.hostKey.existingSecret is required when sftpGateway.enabled is true. Generate a key with `ssh-keygen -t ed25519 -N \"\" -f host_key` and create a secret: `kubectl create secret generic <name> --from-file=host_key=./host_key`." }}
           defaultMode: 0o400
+      - name: spool
+        emptyDir:
+          {{- if eq (.Values.sftpGateway.spoolMedium | default "") "Memory" }}
+          medium: Memory
+          {{- end }}
+          {{- with .Values.sftpGateway.spoolSizeLimit }}
+          sizeLimit: {{ . }}
+          {{- end }}
 {{- end }}

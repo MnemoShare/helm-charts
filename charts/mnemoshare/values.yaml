@@ -1459,6 +1459,21 @@ sftpGateway:
       cpu: 500m
       memory: 256Mi
 
+  # Spool volume — backs Filewrite's in-flight temp files. The gateway
+  # runs with readOnlyRootFilesystem=true, so the chart mounts an
+  # emptyDir at /var/spool/sftp-gateway. Each open SFTP write handle
+  # holds at most file_size bytes here; cleanup is automatic on CLOSE
+  # or session abort.
+  #
+  # spoolMedium: ""        # "" = node disk (default). Set to "Memory"
+  #                        #      to back the emptyDir with tmpfs (RAM)
+  #                        #      for very fast small uploads at the
+  #                        #      cost of pod RAM headroom.
+  # spoolSizeLimit: ""     # "" = unbounded. Set e.g. "20Gi" to cap
+  #                        #      the per-pod scratch budget.
+  spoolMedium: ""
+  spoolSizeLimit: ""
+
   # NetworkPolicy carve-out for the sftp-gateway pod. Only consulted
   # when the chart-level `networkPolicy.enabled` is true. The gateway
   # pod inherits the chart's default-deny policy via mnemoshare.selectorLabels,
