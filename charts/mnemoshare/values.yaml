@@ -1459,6 +1459,20 @@ sftpGateway:
       cpu: 500m
       memory: 256Mi
 
+  # NetworkPolicy carve-out for the sftp-gateway pod. Only consulted
+  # when the chart-level `networkPolicy.enabled` is true. The gateway
+  # pod inherits the chart's default-deny policy via mnemoshare.selectorLabels,
+  # so without an explicit allow rule it can neither receive SFTP nor
+  # reach the API. The chart auto-creates the right ingress (port 2222)
+  # and egress (DNS + API) rules; these knobs let operators tighten
+  # the public ingress.
+  networkPolicy:
+    # CIDR allowlist for inbound SFTP. Empty list (default) permits any
+    # source, matching the public-MFT-endpoint expectation. Set to a
+    # known partner IP set when the SFTP fleet is closed (e.g.
+    # ["203.0.113.0/24", "198.51.100.42/32"]).
+    allowedSourceCIDRs: []
+
   # Extra env vars to inject (for one-off operator escapes; prefer the
   # dedicated values above when adding a knob).
   extraEnv: []

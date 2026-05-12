@@ -401,4 +401,72 @@ spec:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
 {{- end }}
+---
+{{- if .Values.sftpGateway.enabled }}
+# SFTP gateway NetworkPolicy. The default-deny above selects on
+# mnemoshare.selectorLabels, which also matches the sftp-gateway pods —
+# so without this policy the gateway can neither receive SFTP nor reach
+# the API. Mirrors the per-component pattern used by mcp and clamav above.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-sftp-gateway
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sftp-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Public SFTP entry on the pod's containerPort 2222. The cloud LB
+    # (or NodePort) terminates TCP and forwards here. Default permits any
+    # source — set sftpGateway.networkPolicy.allowedSourceCIDRs to lock
+    # it down when the partner set is known. Per-key Scope.AllowedIPs is
+    # the application-layer enforcement and applies on top.
+    - from:
+        {{- if and .Values.sftpGateway.networkPolicy .Values.sftpGateway.networkPolicy.allowedSourceCIDRs }}
+        {{- range .Values.sftpGateway.networkPolicy.allowedSourceCIDRs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+        {{- else }}
+        - ipBlock:
+            cidr: 0.0.0.0/0
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 2222
+    # Health probes from kubelet — empty `from` matches the node IP.
+    - ports:
+        - protocol: TCP
+          port: 8090
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # MnemoShare API — /internal/sftp/auth (auth callback), /internal/sftp/audit
+    # (lifecycle event relay), and the data-plane file ops the apiclient
+    # makes on the user's behalf. The gateway never talks to S3/MongoDB
+    # directly — every byte is proxied through the API.
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+{{- end }}
 {{- end }}
