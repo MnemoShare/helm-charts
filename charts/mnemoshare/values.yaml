@@ -913,9 +913,29 @@ workflowWorker:
   # Worker concurrency (tasks per worker)
   concurrency: 10
 
+  # Engine activation filter — selects which dispatch engines this pod
+  # hosts. Post-MNI-27, cmd/worker hosts the background engine
+  # (virus_scan + metadata_extract + report_generate) in addition to
+  # the workflow engine. MUST include "background" or file uploads sit
+  # on the "Pending" scan_status badge forever because nothing consumes
+  # the background.* dispatch messages cmd/api publishes. See MNS-505.
+  filteredProcess: "background,workflow"
+
   # Temporary directory for file processing
   # Leave empty to use system default
   tempDir: ""
+
+  # Writable /tmp emptyDir mount (MNS-504). The background scan handler
+  # spools decrypted file streams to /tmp before posting to ICAP/ClamAV.
+  # The base image runs with readOnlyRootFilesystem=true; without this
+  # mount scan attempts fail with: "failed to create temp file: ... read-only
+  # file system". cmd/api gets the equivalent mount from its template;
+  # this block keeps the worker pod symmetric.
+  tmpVolume:
+    enabled: true
+    # Optional sizeLimit on the tmpfs-backed emptyDir. A single ClamAV
+    # streamed file shouldn't exceed this in practice.
+    sizeLimit: "512Mi"
 
   # Log level for workflow worker
   logLevel: "info"

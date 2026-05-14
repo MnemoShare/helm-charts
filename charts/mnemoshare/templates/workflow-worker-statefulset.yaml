@@ -45,17 +45,20 @@ spec:
         # Pre-MNI-27 this was /usr/local/bin/workflow-worker; that entrypoint was
         # retired in MNI-27 PR#4 (commit e6e243d). cmd/worker hosts every engine
         # at compile time and activates the configured subset via FILTERED_PROCESS.
-        # For this StatefulSet we always activate workflow only.
+        # For this StatefulSet the active set is .Values.workflowWorker.filteredProcess
+        # (default: "background,workflow") — see the FILTERED_PROCESS env below.
         command: ["/usr/local/bin/worker"]
         env:
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
           value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
-        # Engine activation filter — workflow-only for this StatefulSet (the
-        # specialized workflow worker; the generic cmd/worker Deployment
-        # template can run other filter combinations).
+        # Engine activation filter (MNS-505). Defaults to
+        # "background,workflow" so the workflow-worker pod also consumes
+        # background.* dispatch messages (virus_scan, metadata_extract,
+        # report_generate). Override via .Values.workflowWorker.filteredProcess
+        # — see values.yaml for the hazards of dropping "background".
         - name: FILTERED_PROCESS
-          value: "workflow"
+          value: {{ .Values.workflowWorker.filteredProcess | default "background,workflow" | quote }}
         # Database Configuration (supports MongoDB and PostgreSQL for distributed workers)
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}
@@ -190,6 +193,13 @@ spec:
         - name: disk-buffer
           mountPath: /mnt/disk-buffer
         {{- end }}
+        {{- if .Values.workflowWorker.tmpVolume.enabled }}
+        # MNS-504: writable /tmp for background.scan handler (spools
+        # decrypted streams to /tmp before posting to ICAP). Required
+        # because the base image runs with readOnlyRootFilesystem=true.
+        - name: tmp
+          mountPath: /tmp
+        {{- end }}
         livenessProbe:
           exec:
             command:
@@ -200,8 +210,16 @@ spec:
           periodSeconds: 30
           timeoutSeconds: 5
           failureThreshold: 3
-      {{- if .Values.diskBuffer.enabled }}
+      {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled }}
       volumes:
+      {{- if .Values.workflowWorker.tmpVolume.enabled }}
+      - name: tmp
+        emptyDir:
+          {{- if .Values.workflowWorker.tmpVolume.sizeLimit }}
+          sizeLimit: {{ .Values.workflowWorker.tmpVolume.sizeLimit }}
+          {{- end }}
+      {{- end }}
+      {{- if .Values.diskBuffer.enabled }}
       - name: disk-buffer
         {{- if eq .Values.diskBuffer.volume.type "emptyDir" }}
         emptyDir:
@@ -223,6 +241,7 @@ spec:
                 requests:
                   storage: {{ .Values.diskBuffer.volume.ephemeral.size }}
         {{- end }}
+      {{- end }}
       {{- end }}
       {{- with .Values.workflowWorker.nodeSelector }}
       nodeSelector:
