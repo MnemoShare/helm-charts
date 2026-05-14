@@ -173,10 +173,13 @@ Values consumed (all optional — only emitted when set):
   value: {{ .aiApiKey | quote }}
 {{- end }}
 {{- end }}
-{{- with .Values.kms -}}
-{{- if hasKey . "envelopeEnabled" }}
+{{- /* KMS_ENVELOPE_ENABLED is emitted unconditionally; users who override
+       .Values.kms to {} or nil still get the safe default so the worker
+       decrypt path for existing v2-encrypted files is preserved. */}}
+{{- $envelope := true }}
+{{- if and .Values.kms (hasKey .Values.kms "envelopeEnabled") }}
+{{- $envelope = .Values.kms.envelopeEnabled }}
+{{- end }}
 - name: KMS_ENVELOPE_ENABLED
-  value: {{ .envelopeEnabled | quote }}
-{{- end }}
-{{- end }}
+  value: {{ $envelope | quote }}
 {{- end }}

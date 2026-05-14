@@ -105,6 +105,8 @@ spec:
         {{- $presidioURL = .Values.emailGateway.dlp.presidioUrl }}
         {{- end }}
         {{- if $presidioURL }}
+        - name: PRESIDIO_ENABLED
+          value: "true"
         - name: PRESIDIO_URL
           value: {{ $presidioURL | quote }}
         {{- end }}
