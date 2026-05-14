@@ -148,6 +148,25 @@ spec:
         # Logging
         - name: LOG_LEVEL
           value: {{ .Values.workflowWorker.logLevel | default "info" | quote }}
+        # ClamAV ICAP endpoint (background.scan handler — env-seeded fallback;
+        # primary config comes from MongoDB IcapConfig row)
+        {{- if .Values.clamav.enabled }}
+        - name: DEFAULT_ICAP_URL
+          value: "icap://{{ include "mnemoshare.fullname" . }}-clamav:1344"
+        - name: DEFAULT_ICAP_SERVICE
+          value: "avscan"
+        {{- else if .Values.clamav.external.enabled }}
+        - name: DEFAULT_ICAP_URL
+          value: {{ .Values.clamav.external.url | quote }}
+        - name: DEFAULT_ICAP_SERVICE
+          value: {{ .Values.clamav.external.service | default "avscan" | quote }}
+        {{- end }}
+        # Cross-service integrations (rich-media thumbnails, Tika text
+        # extraction, Presidio NER, AI DLP, KMS envelope flag) — MUST match
+        # the api Deployment's surface or the background engine will silently
+        # skip integration work that the api previously did in-process.
+        # See templates/_helpers.tpl::mnemoshare.integrationEnv
+        {{- include "mnemoshare.integrationEnv" . | nindent 8 }}
         # Disk buffer configuration (memory management for large file processing)
         {{- if .Values.diskBuffer.enabled }}
         - name: DISK_BUFFER_THRESHOLD_MB

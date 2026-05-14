@@ -120,8 +120,12 @@ spec:
           value: {{ .Values.emailGateway.icap.timeout | quote }}
         - name: ICAP_REQUIRED
           value: {{ .Values.emailGateway.icap.required | quote }}
-        # DLP / scanning
+        # DLP / scanning. PRESIDIO_ENABLED must be paired with PRESIDIO_URL
+        # — internal/config/config.go reads PRESIDIO_ENABLED as a separate
+        # bool defaulted false, so a URL alone doesn't activate the client.
         {{- if .Values.emailGateway.dlp.presidioUrl }}
+        - name: PRESIDIO_ENABLED
+          value: "true"
         - name: PRESIDIO_URL
           value: {{ .Values.emailGateway.dlp.presidioUrl | quote }}
         {{- end }}
