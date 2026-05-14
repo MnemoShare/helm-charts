@@ -137,7 +137,12 @@ spec:
       - name: host-key
         secret:
           secretName: {{ $hostKeySecret | required ".Values.sftpGateway.hostKey.existingSecret is required when sftpGateway.enabled is true. Generate a key with `ssh-keygen -t ed25519 -N \"\" -f host_key` and create a secret: `kubectl create secret generic <name> --from-file=host_key=./host_key`." }}
-          defaultMode: 0o400
+          # 0400 = read-only by owner. YAML 1.1 octal (leading zero) is
+          # universally accepted by sigs.k8s.io/yaml; the YAML 1.2 `0o`
+          # prefix is parser-version-dependent and would silently
+          # round-trip as a string in some kubectl versions, failing
+          # API server validation. PR #12 review concern 2.
+          defaultMode: 0400
       - name: spool
         emptyDir:
           {{- if eq (.Values.sftpGateway.spoolMedium | default "") "Memory" }}

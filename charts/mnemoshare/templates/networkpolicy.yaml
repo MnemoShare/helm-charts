@@ -401,8 +401,8 @@ spec:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
 {{- end }}
----
 {{- if .Values.sftpGateway.enabled }}
+---
 # SFTP gateway NetworkPolicy. The default-deny above selects on
 # mnemoshare.selectorLabels, which also matches the sftp-gateway pods —
 # so without this policy the gateway can neither receive SFTP nor reach
@@ -440,8 +440,16 @@ spec:
       ports:
         - protocol: TCP
           port: 2222
-    # Health probes from kubelet — empty `from` matches the node IP.
-    - ports:
+    # In-cluster health endpoint (Prometheus scrapes via the
+    # sftp-gateway-health ClusterIP Service, kubelet probes hit the pod
+    # IP directly which most CNIs bypass NetworkPolicy for anyway).
+    # `from: [{namespaceSelector: {}}]` constrains this to in-cluster
+    # callers — without the selector an empty `from` would mean
+    # "any source" (PR #12 review concern 4 — the previous "matches
+    # node IP" comment was wrong; an empty `from` is permissive).
+    - from:
+        - namespaceSelector: {}
+      ports:
         - protocol: TCP
           port: 8090
   egress:

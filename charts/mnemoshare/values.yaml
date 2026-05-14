@@ -1417,10 +1417,22 @@ sftpGateway:
   # cluster (port-forward for local testing, internal LB for K8s clients).
   # Set to LoadBalancer (and optionally loadBalancerIP) to expose it
   # externally for SFTP from off-cluster.
+  #
+  # The chart renders TWO services when sftpGateway is enabled:
+  #   - <release>-sftp-gateway        — port 2222 (SFTP), honors `type` here
+  #   - <release>-sftp-gateway-health — port 8090 (ClusterIP only, never external)
+  # so a LoadBalancer install does not accidentally publish /healthz to
+  # the public Internet.
   service:
     type: ClusterIP
     port: 2222
     loadBalancerIP: ""
+    # When `type: LoadBalancer`, restrict ingress source CIDRs at the
+    # cloud LB level. Strongly recommended for Internet-facing SFTP —
+    # combine with sftpGateway.networkPolicy.allowedSourceCIDRs for
+    # defense in depth (the NetworkPolicy enforces inside the cluster
+    # while loadBalancerSourceRanges fences off the LB).
+    loadBalancerSourceRanges: []
     annotations: {}
 
   # Per-handle ring-buffer size for streaming GET responses. Default
