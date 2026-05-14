@@ -1,0 +1,56 @@
+{{- if .Values.sftpGateway.enabled }}
+# Public SFTP Service. Carries port 2222 only — health is split into a
+# separate ClusterIP Service below so a `service.type: LoadBalancer`
+# install does not accidentally publish /healthz + /readyz to the
+# public Internet alongside SFTP. PR #12 review concern 3.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-sftp-gateway
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sftp-gateway
+  {{- with .Values.sftpGateway.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.sftpGateway.service.type }}
+  {{- if and (eq .Values.sftpGateway.service.type "LoadBalancer") .Values.sftpGateway.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.sftpGateway.service.loadBalancerIP }}
+  {{- end }}
+  {{- with .Values.sftpGateway.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  ports:
+  - name: sftp
+    port: {{ .Values.sftpGateway.service.port }}
+    targetPort: sftp
+    protocol: TCP
+  selector:
+    {{- include "mnemoshare.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sftp-gateway
+---
+# Health Service — ClusterIP only, never exposed externally even when
+# the SFTP Service is a LoadBalancer. Used by Prometheus scrape
+# configs and any in-cluster healthz consumers; kubelet probes hit the
+# pod IP directly so they don't depend on this Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-sftp-gateway-health
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sftp-gateway
+spec:
+  type: ClusterIP
+  ports:
+  - name: health
+    port: 8090
+    targetPort: health
+    protocol: TCP
+  selector:
+    {{- include "mnemoshare.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sftp-gateway
+{{- end }}

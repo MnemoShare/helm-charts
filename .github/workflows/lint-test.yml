@@ -41,7 +41,7 @@ jobs:
       - name: Run chart-testing (lint)
         run: ct lint --target-branch main --charts charts/mnemoshare
 
-      - name: Validate chart templates
+      - name: Validate chart templates (default — sftpGateway disabled)
         if: github.event_name == 'pull_request'
         run: |
           # Validate that chart templates render correctly with test values
@@ -59,4 +59,65 @@ jobs:
             --set appUrl="https://test.example.com" \
             --set ingress.enabled=false \
             > /dev/null
-          echo "✓ Chart templates rendered successfully"
+          echo "✓ Default-path chart templates rendered successfully"
+
+      - name: Validate chart templates (sftpGateway enabled)
+        if: github.event_name == 'pull_request'
+        run: |
+          # Render the sftpGateway-enabled path so the new deployment,
+          # service, secret derivation, NetworkPolicy block, and the
+          # encryption.key fail-fast guard are exercised in CI. Catches
+          # template-time regressions on the new files at no real cost.
+          # PR #12 review's testing recommendation.
+          helm template mnemoshare charts/mnemoshare \
+            --set customerId="ci-test" \
+            --set mongodb.external.enabled=true \
+            --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
+            --set s3.bucket="test-bucket" \
+            --set s3.accessKey="test-key" \
+            --set s3.secretKey="test-secret" \
+            --set-string jwt.ecPrivateKey="test-ec-key-auto-generated-if-empty" \
+            --set encryption.key="test-encryption-key-exactly-32by" \
+            --set license.key="test-license-key" \
+            --set appUrl="https://test.example.com" \
+            --set ingress.enabled=false \
+            --set sftpGateway.enabled=true \
+            --set sftpGateway.hostKey.existingSecret="dummy-hostkey-secret" \
+            > /dev/null
+          echo "✓ sftpGateway-enabled chart templates rendered successfully"
+
+      - name: Validate sftpGateway encryption.key guard fails fast
+        if: github.event_name == 'pull_request'
+        run: |
+          # Pin the PR #12 review concern 1 fix: enabling sftpGateway
+          # without an explicit encryption.key (and without the
+          # existingSecret escape hatches) MUST fail at template time,
+          # not silently produce a deployment that 401s every gateway
+          # call. If this `helm template` succeeds we lost the guard.
+          set +e
+          OUT=$(helm template mnemoshare charts/mnemoshare \
+            --set customerId="ci-test" \
+            --set mongodb.external.enabled=true \
+            --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
+            --set s3.bucket="test-bucket" \
+            --set s3.accessKey="test-key" \
+            --set s3.secretKey="test-secret" \
+            --set-string jwt.ecPrivateKey="test-ec-key-auto-generated-if-empty" \
+            --set license.key="test-license-key" \
+            --set appUrl="https://test.example.com" \
+            --set ingress.enabled=false \
+            --set sftpGateway.enabled=true \
+            --set sftpGateway.hostKey.existingSecret="dummy-hostkey-secret" \
+            2>&1)
+          STATUS=$?
+          set -e
+          if [ $STATUS -eq 0 ]; then
+            echo "✗ Expected helm template to fail (no encryption.key set), but it succeeded"
+            exit 1
+          fi
+          if ! echo "$OUT" | grep -q "encryption.key"; then
+            echo "✗ Expected the failure message to mention encryption.key, got:"
+            echo "$OUT"
+            exit 1
+          fi
+          echo "✓ sftpGateway.enabled without encryption.key fails fast as expected"
