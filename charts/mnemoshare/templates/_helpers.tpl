@@ -98,3 +98,85 @@ callback-host validation. Resolution order:
 {{- end -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+mnemoshare.integrationEnv emits env vars for the cross-service integration
+surface that cmd/api AND cmd/worker (background engine) both need: rich-media
+thumbnails, Apache Tika text extraction, Presidio NER, AI-powered DLP, and
+the KMS envelope flag. ICAP is handled separately in each consumer because
+the api Deployment has historically rendered DEFAULT_ICAP_* from the chart's
+ClamAV block; this helper only emits the integrations that are net-new to
+the worker post-MNI-27.
+
+Usage:
+  env:
+    {{- include "mnemoshare.integrationEnv" . | nindent 8 }}
+
+Values consumed (all optional — only emitted when set):
+  - .Values.richMedia.url, .Values.richMedia.apiKey OR .Values.richMedia.existingSecret
+  - .Values.dlp.tikaUrl
+  - .Values.dlp.presidioUrl, .Values.dlp.presidioApiKey
+  - .Values.dlp.aiEnabled, .Values.dlp.aiProvider, .Values.dlp.aiModel
+  - .Values.dlp.aiApiKey OR .Values.dlp.existingAISecret
+  - .Values.kms.envelopeEnabled
+*/}}
+{{- define "mnemoshare.integrationEnv" -}}
+{{- with .Values.richMedia -}}
+{{- if .url }}
+- name: RICH_MEDIA_URL
+  value: {{ .url | quote }}
+{{- end }}
+{{- if .existingSecret }}
+- name: RICH_MEDIA_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .existingSecret }}
+      key: rich-media-api-key
+{{- else if .apiKey }}
+- name: RICH_MEDIA_API_KEY
+  value: {{ .apiKey | quote }}
+{{- end }}
+{{- end }}
+{{- with .Values.dlp -}}
+{{- if .tikaUrl }}
+- name: TIKA_URL
+  value: {{ .tikaUrl | quote }}
+{{- end }}
+{{- if .presidioUrl }}
+- name: PRESIDIO_ENABLED
+  value: "true"
+- name: PRESIDIO_URL
+  value: {{ .presidioUrl | quote }}
+{{- if .presidioApiKey }}
+- name: PRESIDIO_API_KEY
+  value: {{ .presidioApiKey | quote }}
+{{- end }}
+{{- end }}
+- name: DLP_AI_ENABLED
+  value: {{ .aiEnabled | default false | quote }}
+{{- if .aiProvider }}
+- name: AI_PROVIDER
+  value: {{ .aiProvider | quote }}
+{{- end }}
+{{- if .aiModel }}
+- name: AI_MODEL
+  value: {{ .aiModel | quote }}
+{{- end }}
+{{- if .existingAISecret }}
+- name: AI_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .existingAISecret }}
+      key: ai-api-key
+{{- else if .aiApiKey }}
+- name: AI_API_KEY
+  value: {{ .aiApiKey | quote }}
+{{- end }}
+{{- end }}
+{{- with .Values.kms -}}
+{{- if hasKey . "envelopeEnabled" }}
+- name: KMS_ENVELOPE_ENABLED
+  value: {{ .envelopeEnabled | quote }}
+{{- end }}
+{{- end }}
+{{- end }}

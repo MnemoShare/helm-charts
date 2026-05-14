@@ -286,6 +286,9 @@ spec:
         - name: DEFAULT_ICAP_SERVICE
           value: {{ .Values.clamav.external.service | default "avscan" | quote }}
         {{- end }}
+        # Cross-service integrations (rich-media, Tika, Presidio, AI DLP, KMS)
+        # See templates/_helpers.tpl::mnemoshare.integrationEnv
+        {{- include "mnemoshare.integrationEnv" . | nindent 8 }}
         # Disk buffer configuration (memory management for large uploads)
         {{- if .Values.diskBuffer.enabled }}
         - name: DISK_BUFFER_THRESHOLD_MB

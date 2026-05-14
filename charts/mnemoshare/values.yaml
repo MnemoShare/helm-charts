@@ -308,6 +308,61 @@ existingSecretKeys:
   siemAccessKey: "siem-access-key"    # Key in existingSecrets.siem secret
   siemSecretKey: "siem-secret-key"    # Key in existingSecrets.siem secret
 
+# ============================================================================
+# Cross-Service Integration Surface (cmd/api + cmd/worker)
+# ============================================================================
+# These values configure outbound integrations consumed by BOTH the api
+# Deployment and the workflow-worker StatefulSet/Deployment. Post-MNI-27 the
+# background engine (virus_scan, metadata_extract, report_generate) runs in
+# the worker, so any service the api used to talk to now needs to be reachable
+# from the worker too. The integrationEnv helper (templates/_helpers.tpl) is
+# used by both pod templates so wiring stays in lockstep.
+
+# Rich-media service (mnemo-media) — generates PDF/image/video thumbnails
+# during metadata extraction. Empty url → falls back to the in-cluster default
+# http://mnemo-media.mnemoshare-media.svc.cluster.local. If you run the
+# mnemo-media chart in the same cluster the default is usually correct; you
+# only need to set apiKey (or existingSecret).
+richMedia:
+  # Override URL; leave empty for in-cluster default.
+  url: ""
+  # API key (inline — prefer existingSecret in production).
+  apiKey: ""
+  # Existing secret containing key: rich-media-api-key
+  existingSecret: ""
+
+# DLP scanning + AI classification tunables (shared by cmd/api,
+# workflow-worker, email-gateway, and inbound-gateway).
+# email-gateway / inbound-gateway keep their own dlp blocks for backwards
+# compatibility; this top-level dlp is the source of truth for cmd/api +
+# workflow-worker only.
+dlp:
+  # Apache Tika text extraction endpoint
+  # (e.g., "http://tika.tika.svc.cluster.local:9998"). Empty = Tika disabled.
+  tikaUrl: ""
+  # Presidio NER endpoint
+  # (e.g., "http://presidio.presidio.svc.cluster.local:3000"). Empty = Presidio disabled.
+  presidioUrl: ""
+  # Presidio API key (optional, depends on Presidio deployment).
+  presidioApiKey: ""
+  # Enable AI-powered DLP classification (requires aiProvider + aiApiKey).
+  aiEnabled: false
+  # LLM provider: "openai", "anthropic", "azure-openai".
+  aiProvider: ""
+  # Provider-specific model ID.
+  aiModel: ""
+  # API key (inline — prefer existingAISecret in production).
+  aiApiKey: ""
+  # Existing secret containing key: ai-api-key
+  existingAISecret: ""
+
+# KMS envelope encryption flag (v2 file encryption). When true, new uploads
+# are wrapped with a per-file DEK and the DEK is wrapped with the master KEK.
+# Worker decrypt path requires this codepath regardless of whether new uploads
+# use v2; existing v2 files always need the envelope-aware decrypt.
+kms:
+  envelopeEnabled: true
+
 # ClamAV ICAP antivirus scanning (optional)
 # Provides free, open-source virus scanning for uploaded files
 clamav:
