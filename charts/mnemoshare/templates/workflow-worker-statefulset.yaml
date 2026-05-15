@@ -142,6 +142,53 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.jwt }}{{ .Values.existingSecrets.jwt }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: jwt-ec-private-key
+        # S3-compatible object storage. The worker hosts the background
+        # engine (virus_scan, metadata_extract, report_generate, sftp etc.)
+        # which all stream through storage.NewStorageManagerWithRepos. Without
+        # these vars the worker's storage manager defaults to localhost:9000
+        # and crashloops on the bucket pre-flight before the harness comes up.
+        # Mirrors the API deployment's S3 wiring.
+        {{- if .Values.minio.enabled }}
+        # MinIO is enabled - use internal MinIO service endpoint
+        - name: S3_ENDPOINT
+          value: "{{ include "mnemoshare.fullname" . }}-minio:9000"
+        - name: S3_REGION
+          value: "us-east-1"
+        - name: S3_BUCKET
+          value: {{ .Values.s3.bucket | default "mnemoshare" | quote }}
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.minio.existingSecret }}{{ .Values.minio.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-minio{{ end }}
+              key: rootUser
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.minio.existingSecret }}{{ .Values.minio.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-minio{{ end }}
+              key: rootPassword
+        - name: S3_USE_SSL
+          value: "false"
+        {{- else }}
+        # External S3-compatible storage
+        - name: S3_ENDPOINT
+          value: {{ .Values.s3.endpoint | quote }}
+        - name: S3_REGION
+          value: {{ .Values.s3.region | quote }}
+        - name: S3_BUCKET
+          value: {{ .Values.s3.bucket | quote }}
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.s3 }}{{ .Values.existingSecrets.s3 }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: s3-access-key
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.s3 }}{{ .Values.existingSecrets.s3 }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: s3-secret-key
+        - name: S3_USE_SSL
+          value: {{ .Values.s3.useSSL | quote }}
+        {{- end }}
         # API Base URL (for uploading files to MnemoShare)
         - name: API_BASE_URL
           value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}/api/v1"
