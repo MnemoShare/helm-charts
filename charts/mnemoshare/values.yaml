@@ -629,8 +629,15 @@ mtls:
     certPath: ""
     # CA cert PEM content (inline - takes precedence over certPath)
     certPEM: ""
-    # Existing secret containing CA cert (key: 'ca.crt')
+    # Existing secret containing CA cert.
     existingSecret: ""
+    # Key inside existingSecret holding the PEM-encoded CA cert.
+    # Defaults to "ca.crt" (the cert-manager / generic-TLS convention).
+    # Override to "root-ca-cert" when mounting a step-ca config secret
+    # whose chart-side caProvider.existingSecret already uses that key,
+    # so a single secret can serve both the volume mount and the JWK
+    # provisioner without duplicating bytes under two keys.
+    secretKey: "ca.crt"
 
   # CA provider settings (how the app issues/manages client certs)
   caProvider:
@@ -1355,10 +1362,14 @@ mcp:
     # Alternative: provide key directly (not recommended for production)
     # key: "mcp_..."
 
-  # MnemoShare API URL for the MCP server to connect to
-  # Defaults to the internal headless service URL
-  # Override only if using external API endpoint
-  apiUrl: ""  # Leave empty to use internal headless service
+  # MnemoShare API URL for the MCP server to connect to.
+  # When empty, uses the regular ClusterIP service:
+  #   http://<release>.<namespace>.svc.cluster.local/api/v1
+  # (NOT the headless service — headless DNS returns pod IPs that don't
+  # have a :80 listener; the API only listens on :8080 and is exposed via
+  # the regular service's targetPort wiring.)
+  # Override only if using an external API endpoint or non-default port.
+  apiUrl: ""
 
   # Public URL clients use to reach the MCP server. Required for OAuth 2.1
   # browser-based authentication — when empty, the MCP server skips

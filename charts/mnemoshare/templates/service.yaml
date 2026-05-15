@@ -19,3 +19,10 @@ spec:
     {{- end }}
   selector:
     {{- include "mnemoshare.selectorLabels" . | nindent 4 }}
+    # Match only api-component pods. Without this, the selector matches
+    # ALL component pods (sftp-gateway, workflow-worker, mcp etc.) since
+    # they all share the chart's selectorLabels. Routing port 80 → "http"
+    # named-port to a non-api pod silently fails because only the api
+    # container declares the "http" port. Mirrors the headless service
+    # selector in service-headless.yaml.
+    app.kubernetes.io/component: api

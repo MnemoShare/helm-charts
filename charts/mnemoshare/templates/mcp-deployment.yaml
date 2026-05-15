@@ -62,14 +62,19 @@ spec:
               {{- end }}
               key: mcp-api-key
         # MnemoShare API URL
-        # Default: internal headless service URL
+        # Default: regular ClusterIP service. We previously defaulted to the
+        # headless service, but headless services have no ClusterIP — DNS
+        # returns pod IPs directly and HTTP defaults to :80, which has no
+        # listener (the API listens on :8080 via the targetPort wiring of the
+        # regular service). The regular ClusterIP service routes :80 → :8080
+        # through kube-proxy and only matches api-component pods (the
+        # service-headless.yaml selector pattern). Override mcp.apiUrl to
+        # point elsewhere if you need to bypass the in-cluster service.
         - name: MNEMOSHARE_API_URL
           {{- if .Values.mcp.apiUrl }}
           value: {{ .Values.mcp.apiUrl | quote }}
           {{- else }}
-          # Use internal headless service for optimal performance and reliability
-          # Format: http://<service>.<namespace>.svc.cluster.local/api/v1
-          value: "http://{{ include "mnemoshare.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local/api/v1"
+          value: "http://{{ include "mnemoshare.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/api/v1"
           {{- end }}
         # OAuth 2.1 browser-based authentication (skipped when both are empty).
         # MCP_EXTERNAL_URL: cmd/mcp-admin gates OAuth handler registration on this.
