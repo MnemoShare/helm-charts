@@ -319,9 +319,9 @@ spec:
           value: {{ .Values.mtls.ca.certPath | quote }}
         {{- else if .Values.mtls.ca.existingSecret }}
         - name: MTLS_CA_CERT_PATH
-          value: "/etc/mtls-ca/ca.crt"
+          value: "/etc/mtls-ca/{{ .Values.mtls.ca.secretKey | default "ca.crt" }}"
         - name: CA_SMALLSTEP_ROOT_CERT
-          value: "/etc/mtls-ca/ca.crt"
+          value: "/etc/mtls-ca/{{ .Values.mtls.ca.secretKey | default "ca.crt" }}"
         {{- end }}
         {{- if .Values.mtls.ca.certPEM }}
         - name: CA_SMALLSTEP_ROOT_CERT_PEM
