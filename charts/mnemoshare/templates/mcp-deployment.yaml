@@ -31,8 +31,12 @@ spec:
           {{- toYaml .Values.securityContext | nindent 12 }}
         image: "{{ .Values.mcp.image.repository }}:{{ .Values.mcp.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.mcp.image.pullPolicy }}
-        # Run the MCP admin server binary
-        command: ["/app/mcp-admin"]
+        # Run the MCP admin server binary. Path matches the canonical
+        # Dockerfile install location (`COPY --from=go-builder /bin/mcp-admin
+        # /usr/local/bin/mcp-admin`). The previous `/app/mcp-admin` path does
+        # not exist in any published mnemoshare image and crashlooped every
+        # install with `mcp.enabled=true`.
+        command: ["/usr/local/bin/mcp-admin"]
         args:
           - "--transport={{ .Values.mcp.transport.type }}"
           {{- if eq .Values.mcp.transport.type "http" }}
