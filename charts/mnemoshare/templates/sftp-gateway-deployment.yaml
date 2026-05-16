@@ -44,6 +44,15 @@ spec:
       - name: sftp-gateway
         image: "{{ .Values.sftpGateway.image.repository }}:{{ .Values.sftpGateway.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.sftpGateway.image.pullPolicy }}
+        {{- with .Values.sftpGateway.command }}
+        # Explicit entrypoint override. Set this when pointing at the unified
+        # ghcr.io/mnemoshare/mnemoshare image (whose default ENTRYPOINT runs
+        # the API server) — typically: ["/usr/local/bin/sftp-gateway"].
+        # Leave unset to use the image's own ENTRYPOINT (preserves the legacy
+        # ghcr.io/mnemoshare/sftp-gateway image's "just run it" behaviour).
+        command:
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
         ports:
         - name: sftp
           containerPort: 2222
