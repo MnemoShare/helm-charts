@@ -252,7 +252,10 @@ spec:
             command:
             - /bin/sh
             - -c
-            - "pgrep -x worker"
+            # busybox pgrep on alpine matches against full /proc/N/cmdline,
+            # so `-x worker` (basename) never matches `/usr/local/bin/worker`.
+            # Drop -x → substring match (works for both procps and busybox).
+            - "pgrep worker"
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
