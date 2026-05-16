@@ -1458,14 +1458,23 @@ sftpGateway:
   # different host keys (some SFTP clients pin them).
   replicas: 1
 
-  # Container image. Published separately from the all-in-one image
-  # because the gateway is a thin sidecar that only needs the SFTP
-  # binary and the Go SSH stack.
+  # Container image. The sftp-gateway binary now ships in the unified
+  # ghcr.io/mnemoshare/mnemoshare monorepo image (as /usr/local/bin/sftp-gateway).
+  # The standalone ghcr.io/mnemoshare/sftp-gateway image still exists as a
+  # transitional fallback but is being retired — point at the unified image
+  # going forward and set `command: ["/usr/local/bin/sftp-gateway"]` below.
   image:
     repository: ghcr.io/mnemoshare/sftp-gateway
     pullPolicy: IfNotPresent
     # Defaults to chart appVersion when empty.
     tag: ""
+
+  # Entrypoint override. Required when image.repository points at the unified
+  # ghcr.io/mnemoshare/mnemoshare image (whose default ENTRYPOINT runs the
+  # API server). Leave empty to inherit the image's own ENTRYPOINT — correct
+  # for the legacy standalone ghcr.io/mnemoshare/sftp-gateway image.
+  # Example: command: ["/usr/local/bin/sftp-gateway"]
+  command: []
 
   # The license-capability gate. The binary refuses to start unless
   # this is the literal string "true". Operators / provisioners flip
