@@ -107,13 +107,18 @@ spec:
         - ipBlock:
             cidr: {{ .Values.networkPolicy.s3.cidr }}
         {{- else }}
-        # Allow all egress to S3 (typically AWS/GCS public endpoints)
+        # Allow all egress to S3 (typically AWS/GCS public endpoints).
+        # Excepts: RFC1918 (cluster pod/service CIDRs), 169.254.0.0/16
+        # (cloud IMDS SSRF gate — AWS/GCP/Azure/DO metadata at port 80),
+        # 100.64.0.0/10 (Tailscale CGNAT — must traverse the tailscale ns).
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
+              - 10.0.0.0/8       # RFC1918
+              - 172.16.0.0/12    # RFC1918
+              - 192.168.0.0/16   # RFC1918
+              - 169.254.0.0/16   # Cloud IMDS SSRF gate
+              - 100.64.0.0/10    # Tailscale CGNAT
         {{- end }}
       ports:
         - protocol: TCP
@@ -177,9 +182,11 @@ spec:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
+              - 10.0.0.0/8       # RFC1918
+              - 172.16.0.0/12    # RFC1918
+              - 192.168.0.0/16   # RFC1918
+              - 169.254.0.0/16   # Cloud IMDS SSRF gate
+              - 100.64.0.0/10    # Tailscale CGNAT
         {{- end }}
       ports:
         - protocol: TCP
@@ -199,9 +206,11 @@ spec:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
+              - 10.0.0.0/8       # RFC1918
+              - 172.16.0.0/12    # RFC1918
+              - 192.168.0.0/16   # RFC1918
+              - 169.254.0.0/16   # Cloud IMDS SSRF gate
+              - 100.64.0.0/10    # Tailscale CGNAT
       ports:
         - protocol: TCP
           port: 443
@@ -212,9 +221,11 @@ spec:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
+              - 10.0.0.0/8       # RFC1918
+              - 172.16.0.0/12    # RFC1918
+              - 192.168.0.0/16   # RFC1918
+              - 169.254.0.0/16   # Cloud IMDS SSRF gate
+              - 100.64.0.0/10    # Tailscale CGNAT
       ports:
         - protocol: TCP
           port: 443
@@ -225,9 +236,11 @@ spec:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
+              - 10.0.0.0/8       # RFC1918
+              - 172.16.0.0/12    # RFC1918
+              - 192.168.0.0/16   # RFC1918
+              - 169.254.0.0/16   # Cloud IMDS SSRF gate
+              - 100.64.0.0/10    # Tailscale CGNAT
       ports:
         - protocol: TCP
           port: 25
@@ -296,14 +309,18 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # ClamAV definition updates (external)
+    # ClamAV definition updates (external) — opens :80 + :443, so the
+    # IMDS gate is load-bearing here (without 169.254 in except, a
+    # compromised ClamAV could reach cloud metadata over :80).
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
+              - 10.0.0.0/8       # RFC1918
+              - 172.16.0.0/12    # RFC1918
+              - 192.168.0.0/16   # RFC1918
+              - 169.254.0.0/16   # Cloud IMDS SSRF gate
+              - 100.64.0.0/10    # Tailscale CGNAT
       ports:
         - protocol: TCP
           port: 443
@@ -476,5 +493,193 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
+{{- end }}
+{{- if and .Values.emailGateway .Values.emailGateway.enabled }}
+---
+# Email gateway NetworkPolicy. The default-deny above selects on
+# mnemoshare.selectorLabels, which also matches the email-gateway pods —
+# so without this policy the gateway can neither receive SMTP nor reach
+# the API or upstream relays. Mirrors the sftp-gateway pattern.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-email-gateway
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: email-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Public SMTP entry on the pod's container ports. The deployment
+    # declares :25 (SMTP) and :8081 (mgmt/health). The :587/:465 entries
+    # cover STARTTLS/implicit-TLS variants when LISTEN_PORTS is overridden.
+    # Permissive `from:` matches the public-MFT-endpoint expectation; the
+    # SMTP auth + STARTTLS policy is the L7 boundary.
+    - ports:
+        - protocol: TCP
+          port: 25
+        - protocol: TCP
+          port: 465
+        - protocol: TCP
+          port: 587
+        - protocol: TCP
+          port: 2525
+        - protocol: TCP
+          port: 8081
+    # Intra-namespace traffic from API for submission/control.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+  egress:
+    # DNS resolution (kube-dns + MX lookups for upstream relay)
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # MnemoShare API (gateway-to-API: delivery-status, audit)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+    # ClamAV ICAP (embedded) for attachment scanning
+    {{- if .Values.clamav.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: clamav
+      ports:
+        - protocol: TCP
+          port: 1344
+    {{- end }}
+    # Upstream SMTP relay (external). Excepts mirror the api-egress SMTP
+    # rule — RFC1918 + IMDS + Tailscale CGNAT.
+    {{- if .Values.networkPolicy.smtp.enabled }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8       # RFC1918
+              - 172.16.0.0/12    # RFC1918
+              - 192.168.0.0/16   # RFC1918
+              - 169.254.0.0/16   # Cloud IMDS SSRF gate
+              - 100.64.0.0/10    # Tailscale CGNAT
+      ports:
+        - protocol: TCP
+          port: 25
+        - protocol: TCP
+          port: 465
+        - protocol: TCP
+          port: 587
+        - protocol: TCP
+          port: 2525
+    {{- end }}
+{{- end }}
+{{- if and .Values.inboundGateway .Values.inboundGateway.enabled }}
+---
+# Inbound email gateway NetworkPolicy. The default-deny above selects on
+# mnemoshare.selectorLabels, which also matches the inbound-gateway pods —
+# so without this policy the gateway can neither receive content-filter
+# traffic nor reach the API or S3 for storage. Mirrors the sftp-gateway pattern.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-inbound-gateway
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: inbound-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Inbound content-filter port and Postfix socketmap domain lookups.
+    # Container ports per the deployment template: 8080 (mgmt/health),
+    # 10025 (content-filter), 10070 (socketmap).
+    - ports:
+        - protocol: TCP
+          port: 10025
+        - protocol: TCP
+          port: 10070
+        - protocol: TCP
+          port: 8080
+    # Intra-namespace traffic from API for status/control.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # MnemoShare API (gateway-to-API: inbound message upload, audit)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+    # ClamAV ICAP (embedded) for attachment scanning
+    {{- if .Values.clamav.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: clamav
+      ports:
+        - protocol: TCP
+          port: 1344
+    {{- end }}
+    # Public HTTPS — inbound-gateway writes raw .eml messages to S3 and on
+    # startup verifies the bucket exists. Without this rule the gateway
+    # crashes on boot with "failed to create default storage: i/o timeout".
+    # Cached connections on pre-existing pods can mask this gap — see
+    # mnemoshare-saas-infra/manifests/demo/LESSONS_LEARNED.md.
+    {{- if .Values.networkPolicy.s3.enabled }}
+    - to:
+        {{- if .Values.networkPolicy.s3.cidr }}
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.s3.cidr }}
+        {{- else }}
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8       # RFC1918
+              - 172.16.0.0/12    # RFC1918
+              - 192.168.0.0/16   # RFC1918
+              - 169.254.0.0/16   # Cloud IMDS SSRF gate
+              - 100.64.0.0/10    # Tailscale CGNAT
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
 {{- end }}
 {{- end }}
