@@ -11,6 +11,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [main]
+    # Skip review on docs-only and lockfile-only PRs — review tokens add no signal.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '**/package-lock.json'
+      - '**/go.sum'
 
 permissions:
   contents: read
@@ -24,6 +30,9 @@ concurrency:
 
 jobs:
   claude-review:
+    # Skip Dependabot bumps — they're machine-generated and gated by CI + the
+    # auto-approve workflow. Human review still fires on everything else.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -85,7 +94,7 @@ jobs:
             wording, formatting preferences) are not BLOCK-worthy on their
             own; bugs, security gaps, broken contracts, or missing tests for
             new logic are.
-          claude_args: '--allowed-tools "Read,Glob,Grep,Write,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*),Bash(gh pr checks:*),Bash(gh pr files:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git blame:*)"'
+          claude_args: '--model claude-sonnet-4-6 --max-turns 5 --allowed-tools "Read,Glob,Grep,Write,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*),Bash(gh pr checks:*),Bash(gh pr files:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git blame:*)"'
 
       - name: Enforce verdict
         run: |
