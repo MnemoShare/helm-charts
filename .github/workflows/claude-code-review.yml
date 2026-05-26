@@ -94,7 +94,7 @@ jobs:
             wording, formatting preferences) are not BLOCK-worthy on their
             own; bugs, security gaps, broken contracts, or missing tests for
             new logic are.
-          claude_args: '--model claude-sonnet-4-6 --max-turns 5 --allowed-tools "Read,Glob,Grep,Write,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*),Bash(gh pr checks:*),Bash(gh pr files:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git blame:*)"'
+          claude_args: '--model claude-sonnet-4-6 --max-turns 15 --allowed-tools "Read,Glob,Grep,Write,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*),Bash(gh pr checks:*),Bash(gh pr files:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git blame:*)"'
 
       - name: Enforce verdict
         run: |
