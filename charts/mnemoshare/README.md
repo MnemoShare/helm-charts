@@ -242,6 +242,66 @@ diskBuffer:
 | `diskBuffer.volume.emptyDir.medium` | "" for disk, "Memory" for tmpfs | `Memory` |
 | `diskBuffer.volume.emptyDir.sizeLimit` | Size limit for emptyDir | `4Gi` |
 
+### KeyGuard — federated AWS credentials (no static keys)
+
+Opt-in pod-attested credential federation: the chart injects a `federation-sidecar`
+container into the api pod which mints an AWS-usable JWT (mTLS to your idp-lite
+deployment + a projected SA token) and writes it to a shared tmpfs the app
+container reads via `AWS_WEB_IDENTITY_TOKEN_FILE`. The AWS SDK then does
+`sts:AssumeRoleWithWebIdentity` and uses the resulting temporary credentials for
+KMS / S3 / etc. **No AWS access keys live on the pod.**
+
+Default `keyguard.enabled: false` — turn this on only after pre-provisioning:
+
+1. **cert-manager** installed + an Issuer that can mint workload certs with a
+   SPIFFE URI SAN. The reference setup is smallstep `step-issuer` fronting a
+   Step-CA, but any X.509 CA configured for SPIFFE works.
+2. The pod's ServiceAccount registered as a **WorkloadIdentity** in your idp-lite
+   realm (admin REST or direct Mongo insert into `workload_identities`).
+3. An **AWS IAM role** with a trust policy pinning the pod's SPIFFE id against the
+   idp-lite OIDC provider you registered in your AWS account.
+4. The idp-lite **server CA** mounted into the cluster as a Secret (default name
+   `step-ca-root`, override via `keyguard.cert.caSecretName`).
+
+Minimum values:
+
+```yaml
+keyguard:
+  enabled: true
+  idpEndpoint: https://idp.your-org.example:8443
+  roleArn: arn:aws:iam::123456789012:role/mnemoshare-kms
+  cert:
+    issuerName: step-ca-cluster-issuer    # your cert-manager Issuer
+```
+
+Full reference (defaults shown):
+
+| Key | Default | Notes |
+|---|---|---|
+| `keyguard.enabled` | `false` | Master switch. When false, every keyguard.* resource and pod-spec patch is skipped. |
+| `keyguard.idpEndpoint` | `""` | idp-lite federation endpoint base URL. Required. |
+| `keyguard.idpRealm` | `master` | Realm slug — URL becomes `<idpEndpoint>/<idpRealm>/federation/sts`. |
+| `keyguard.spiffeTrustDomain` | `mnemoshare` | URI SAN authority; produces `spiffe://<trustDomain>/ns/<ns>/sa/<sa>`. |
+| `keyguard.saTokenAudience` | (derived) | Projected SA token `aud`. Defaults to host portion of `idpEndpoint`. |
+| `keyguard.roleArn` | `""` | AWS IAM role to assume. Required. |
+| `keyguard.awsRegion` | `us-east-1` | AWS SDK region. |
+| `keyguard.tokenRefreshLeadSecs` | `60` | Refresh JWT this many seconds before exp. Bounds [5, 3600]. |
+| `keyguard.sidecar.image.repository` | `ghcr.io/mnemoshare/federation-sidecar` | Public image. |
+| `keyguard.sidecar.image.tag` | `""` (latest) | Pin per release. |
+| `keyguard.cert.issuerKind` | `ClusterIssuer` | cert-manager Issuer kind. |
+| `keyguard.cert.issuerName` | `""` | cert-manager Issuer name. Required. |
+| `keyguard.cert.issuerGroup` | `cert-manager.io` | Use `certmanager.step.sm` for step-issuer. |
+| `keyguard.cert.duration` | `24h` | Workload cert lifetime. |
+| `keyguard.cert.renewBefore` | `8h` | cert-manager renew window. |
+| `keyguard.cert.caSecretName` | `step-ca-root` | Secret holding the idp-lite server CA. |
+| `keyguard.cert.caSecretKey` | `ca.crt` | Key inside that Secret. |
+
+**Scope note (chart 1.19.0):** the api Deployment is wired. Workflow-worker
+(Deployment + StatefulSet variants) is wired in a separate follow-up commit
+because its volume conditional structure needs a small refactor. Demo /
+production rollouts should turn on KeyGuard for the api first, then enable
+on workflow-worker once that commit lands.
+
 ## Certificate Authority Configuration
 
 MnemoShare supports hardware mTLS authentication (Enterprise+ tier) using certificate authorities. Choose from the built-in Step-CA or integrate with external CA providers.

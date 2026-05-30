@@ -404,6 +404,12 @@ spec:
         {{- with .Values.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        {{- if include "mnemoshare.keyguard.enabled" . }}
+        # KeyGuard (MSC-371): AWS SDK reads the JWT the federation-sidecar
+        # writes to AWS_WEB_IDENTITY_TOKEN_FILE. No static AWS keys in this
+        # pod's K8s Secret. See templates/_keyguard.tpl.
+        {{- include "mnemoshare.keyguard.envMain" . | nindent 8 }}
+        {{- end }}
         livenessProbe:
           {{- toYaml .Values.livenessProbe | nindent 12 }}
         readinessProbe:
@@ -428,6 +434,14 @@ spec:
           mountPath: /etc/mtls-ca
           readOnly: true
         {{- end }}
+        {{- if include "mnemoshare.keyguard.enabled" . }}
+        {{- include "mnemoshare.keyguard.volumeMountsMain" . | nindent 8 }}
+        {{- end }}
+      {{- if include "mnemoshare.keyguard.enabled" . }}
+      # KeyGuard federation-sidecar (MSC-371) — mints AWS-usable JWT
+      # in-pod from Step-CA mTLS cert + projected SA token.
+      {{- include "mnemoshare.keyguard.sidecarContainer" . | nindent 6 }}
+      {{- end }}
       volumes:
       # Temporary directory for runtime files
       - name: tmp
@@ -468,6 +482,9 @@ spec:
       - name: mtls-ca
         secret:
           secretName: {{ .Values.mtls.ca.existingSecret }}
+      {{- end }}
+      {{- if include "mnemoshare.keyguard.enabled" . }}
+      {{- include "mnemoshare.keyguard.volumes" . | nindent 6 }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

@@ -1,0 +1,38 @@
+{{- if include "mnemoshare.keyguard.enabled" . }}
+{{- /*
+cert-manager Certificate requesting a workload mTLS client cert with
+a SPIFFE URI SAN. The sidecar (cmd/federation-sidecar) presents this
+cert when calling the idp-lite federation listener; the listener
+verifies the SAN against the WorkloadIdentity allow-list (MSC-326).
+
+Rendered only when keyguard.enabled=true. Customer-side prereq:
+cert-manager installed + a working Issuer/ClusterIssuer that can sign
+SPIFFE URI SANs (smallstep step-issuer fronting Step-CA is what
+mnemoshare-aws-sso uses; any X.509 CA configured for SPIFFE works).
+*/ -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ printf "%s-keyguard-mtls" (include "mnemoshare.fullname" .) }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keyguard
+spec:
+  secretName: {{ printf "%s-keyguard-mtls" (include "mnemoshare.fullname" .) }}
+  duration: {{ .Values.keyguard.cert.duration | default "24h" }}
+  renewBefore: {{ .Values.keyguard.cert.renewBefore | default "8h" }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - client auth
+    - key encipherment
+    - digital signature
+  uris:
+    - {{ include "mnemoshare.keyguard.spiffeID" . }}
+  issuerRef:
+    name: {{ required "keyguard.cert.issuerName is required when keyguard.enabled=true" .Values.keyguard.cert.issuerName }}
+    kind: {{ .Values.keyguard.cert.issuerKind | default "ClusterIssuer" }}
+    group: {{ .Values.keyguard.cert.issuerGroup | default "cert-manager.io" }}
+{{- end }}

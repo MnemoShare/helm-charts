@@ -1598,3 +1598,112 @@ sftpGateway:
   # Extra env vars to inject (for one-off operator escapes; prefer the
   # dedicated values above when adding a knob).
   extraEnv: []
+
+# ---------------------------------------------------------------------------
+# KeyGuard (MSC-371 / MSC-330) — pod-attested AWS credential federation.
+# ---------------------------------------------------------------------------
+#
+# When enabled, the chart injects a federation-sidecar container into the
+# api Deployment (workflow-worker follow-up coming). The sidecar mints an
+# AWS-usable JWT from a Step-CA mTLS client cert + projected SA token by
+# calling the idp-lite federation listener; the AWS SDK reads that JWT via
+# AWS_WEB_IDENTITY_TOKEN_FILE and assumes a role via
+# sts:AssumeRoleWithWebIdentity. No static AWS credentials live on the pod.
+#
+# Defaults OFF — turning this on requires AWS-side + idp-lite-side
+# pre-provisioning:
+#   1. cert-manager installed + an Issuer that can mint workload certs with
+#      a SPIFFE URI SAN (smallstep step-issuer fronting Step-CA is the
+#      reference setup; any X.509 CA configured for SPIFFE works).
+#   2. The pod's ServiceAccount registered as a WorkloadIdentity in the
+#      idp-lite realm (admin REST or direct Mongo insert).
+#   3. An AWS IAM role with a trust policy pinning the pod's SPIFFE id
+#      against the idp-lite OIDC provider in the AWS account.
+#   4. The idp-lite server CA mounted into the cluster as a Secret (default
+#      name: `step-ca-root`, override via keyguard.cert.caSecretName).
+#
+# See the federation-sidecar README in the mnemoshare-idp-lite repo for the
+# full trust chain + IAM trust-policy template.
+keyguard:
+  # Master switch. When false (default), every keyguard.* resource and
+  # pod-spec patch is skipped — the chart renders identically to its
+  # pre-KeyGuard form.
+  enabled: false
+
+  # idp-lite federation endpoint. Required when enabled.
+  # MnemoShare-internal default: https://idp.mnemoshare.com:8443
+  idpEndpoint: ""
+
+  # idp-lite realm slug. URL becomes <idpEndpoint>/<idpRealm>/federation/sts.
+  idpRealm: master
+
+  # SPIFFE trust domain — the `<authority>` segment of the URI SAN.
+  # Together with the chart's release namespace + ServiceAccount name,
+  # this produces the SPIFFE id used as both the cert URI SAN and the
+  # JWT `sub` claim AWS IAM trust policies pin on.
+  spiffeTrustDomain: mnemoshare
+
+  # Audience the kubelet stamps on the projected SA token. Must match
+  # the idp-lite server's IDP_FEDERATION_AUDIENCE. When unset, derived
+  # from the host portion of idpEndpoint (e.g. `idp.mnemoshare.com`).
+  saTokenAudience: ""
+
+  # AWS IAM role ARN to assume. Required when enabled. Must be in this
+  # workload's AllowedRoleARNs on the idp-lite WorkloadIdentity record.
+  # Example: arn:aws:iam::686592509310:role/myapp-kms
+  roleArn: ""
+
+  # AWS region — used as AWS_REGION env on the app container. ARN
+  # already carries a region for IAM but KMS/S3 client construction
+  # also wants AWS_REGION explicitly. Default us-east-1 matches the
+  # MnemoShare SaaS deployment.
+  awsRegion: us-east-1
+
+  # Refresh the JWT this many seconds before its expiry. Server's
+  # default TTL is 300s; default lead 60s leaves ~240s between mints.
+  # Bounds: [5, 3600].
+  tokenRefreshLeadSecs: 60
+
+  sidecar:
+    image:
+      repository: ghcr.io/mnemoshare/federation-sidecar
+      # Empty = use the chart's appVersion. Override per release as
+      # the sidecar binary is versioned independently from MnemoShare.
+      tag: ""
+      pullPolicy: IfNotPresent
+    # Sidecar is intentionally tiny — no business logic, just a
+    # refresh loop + 4kB JWT file write. Conservative defaults; raise
+    # if you see CPU throttling at refresh time.
+    resources:
+      requests:
+        cpu: 5m
+        memory: 16Mi
+      limits:
+        memory: 32Mi
+
+  cert:
+    # cert-manager Issuer kind. `ClusterIssuer` (default) for a
+    # cluster-scoped CA; `Issuer` if the operator scopes the CA to
+    # a single namespace.
+    issuerKind: ClusterIssuer
+    # cert-manager Issuer name. Required when enabled.
+    # MnemoShare-internal default: step-ca-cluster-issuer
+    issuerName: ""
+    # Issuer API group. Smallstep step-issuer uses certmanager.step.sm/v1beta1;
+    # any cert-manager-native Issuer uses cert-manager.io.
+    issuerGroup: cert-manager.io
+    # Workload cert lifetime + renew window. Short by design — the
+    # sidecar re-reads the cert from disk on every TLS handshake so
+    # rotation is in-place without restart.
+    duration: 24h
+    renewBefore: 8h
+    # Secret holding the idp-lite server CA bundle (mounted into the
+    # sidecar so it can verify the federation listener's TLS cert).
+    # Default name matches the mnemoshare-aws-sso convention. The
+    # cluster operator is expected to copy/provision this Secret
+    # before turning keyguard on.
+    caSecretName: step-ca-root
+    # Key inside the CA Secret holding the PEM bundle. Default
+    # `ca.crt` matches what `kubectl create secret generic --from-file=ca.crt=...`
+    # produces.
+    caSecretKey: ca.crt
