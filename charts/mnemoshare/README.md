@@ -287,7 +287,7 @@ Full reference (defaults shown):
 | `keyguard.awsRegion` | `us-east-1` | AWS SDK region. |
 | `keyguard.tokenRefreshLeadSecs` | `60` | Refresh JWT this many seconds before exp. Bounds [5, 3600]. |
 | `keyguard.sidecar.image.repository` | `ghcr.io/mnemoshare/federation-sidecar` | Public image. |
-| `keyguard.sidecar.image.tag` | `""` (latest) | Pin per release. |
+| `keyguard.sidecar.image.tag` | `"426e4fe"` | Pinned to the mnemoshare-idp-lite#23 merge SHA. Update per sidecar release — no rolling-tag fallback; `required` guard fails render if cleared. |
 | `keyguard.cert.issuerKind` | `ClusterIssuer` | cert-manager Issuer kind. |
 | `keyguard.cert.issuerName` | `""` | cert-manager Issuer name. Required. |
 | `keyguard.cert.issuerGroup` | `cert-manager.io` | Use `certmanager.step.sm` for step-issuer. |
@@ -295,6 +295,8 @@ Full reference (defaults shown):
 | `keyguard.cert.renewBefore` | `8h` | cert-manager renew window. |
 | `keyguard.cert.caSecretName` | `step-ca-root` | Secret holding the idp-lite server CA. |
 | `keyguard.cert.caSecretKey` | `ca.crt` | Key inside that Secret. |
+
+**First-boot startup note:** Prior to Kubernetes 1.29 all containers in a pod start in parallel. On a fresh pod the main container may execute its first AWS SDK call before the sidecar has written the initial token file to the shared `keyguard-aws-federation` emptyDir. The AWS SDK will return an error on that call and the pod will restart once; subsequent starts avoid the race because the sidecar is already running and the volume persists across restarts within the pod's lifetime. This is expected behaviour, not a misconfiguration. The long-term fix (K8s 1.29+ native-sidecar `restartPolicy: Always` on an `initContainers` entry) will land in a follow-up that raises the chart's minimum Kubernetes version.
 
 **Scope note (chart 1.19.0):** the api Deployment is wired. Workflow-worker
 (Deployment + StatefulSet variants) is wired in a separate follow-up commit
