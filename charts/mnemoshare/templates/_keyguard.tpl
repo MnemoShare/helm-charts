@@ -123,7 +123,7 @@ each consuming Deployment / StatefulSet.
 */}}
 {{- define "mnemoshare.keyguard.sidecarContainer" -}}
 - name: federation-sidecar
-  image: "{{ .Values.keyguard.sidecar.image.repository }}:{{ .Values.keyguard.sidecar.image.tag | default "latest" }}"
+  image: "{{ .Values.keyguard.sidecar.image.repository }}:{{ required "keyguard.sidecar.image.tag is required — pin a specific sha or version, do not let it fall back to a rolling tag for a credential broker" .Values.keyguard.sidecar.image.tag }}"
   imagePullPolicy: {{ .Values.keyguard.sidecar.image.pullPolicy | default "IfNotPresent" }}
   env:
     - name: KG_IDP_ENDPOINT

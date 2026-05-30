@@ -1667,9 +1667,16 @@ keyguard:
   sidecar:
     image:
       repository: ghcr.io/mnemoshare/federation-sidecar
-      # Empty = use the chart's appVersion. Override per release as
-      # the sidecar binary is versioned independently from MnemoShare.
-      tag: ""
+      # Pin to a specific build — REQUIRED, no rolling-tag fallback.
+      # The sidecar is a credential broker, so silently picking up
+      # whatever happens to be tagged `latest` at pod restart time is
+      # an unacceptable supply-chain risk (any compromise of the
+      # publishing pipeline would auto-propagate). The sidecar is
+      # versioned independently from MnemoShare (lives in
+      # mnemoshare-idp-lite, releases on its own schedule), so this
+      # tag does NOT track the chart's appVersion either.
+      # Current pin: PR mnemoshare-idp-lite#23 merge commit.
+      tag: "426e4fe"
       pullPolicy: IfNotPresent
     # Sidecar is intentionally tiny — no business logic, just a
     # refresh loop + 4kB JWT file write. Conservative defaults; raise

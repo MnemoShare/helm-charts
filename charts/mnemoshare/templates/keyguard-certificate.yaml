@@ -25,9 +25,13 @@ spec:
     algorithm: ECDSA
     size: 256
     rotationPolicy: Always
+  # RFC 5480 §3: keyEncipherment is meaningful only for RSA
+  # key-transport — it MUST NOT be set for EC keys. cert-manager
+  # >= 1.8 enforces this and rejects the CertificateRequest if
+  # set, blocking pod startup. Correct set for an ECDSA mTLS
+  # client cert is `client auth` + `digital signature`.
   usages:
     - client auth
-    - key encipherment
     - digital signature
   uris:
     - {{ include "mnemoshare.keyguard.spiffeID" . }}
