@@ -86,6 +86,83 @@ jobs:
             > /dev/null
           echo "✓ sftpGateway-enabled chart templates rendered successfully"
 
+      - name: Validate chart templates (keyguard enabled)
+        if: github.event_name == 'pull_request'
+        run: |
+          # Render the keyguard-enabled path so the federation-sidecar
+          # injection, cert-manager Certificate, projected SA token
+          # volume, AWS-SDK env vars, and the keyguard volumes block
+          # are all exercised in CI. PR #25 review's testing
+          # recommendation (MSC-372).
+          helm template mnemoshare charts/mnemoshare \
+            --set customerId="ci-test" \
+            --set mongodb.external.enabled=true \
+            --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
+            --set s3.bucket="test-bucket" \
+            --set s3.accessKey="test-key" \
+            --set s3.secretKey="test-secret" \
+            --set-string jwt.ecPrivateKey="test-ec-key-auto-generated-if-empty" \
+            --set encryption.key="test-encryption-key-exactly-32by" \
+            --set license.key="test-license-key" \
+            --set appUrl="https://test.example.com" \
+            --set ingress.enabled=false \
+            --set keyguard.enabled=true \
+            --set keyguard.idpEndpoint="https://idp.mnemoshare.com:8443" \
+            --set keyguard.roleArn="arn:aws:iam::686592509310:role/ci-test" \
+            --set keyguard.cert.issuerName="step-ca-cluster-issuer" \
+            > /dev/null
+          echo "✓ keyguard-enabled chart templates rendered successfully"
+
+      - name: Validate keyguard required-field guards fail fast
+        if: github.event_name == 'pull_request'
+        run: |
+          # Pin the PR #25 review's three required-guard concerns:
+          # enabling keyguard MUST surface a render-time error if any
+          # of (idpEndpoint, roleArn, cert.issuerName) is unset, or
+          # if image.tag is empty (no rolling-tag fallback for a
+          # credential broker). If any of these succeed silently we
+          # lost the guard.
+          BASE_VALUES=(
+            --set customerId=ci-test
+            --set mongodb.external.enabled=true
+            --set mongodb.external.uri=mongodb://test:test@localhost:27017/test
+            --set s3.bucket=test-bucket
+            --set s3.accessKey=test-key
+            --set s3.secretKey=test-secret
+            --set-string jwt.ecPrivateKey=test-ec-key
+            --set encryption.key=test-encryption-key-exactly-32by
+            --set license.key=test-license-key
+            --set appUrl=https://test.example.com
+            --set ingress.enabled=false
+            --set keyguard.enabled=true
+            --set keyguard.idpEndpoint=https://idp.mnemoshare.com:8443
+            --set keyguard.roleArn=arn:aws:iam::686592509310:role/ci-test
+            --set keyguard.cert.issuerName=step-ca-cluster-issuer
+          )
+          assert_required_fails() {
+            local label=$1
+            local needle=$2
+            shift 2
+            set +e
+            OUT=$(helm template mnemoshare charts/mnemoshare "${BASE_VALUES[@]}" "$@" 2>&1)
+            STATUS=$?
+            set -e
+            if [ $STATUS -eq 0 ]; then
+              echo "✗ ${label}: helm template succeeded but should have failed"
+              exit 1
+            fi
+            if ! echo "$OUT" | grep -q "$needle"; then
+              echo "✗ ${label}: failure didn't mention '$needle'. Got:"
+              echo "$OUT"
+              exit 1
+            fi
+            echo "✓ ${label} fails fast"
+          }
+          assert_required_fails "keyguard.idpEndpoint" "idpEndpoint" --set keyguard.idpEndpoint=
+          assert_required_fails "keyguard.roleArn" "roleArn" --set keyguard.roleArn=
+          assert_required_fails "keyguard.cert.issuerName" "issuerName" --set keyguard.cert.issuerName=
+          assert_required_fails "keyguard.sidecar.image.tag" "tag" --set keyguard.sidecar.image.tag=
+
       - name: Validate sftpGateway encryption.key guard fails fast
         if: github.event_name == 'pull_request'
         run: |
