@@ -287,7 +287,7 @@ Full reference (defaults shown):
 | `keyguard.awsRegion` | `us-east-1` | AWS SDK region. |
 | `keyguard.tokenRefreshLeadSecs` | `60` | Refresh JWT this many seconds before exp. Bounds [5, 3600]. |
 | `keyguard.sidecar.image.repository` | `ghcr.io/mnemoshare/federation-sidecar` | Public image. |
-| `keyguard.sidecar.image.tag` | `""` (latest) | Pin per release. |
+| `keyguard.sidecar.image.tag` | `"426e4fe"` | Required. Pinned per chart release; no rolling-tag fallback (credential broker — `required` guard errors at render time if cleared). Bump alongside any sidecar release. |
 | `keyguard.cert.issuerKind` | `ClusterIssuer` | cert-manager Issuer kind. |
 | `keyguard.cert.issuerName` | `""` | cert-manager Issuer name. Required. |
 | `keyguard.cert.issuerGroup` | `cert-manager.io` | Use `certmanager.step.sm` for step-issuer. |
@@ -295,6 +295,8 @@ Full reference (defaults shown):
 | `keyguard.cert.renewBefore` | `8h` | cert-manager renew window. |
 | `keyguard.cert.caSecretName` | `step-ca-root` | Secret holding the idp-lite server CA. |
 | `keyguard.cert.caSecretKey` | `ca.crt` | Key inside that Secret. |
+
+**First-boot startup ordering note.** Pre-K8s 1.29, all containers in a pod start in parallel; the main app container may briefly see `AWS_WEB_IDENTITY_TOKEN_FILE` pointing at a yet-unwritten file on the very first pod boot, which can trigger one restart before the sidecar's initial mint completes. This is the standard K8s sidecar limitation, not a misconfiguration — subsequent pod starts hit no race because the volume is reused mid-pod-lifetime. Native-sidecar pattern (`restartPolicy: Always` on an `initContainers` entry, k8s ≥ 1.29) is the long-term fix and will land in a follow-up that raises the chart's minimum k8s version.
 
 **Scope note (chart 1.19.0):** the api Deployment is wired. Workflow-worker
 (Deployment + StatefulSet variants) is wired in a separate follow-up commit
