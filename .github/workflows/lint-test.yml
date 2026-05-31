@@ -113,6 +113,71 @@ jobs:
             > /dev/null
           echo "✓ keyguard-enabled chart templates rendered successfully"
 
+      - name: Validate chart templates (keyguard + workflow-worker, both variants)
+        if: github.event_name == 'pull_request'
+        run: |
+          # Render the keyguard-enabled path WITH workflow-worker
+          # enabled so the worker-side sidecar injection is exercised
+          # (chart 1.20.0 extension of the api-only step above).
+          # Tests both worker variants — Deployment (default) and
+          # StatefulSet (workflowWorker.persistence.enabled=true) —
+          # because their volume conditional shapes differ and each
+          # has a separate keyguard injection point.
+          WORKER_BASE=(
+            --set customerId="ci-test"
+            --set mongodb.external.enabled=true
+            --set mongodb.external.uri="mongodb://test:test@localhost:27017/test"
+            --set s3.bucket="test-bucket"
+            --set s3.accessKey="test-key"
+            --set s3.secretKey="test-secret"
+            --set-string jwt.ecPrivateKey="test-ec-key-auto-generated-if-empty"
+            --set encryption.key="test-encryption-key-exactly-32by"
+            --set license.key="test-license-key"
+            --set appUrl="https://test.example.com"
+            --set ingress.enabled=false
+            --set workflowWorker.enabled=true
+            --set redis.external.enabled=true
+            --set redis.external.host=redis.example.com
+            --set keyguard.enabled=true
+            --set keyguard.idpEndpoint="https://idp.mnemoshare.com:8443"
+            --set keyguard.roleArn="arn:aws:iam::686592509310:role/ci-test"
+            --set keyguard.cert.issuerName="step-ca-cluster-issuer"
+          )
+
+          # assert_sidecar_in_section verifies the sidecar appears in
+          # a specific helm-template source section (a `# Source:`
+          # comment block) of the rendered manifest. Section-scoping
+          # prevents the api-pod's sidecar from masking a missing
+          # worker-pod sidecar.
+          assert_sidecar_in_section() {
+            local out=$1 section=$2 label=$3
+            if ! echo "$out" | awk -v sect="$section" '
+              /^# Source: / { active = ($0 ~ sect); next }
+              active && /- name: federation-sidecar/ { found = 1; exit }
+              END { exit found ? 0 : 1 }'; then
+              echo "✗ $label: federation-sidecar not present in $section"
+              exit 1
+            fi
+          }
+
+          # Variant 1: Deployment (persistence disabled, default).
+          OUT=$(helm template mnemoshare charts/mnemoshare "${WORKER_BASE[@]}")
+          assert_sidecar_in_section "$OUT" "workflow-worker-deployment.yaml" "Deployment variant"
+          assert_sidecar_in_section "$OUT" "templates/deployment.yaml" "api Deployment (with worker enabled)"
+          echo "✓ keyguard + worker Deployment variant rendered"
+
+          # Variant 2: StatefulSet (persistence enabled).
+          OUT=$(helm template mnemoshare charts/mnemoshare \
+            "${WORKER_BASE[@]}" \
+            --set workflowWorker.persistence.enabled=true \
+            --set workflowWorker.persistence.size=10Gi)
+          if ! echo "$OUT" | grep -q "kind: StatefulSet"; then
+            echo "✗ StatefulSet variant: kind: StatefulSet not present"
+            exit 1
+          fi
+          assert_sidecar_in_section "$OUT" "workflow-worker-statefulset.yaml" "StatefulSet variant"
+          echo "✓ keyguard + worker StatefulSet variant rendered"
+
       - name: Validate keyguard required-field guards fail fast
         if: github.event_name == 'pull_request'
         run: |
