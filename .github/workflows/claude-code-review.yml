@@ -94,7 +94,85 @@ jobs:
             wording, formatting preferences) are not BLOCK-worthy on their
             own; bugs, security gaps, broken contracts, or missing tests for
             new logic are.
-          claude_args: '--model claude-sonnet-4-6 --allowed-tools "Read,Glob,Grep,Write,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*),Bash(gh pr checks:*),Bash(gh pr files:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git blame:*)"'
+          # Bash is allowed without a prefix filter. The prior allowlist
+          # enumerated specific `gh pr <subcommand>:*` prefixes, which is
+          # fine for simple calls but fails the bot's compound forms
+          # (heredoc bodies, pipes, `bash -c '...'`) because Claude
+          # Code's permission matcher does a literal prefix match on
+          # the resolved command line — `bash -c "gh pr review ..."`
+          # starts with `bash`, not `gh`, so it's denied.
+          #
+          # Symptom: high permission_denials_count (21 on
+          # helm-charts#27 vs 8 on #26), bot writes its verdict file
+          # but never completes `gh pr review --request-changes`, so
+          # the BLOCK reasoning stays buried in CI logs.
+          #
+          # Risk: the bot is sandboxed in the GHA runner and gets a
+          # PR-scoped GITHUB_TOKEN; it can already comment / mint
+          # reviews via the existing allowlist. Broader Bash adds
+          # network reach, which is a prompt-injection surface IF a
+          # malicious PR could subvert the bot's instructions. We
+          # accept that risk for two reasons: (1) the bot is loyal
+          # to its prompt across thousands of turns, (2) the
+          # downstream fallback step below catches BLOCK verdicts
+          # the bot fails to surface as reviews — so the worst case
+          # is "review is posted by GitHub Actions instead of the
+          # bot" rather than "BLOCK silently disappears."
+          claude_args: '--model claude-sonnet-4-6 --allowed-tools "Read,Glob,Grep,Write,Bash"'
+
+      # Resilience layer: if the bot reached a BLOCK verdict but
+      # couldn't complete the formal `gh pr review --request-changes`
+      # call (silent-failure mode — see commit message), surface the
+      # BLOCK as a request-changes review here so it appears in the
+      # PR UI instead of staying buried in CI logs.
+      #
+      # Runs even if "Run Claude Code Review" errored — `if: always()`
+      # guards us against losing the verdict to an unrelated upstream
+      # failure.
+      - name: Mirror BLOCK verdict to PR review (fallback)
+        if: always() && github.event.pull_request.number
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ ! -f /tmp/claude-verdict.txt ]; then
+            echo "::notice::No verdict file — nothing to mirror."
+            exit 0
+          fi
+          verdict=$(head -n1 /tmp/claude-verdict.txt | sed 's/[[:space:]]*$//')
+          case "$verdict" in
+            BLOCK*) ;;
+            *) echo "::notice::Verdict is '${verdict}' — nothing to mirror."; exit 0 ;;
+          esac
+
+          # If the bot already submitted ANY review on this PR HEAD
+          # SHA, don't post a duplicate. We scope by commit_id so
+          # stale reviews on prior commits don't suppress mirroring
+          # of the current verdict.
+          head_sha=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq '.headRefOid')
+          existing=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+            --jq "[.[] | select(.commit_id == \"$head_sha\")] | length")
+          if [ "${existing:-0}" -gt 0 ]; then
+            echo "::notice::Bot already posted ${existing} review(s) on $head_sha — no mirror needed."
+            exit 0
+          fi
+
+          reason="${verdict#BLOCK}"
+          reason="${reason#:}"
+          body=$(cat <<EOF
+          The Claude review bot reached a \`BLOCK\` verdict but couldn't post a formal review (typically tool-permission denials at the action level — see the workflow run logs for the bot's full reasoning).
+
+          Surfacing the verdict here so it's visible in the PR UI:
+
+          > **BLOCK:**${reason}
+
+          Push a fix and the bot will re-review. If the verdict is wrong, push a clarifying commit and re-run the \`Claude Code Review\` workflow.
+          EOF
+          )
+          gh pr review "$PR_NUMBER" --repo "$REPO" --request-changes --body "$body"
+          echo "::notice::Mirrored BLOCK verdict to a PR review (bot failed to post one directly)."
 
       - name: Enforce verdict
         run: |
