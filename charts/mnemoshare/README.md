@@ -298,11 +298,13 @@ Full reference (defaults shown):
 
 **First-boot startup ordering note.** Pre-K8s 1.29, all containers in a pod start in parallel; the main app container may briefly see `AWS_WEB_IDENTITY_TOKEN_FILE` pointing at a yet-unwritten file on the very first pod boot, which can trigger one restart before the sidecar's initial mint completes. This is the standard K8s sidecar limitation, not a misconfiguration — subsequent pod starts hit no race because the volume is reused mid-pod-lifetime. Native-sidecar pattern (`restartPolicy: Always` on an `initContainers` entry, k8s ≥ 1.29) is the long-term fix and will land in a follow-up that raises the chart's minimum k8s version.
 
-**Scope note (chart 1.19.0):** the api Deployment is wired. Workflow-worker
-(Deployment + StatefulSet variants) is wired in a separate follow-up commit
-because its volume conditional structure needs a small refactor. Demo /
-production rollouts should turn on KeyGuard for the api first, then enable
-on workflow-worker once that commit lands.
+**Scope note (chart 1.20.0):** the api Deployment AND workflow-worker
+(both the Deployment and StatefulSet variants — chart picks one based on
+`workflowWorker.persistence.enabled`) are wired symmetrically. Turning
+`keyguard.enabled=true` injects the federation-sidecar into every
+KMS-consuming pod the chart deploys; nothing further is needed to cover
+the worker once it's been registered as a WorkloadIdentity in idp-lite
+and an IAM role for its SPIFFE id is in place.
 
 ## Certificate Authority Configuration
 

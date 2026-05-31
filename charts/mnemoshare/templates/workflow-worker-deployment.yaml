@@ -223,9 +223,14 @@ spec:
         - name: DISK_BUFFER_ENCRYPT
           value: {{ .Values.diskBuffer.encrypt | quote }}
         {{- end }}
+        {{- if include "mnemoshare.keyguard.enabled" . }}
+        # KeyGuard (MSC-371): worker reaches per-org KMS / S3 SIEM bucket
+        # via the federation-sidecar — no static AWS creds on this pod.
+        {{- include "mnemoshare.keyguard.envMain" . | nindent 8 }}
+        {{- end }}
         resources:
           {{- toYaml .Values.workflowWorker.resources | nindent 12 }}
-        {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled }}
+        {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled (include "mnemoshare.keyguard.enabled" .) }}
         volumeMounts:
         {{- if .Values.diskBuffer.enabled }}
         - name: disk-buffer
@@ -237,6 +242,9 @@ spec:
         # because the base image runs with readOnlyRootFilesystem=true.
         - name: tmp
           mountPath: /tmp
+        {{- end }}
+        {{- if include "mnemoshare.keyguard.enabled" . }}
+        {{- include "mnemoshare.keyguard.volumeMountsMain" . | nindent 8 }}
         {{- end }}
         {{- end }}
         livenessProbe:
@@ -252,7 +260,11 @@ spec:
           periodSeconds: 30
           timeoutSeconds: 5
           failureThreshold: 3
-      {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled }}
+      {{- if include "mnemoshare.keyguard.enabled" . }}
+      # KeyGuard federation-sidecar (MSC-371).
+      {{- include "mnemoshare.keyguard.sidecarContainer" . | nindent 6 }}
+      {{- end }}
+      {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled (include "mnemoshare.keyguard.enabled" .) }}
       volumes:
       {{- if .Values.workflowWorker.tmpVolume.enabled }}
       - name: tmp
@@ -286,6 +298,9 @@ spec:
         persistentVolumeClaim:
           claimName: {{ .Values.diskBuffer.volume.existingClaim.claimName }}
         {{- end }}
+      {{- end }}
+      {{- if include "mnemoshare.keyguard.enabled" . }}
+      {{- include "mnemoshare.keyguard.volumes" . | nindent 6 }}
       {{- end }}
       {{- end }}
       {{- with .Values.workflowWorker.nodeSelector }}
