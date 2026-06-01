@@ -1,3 +1,18 @@
+{{- /*
+Validation: when stepCA.mode=external (new tri-state, no legacy fallback)
+and mTLS is enabled on the api, the app needs a concrete CA URL to reach
+the external Step-CA. Without it, neither branch of the CA_SMALLSTEP_URL
+block below fires and mTLS/Step-CA integration is silently dead. Fail
+loud at template time so the misconfiguration surfaces in `helm install`
+instead of as a mysterious app-runtime feature loss.
+*/}}
+{{- if and
+      (eq (include "mnemoshare.stepCAMode" .) "external")
+      .Values.mtls.enabled
+      (not .Values.mtls.caProvider.url)
+}}
+{{- fail "stepCA.mode=external with mtls.enabled=true requires mtls.caProvider.url to point at the external Step-CA's HTTPS endpoint (e.g. https://step-ca.shared.svc.cluster.local:9000). Without it the api Deployment renders without CA_SMALLSTEP_URL and hardware-mTLS auth silently fails." }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
