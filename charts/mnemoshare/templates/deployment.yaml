@@ -293,6 +293,12 @@ spec:
           value: {{ .Values.clamav.external.url | quote }}
         - name: DEFAULT_ICAP_SERVICE
           value: {{ .Values.clamav.external.service | default "avscan" | quote }}
+        {{- if .Values.clamav.external.required }}
+        # When required=true the api refuses uploads if ICAP is unreachable
+        # (fail-closed for compliance — HIPAA/HITRUST tenants typically want this).
+        - name: DEFAULT_ICAP_REQUIRED
+          value: "true"
+        {{- end }}
         {{- end }}
         # Cross-service integrations (rich-media, Tika, Presidio, AI DLP, KMS)
         # See templates/_helpers.tpl::mnemoshare.integrationEnv

@@ -435,6 +435,12 @@ clamav:
     enabled: false
     url: ""        # e.g., "icap://clamav.mnemoshare-clamav.svc.cluster.local:1344"
     service: "avscan"
+    # When true, the api and worker refuse uploads/scans if ICAP is
+    # unreachable (fail-closed for compliance — HIPAA/HITRUST tenants
+    # typically want this). Default false = fail-open (continue without
+    # AV scan if the ICAP endpoint is down). Sets DEFAULT_ICAP_REQUIRED
+    # env var on the api Deployment and workflow-worker.
+    required: false
 
   # Node selector for ClamAV pods
   nodeSelector: {}

@@ -218,6 +218,12 @@ spec:
           value: {{ .Values.clamav.external.url | quote }}
         - name: DEFAULT_ICAP_SERVICE
           value: {{ .Values.clamav.external.service | default "avscan" | quote }}
+        {{- if .Values.clamav.external.required }}
+        # When required=true the background scan handler refuses to process
+        # files if ICAP is unreachable (matches the api Deployment's posture).
+        - name: DEFAULT_ICAP_REQUIRED
+          value: "true"
+        {{- end }}
         {{- end }}
         # Cross-service integrations (rich-media thumbnails, Tika text
         # extraction, Presidio NER, AI DLP, KMS envelope flag) — MUST match
