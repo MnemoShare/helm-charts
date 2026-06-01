@@ -1,4 +1,22 @@
 {{- if and .Values.workflowWorker.enabled .Values.workflowWorker.autoscaling.enabled }}
+{{- /*
+KEDA's Redis trigger needs a concrete host:port to poll queue depth. The
+`urlExistingSecret` path is for the app's REDIS_URL only — KEDA can't
+read it because secret values aren't available at template time and the
+trigger contract expects an explicit address (or a sentinel address
+list). If a user sets both `urlExistingSecret` and autoscaling without
+also providing `redis.external.host`, fail loudly rather than render a
+ScaledObject with `address: ":6379"` that silently can't connect.
+*/}}
+{{- if and
+      (eq (include "mnemoshare.redisMode" .) "external")
+      .Values.redis.external.urlExistingSecret
+      (not .Values.redis.external.host)
+}}
+{{- fail (printf
+  "workflowWorker.autoscaling requires redis.external.host:port for KEDA's Redis trigger. The redis.external.urlExistingSecret path (set to %q) only wires REDIS_URL into the app/worker pods — KEDA polls Redis directly and needs an explicit address. Set redis.external.host (and optionally port) to one of your Redis/Sentinel endpoints, or disable workflowWorker.autoscaling."
+  .Values.redis.external.urlExistingSecret) }}
+{{- end }}
 {{- $redisAddress := "" }}
 {{- if eq (include "mnemoshare.redisMode" .) "external" }}
 {{- $redisAddress = printf "%s:%s" .Values.redis.external.host (toString (.Values.redis.external.port | default 6379)) }}

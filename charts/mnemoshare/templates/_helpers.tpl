@@ -83,7 +83,27 @@ Default values produce identical gate decisions to the pre-1.20 chart:
 So existing consumers see byte-identical renders. New consumers (and the
 operator) should set .Values.<dep>.mode explicitly.
 */}}
+{{/*
+Validates that a deployment-mode string is one of the three accepted values.
+Bail loudly at install/template time if not — silently mis-typed modes
+(e.g. "incluster" / "in-cluster" / "InCluster") would otherwise cause
+every gate to evaluate false, no workloads to render, and no error.
+
+`inCluster` being camelCase while `external` / `disabled` are lowercase
+makes this error-prone, so the validator is strict on exact match.
+
+Usage: pass a dict {mode: <string>, field: <values-path>} for the error message.
+*/}}
+{{- define "mnemoshare.validateMode" -}}
+{{- $mode := .mode -}}
+{{- $field := .field -}}
+{{- if and $mode (not (has $mode (list "inCluster" "external" "disabled"))) -}}
+{{- fail (printf "%s must be one of: inCluster, external, disabled (got %q). Note: inCluster is camelCase; external and disabled are lowercase." $field $mode) -}}
+{{- end -}}
+{{- end }}
+
 {{- define "mnemoshare.redisMode" -}}
+{{- include "mnemoshare.validateMode" (dict "mode" .Values.redis.mode "field" "redis.mode") -}}
 {{- if .Values.redis.mode -}}
 {{- .Values.redis.mode -}}
 {{- else if .Values.redis.enabled -}}
@@ -96,6 +116,7 @@ disabled
 {{- end }}
 
 {{- define "mnemoshare.icapMode" -}}
+{{- include "mnemoshare.validateMode" (dict "mode" .Values.clamav.mode "field" "clamav.mode") -}}
 {{- if .Values.clamav.mode -}}
 {{- .Values.clamav.mode -}}
 {{- else if .Values.clamav.enabled -}}
@@ -108,6 +129,7 @@ disabled
 {{- end }}
 
 {{- define "mnemoshare.stepCAMode" -}}
+{{- include "mnemoshare.validateMode" (dict "mode" .Values.stepCA.mode "field" "stepCA.mode") -}}
 {{- if .Values.stepCA.mode -}}
 {{- .Values.stepCA.mode -}}
 {{- else if .Values.stepCA.enabled -}}
