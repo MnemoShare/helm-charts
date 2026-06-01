@@ -29,7 +29,14 @@ Create chart name and version as used by the chart label.
 {{- end }}
 
 {{/*
-Common labels
+Common labels.
+
+Emits the standard k8s recommended labels plus any user-supplied
+.Values.commonLabels entries. commonLabels are deliberately NOT included
+in selectorLabels: spec.selector.matchLabels is immutable on Deployment/
+StatefulSet, so injecting extra labels there would break in-place upgrades
+for any chart consumer (especially tenants being migrated from the
+operator's old mnemoshare-saas chart).
 */}}
 {{- define "mnemoshare.labels" -}}
 helm.sh/chart: {{ include "mnemoshare.chart" . }}
@@ -38,14 +45,98 @@ helm.sh/chart: {{ include "mnemoshare.chart" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- with .Values.commonLabels }}
+{{ toYaml . }}
+{{- end }}
 {{- end }}
 
 {{/*
-Selector labels
+Selector labels — DO NOT add fields here without a migration plan.
+Selector labels land in spec.selector.matchLabels which is immutable.
 */}}
 {{- define "mnemoshare.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "mnemoshare.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Deployment-mode helpers for optional in-cluster dependencies.
+
+Each helper resolves the effective mode for a dependency from either the
+explicit .Values.<dep>.mode field (preferred) or the legacy .enabled /
+.external.enabled flags (backwards compatibility). Three possible outputs:
+
+  inCluster — chart should render the dependency's workload templates
+  external  — chart should NOT render workloads; consumer reads .external.url
+  disabled  — dependency is not configured at all
+
+Default values produce identical gate decisions to the pre-1.20 chart:
+  redis.enabled=true             → inCluster      (was: rendered)
+  redis.external.enabled=true    → external       (was: not rendered)
+  neither                        → disabled       (was: not rendered)
+  clamav.enabled=true            → inCluster
+  clamav.external.enabled=true   → external
+  neither                        → disabled
+  stepCA.enabled=true            → inCluster
+  stepCA.enabled=false           → disabled
+
+So existing consumers see byte-identical renders. New consumers (and the
+operator) should set .Values.<dep>.mode explicitly.
+*/}}
+{{/*
+Validates that a deployment-mode string is one of the three accepted values.
+Bail loudly at install/template time if not — silently mis-typed modes
+(e.g. "incluster" / "in-cluster" / "InCluster") would otherwise cause
+every gate to evaluate false, no workloads to render, and no error.
+
+`inCluster` being camelCase while `external` / `disabled` are lowercase
+makes this error-prone, so the validator is strict on exact match.
+
+Usage: pass a dict {mode: <string>, field: <values-path>} for the error message.
+*/}}
+{{- define "mnemoshare.validateMode" -}}
+{{- $mode := .mode -}}
+{{- $field := .field -}}
+{{- if and $mode (not (has $mode (list "inCluster" "external" "disabled"))) -}}
+{{- fail (printf "%s must be one of: inCluster, external, disabled (got %q). Note: inCluster is camelCase; external and disabled are lowercase." $field $mode) -}}
+{{- end -}}
+{{- end }}
+
+{{- define "mnemoshare.redisMode" -}}
+{{- include "mnemoshare.validateMode" (dict "mode" .Values.redis.mode "field" "redis.mode") -}}
+{{- if .Values.redis.mode -}}
+{{- .Values.redis.mode -}}
+{{- else if .Values.redis.enabled -}}
+inCluster
+{{- else if and .Values.redis.external .Values.redis.external.enabled -}}
+external
+{{- else -}}
+disabled
+{{- end -}}
+{{- end }}
+
+{{- define "mnemoshare.icapMode" -}}
+{{- include "mnemoshare.validateMode" (dict "mode" .Values.clamav.mode "field" "clamav.mode") -}}
+{{- if .Values.clamav.mode -}}
+{{- .Values.clamav.mode -}}
+{{- else if .Values.clamav.enabled -}}
+inCluster
+{{- else if and .Values.clamav.external .Values.clamav.external.enabled -}}
+external
+{{- else -}}
+disabled
+{{- end -}}
+{{- end }}
+
+{{- define "mnemoshare.stepCAMode" -}}
+{{- include "mnemoshare.validateMode" (dict "mode" .Values.stepCA.mode "field" "stepCA.mode") -}}
+{{- if .Values.stepCA.mode -}}
+{{- .Values.stepCA.mode -}}
+{{- else if .Values.stepCA.enabled -}}
+inCluster
+{{- else -}}
+disabled
+{{- end -}}
 {{- end }}
 
 {{/*

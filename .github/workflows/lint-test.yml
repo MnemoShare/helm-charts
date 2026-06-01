@@ -228,6 +228,162 @@ jobs:
           assert_required_fails "keyguard.cert.issuerName" "issuerName" --set keyguard.cert.issuerName=
           assert_required_fails "keyguard.sidecar.image.tag" "tag" --set keyguard.sidecar.image.tag=
 
+      - name: Validate 1.21.0 chart-unification paths
+        if: github.event_name == 'pull_request'
+        run: |
+          # Pin the PR #30 review's testing recommendations for the new
+          # mode helpers, commonLabels, urlExistingSecret bridge, KEDA
+          # guard, and stepCA-external fail. Each scenario corresponds
+          # to one of the documented chart-unification features; a
+          # silent regression on any of these would manifest as a
+          # broken-but-rendering chart, exactly the failure mode the
+          # validators were added to prevent.
+
+          BASE=(
+            --set customerId=ci-test
+            --set mongodb.external.enabled=true
+            --set mongodb.external.uri=mongodb://test:test@localhost:27017/test
+            --set s3.bucket=test-bucket
+            --set s3.accessKey=test-key
+            --set s3.secretKey=test-secret
+            --set-string jwt.ecPrivateKey=test-ec-key
+            --set encryption.key=test-encryption-key-exactly-32by
+            --set license.key=test-license-key
+            --set appUrl=https://test.example.com
+            --set ingress.enabled=false
+          )
+
+          # Scenario A — redis.mode=inCluster alone wires REDIS_URL.
+          # Before the Phase 1.5 sweep, the app pod's Redis env vars
+          # depended on the legacy `redis.enabled` flag, so setting
+          # `mode: inCluster` without `enabled: true` produced an
+          # in-cluster Redis Deployment that no pod could reach.
+          OUT=$(helm template mnemoshare charts/mnemoshare "${BASE[@]}" \
+            --set redis.mode=inCluster \
+            --set redis.password=test-password)
+          if ! echo "$OUT" | grep -q "name: REDIS_URL"; then
+            echo "✗ Scenario A: redis.mode=inCluster did not wire REDIS_URL"
+            exit 1
+          fi
+          # `mnemoshare-redis:6379` is the in-cluster service name when
+          # the release name is `mnemoshare` (chart's fullname helper
+          # collapses redundant prefixes). A render that points REDIS_URL
+          # at anything else means the wiring picked the external branch
+          # or the secret path instead of in-cluster.
+          if ! echo "$OUT" | grep -q "@mnemoshare-redis:6379"; then
+            echo "✗ Scenario A: REDIS_URL not pointed at in-cluster Redis service"
+            exit 1
+          fi
+          echo "✓ Scenario A — redis.mode=inCluster wires REDIS_URL"
+
+          # Scenario B — redis.external.urlExistingSecret renders REDIS_URL
+          # via secretKeyRef, not inline. Sentinel URLs embed a password;
+          # inlining them in the Deployment manifest leaks the password
+          # to anyone with `kubectl get deploy -o yaml`.
+          OUT=$(helm template mnemoshare charts/mnemoshare "${BASE[@]}" \
+            --set redis.mode=external \
+            --set redis.external.urlExistingSecret=mnemoshare-credentials)
+          # REDIS_URL must appear AND must be sourced from secretKeyRef.
+          # awk scans the api Deployment specifically (other manifests
+          # might mention REDIS_URL in comments).
+          if ! echo "$OUT" | awk '
+            /^# Source: .*deployment\.yaml$/ { in_dep = 1 }
+            /^# Source:/ && ! /deployment\.yaml$/ { in_dep = 0 }
+            in_dep && /name: REDIS_URL/ { saw_name = 1 }
+            in_dep && saw_name && /secretKeyRef:/ { found = 1; exit }
+            END { exit found ? 0 : 1 }'; then
+            echo "✗ Scenario B: REDIS_URL not wired via secretKeyRef"
+            exit 1
+          fi
+          echo "✓ Scenario B — urlExistingSecret renders secretKeyRef"
+
+          # Scenario C — commonLabels land in metadata.labels but NOT in
+          # selectorLabels. spec.selector.matchLabels is immutable on
+          # Deployment/StatefulSet, so leaking commonLabels into the
+          # selector would break in-place helm upgrades.
+          OUT=$(helm template mnemoshare charts/mnemoshare "${BASE[@]}" \
+            --set commonLabels.tenant-id=acme \
+            --set commonLabels.tier=enterprise)
+          if ! echo "$OUT" | grep -q "tenant-id: acme"; then
+            echo "✗ Scenario C: commonLabels not emitted on metadata.labels"
+            exit 1
+          fi
+          # Find every spec.selector.matchLabels block and confirm
+          # tenant-id is NOT inside any of them.
+          if echo "$OUT" | awk '
+            /matchLabels:/ { in_sel = 1; next }
+            in_sel && /^      [^ ]/ { in_sel = 0 }
+            in_sel && /tenant-id:/ { print; found = 1 }
+            END { exit found ? 0 : 1 }'; then
+            echo "✗ Scenario C: commonLabels leaked into spec.selector.matchLabels"
+            exit 1
+          fi
+          echo "✓ Scenario C — commonLabels stay out of selectorLabels"
+
+          # Scenario D — validateMode catches mode typos. This is THE
+          # guard against the most common misconfiguration the PR
+          # introduces (camelCase inCluster vs lowercase external/disabled).
+          set +e
+          OUT=$(helm template mnemoshare charts/mnemoshare "${BASE[@]}" \
+            --set redis.mode=incluster 2>&1)
+          STATUS=$?
+          set -e
+          if [ $STATUS -eq 0 ]; then
+            echo "✗ Scenario D: validateMode did not fail on typo'd mode"
+            exit 1
+          fi
+          if ! echo "$OUT" | grep -q "redis.mode must be one of"; then
+            echo "✗ Scenario D: validateMode error message not surfaced. Got:"
+            echo "$OUT"
+            exit 1
+          fi
+          echo "✓ Scenario D — validateMode catches mode typos"
+
+          # Scenario E — KEDA + urlExistingSecret + no host fails. The
+          # ScaledObject can't extract a Redis address from a secret
+          # value at template time; if the user sets urlExistingSecret
+          # without host:port, KEDA would render an invalid `:6379`
+          # address and silently fail to scale.
+          set +e
+          OUT=$(helm template mnemoshare charts/mnemoshare "${BASE[@]}" \
+            --set redis.mode=external \
+            --set redis.external.urlExistingSecret=mnemoshare-credentials \
+            --set workflowWorker.enabled=true \
+            --set workflowWorker.autoscaling.enabled=true 2>&1)
+          STATUS=$?
+          set -e
+          if [ $STATUS -eq 0 ]; then
+            echo "✗ Scenario E: KEDA guard did not fail on urlExistingSecret + no host"
+            exit 1
+          fi
+          if ! echo "$OUT" | grep -q "redis.external.host"; then
+            echo "✗ Scenario E: KEDA fail message did not name redis.external.host. Got:"
+            echo "$OUT"
+            exit 1
+          fi
+          echo "✓ Scenario E — KEDA guard fires on urlExistingSecret + no host"
+
+          # Scenario F — stepCA.mode=external + mtls.enabled=true + no
+          # caProvider.url fails. `external` is net-new (no legacy
+          # path); silently rendering the api Deployment without
+          # CA_SMALLSTEP_URL would dead-end mTLS auth.
+          set +e
+          OUT=$(helm template mnemoshare charts/mnemoshare "${BASE[@]}" \
+            --set stepCA.mode=external \
+            --set mtls.enabled=true 2>&1)
+          STATUS=$?
+          set -e
+          if [ $STATUS -eq 0 ]; then
+            echo "✗ Scenario F: stepCA-external guard did not fail without caProvider.url"
+            exit 1
+          fi
+          if ! echo "$OUT" | grep -q "mtls.caProvider.url"; then
+            echo "✗ Scenario F: stepCA-external fail message did not name mtls.caProvider.url. Got:"
+            echo "$OUT"
+            exit 1
+          fi
+          echo "✓ Scenario F — stepCA-external guard fires without caProvider.url"
+
       - name: Validate sftpGateway encryption.key guard fails fast
         if: github.event_name == 'pull_request'
         run: |

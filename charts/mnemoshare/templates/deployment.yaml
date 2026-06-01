@@ -1,3 +1,18 @@
+{{- /*
+Validation: when stepCA.mode=external (new tri-state, no legacy fallback)
+and mTLS is enabled on the api, the app needs a concrete CA URL to reach
+the external Step-CA. Without it, neither branch of the CA_SMALLSTEP_URL
+block below fires and mTLS/Step-CA integration is silently dead. Fail
+loud at template time so the misconfiguration surfaces in `helm install`
+instead of as a mysterious app-runtime feature loss.
+*/}}
+{{- if and
+      (eq (include "mnemoshare.stepCAMode" .) "external")
+      .Values.mtls.enabled
+      (not .Values.mtls.caProvider.url)
+}}
+{{- fail "stepCA.mode=external with mtls.enabled=true requires mtls.caProvider.url to point at the external Step-CA's HTTPS endpoint (e.g. https://step-ca.shared.svc.cluster.local:9000). Without it the api Deployment renders without CA_SMALLSTEP_URL and hardware-mTLS auth silently fails." }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -128,12 +143,20 @@ spec:
               key: jwt-ec-private-key
         - name: JWT_EXPIRATION
           value: {{ .Values.jwt.expiration | quote }}
-        {{- if or .Values.redis.enabled .Values.redis.external.enabled }}
+        {{- if ne (include "mnemoshare.redisMode" .) "disabled" }}
         # Redis - for workflow task enqueueing (manual triggers)
         # Note: REDIS_PASSWORD must be defined BEFORE REDIS_URL for $(REDIS_PASSWORD) substitution to work
-        {{- if .Values.redis.external.enabled }}
+        {{- if eq (include "mnemoshare.redisMode" .) "external" }}
         # External Redis
-        {{- if .Values.redis.external.url }}
+        {{- if .Values.redis.external.urlExistingSecret }}
+        # Full URL (with embedded password) from a secret — used by the operator
+        # to avoid plaintext REDIS_URL in the rendered Deployment manifest.
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.redis.external.urlExistingSecret }}
+              key: {{ .Values.redis.external.urlExistingSecretKey | default "redis-url" }}
+        {{- else if .Values.redis.external.url }}
         - name: REDIS_URL
           value: {{ .Values.redis.external.url | quote }}
         {{- else }}
@@ -275,16 +298,22 @@ spec:
           value: {{ .Values.session.inactivityTimeoutSeconds | default 300 | quote }}
         {{- end }}
         # ClamAV ICAP endpoint
-        {{- if .Values.clamav.enabled }}
+        {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
         - name: DEFAULT_ICAP_URL
           value: "icap://{{ include "mnemoshare.fullname" . }}-clamav:1344"
         - name: DEFAULT_ICAP_SERVICE
           value: "avscan"
-        {{- else if .Values.clamav.external.enabled }}
+        {{- else if eq (include "mnemoshare.icapMode" .) "external" }}
         - name: DEFAULT_ICAP_URL
           value: {{ .Values.clamav.external.url | quote }}
         - name: DEFAULT_ICAP_SERVICE
           value: {{ .Values.clamav.external.service | default "avscan" | quote }}
+        {{- if .Values.clamav.external.required }}
+        # When required=true the api refuses uploads if ICAP is unreachable
+        # (fail-closed for compliance — HIPAA/HITRUST tenants typically want this).
+        - name: DEFAULT_ICAP_REQUIRED
+          value: "true"
+        {{- end }}
         {{- end }}
         # Cross-service integrations (rich-media, Tika, Presidio, AI DLP, KMS)
         # See templates/_helpers.tpl::mnemoshare.integrationEnv
@@ -333,7 +362,7 @@ spec:
         {{- if .Values.mtls.caProvider.url }}
         - name: CA_SMALLSTEP_URL
           value: {{ .Values.mtls.caProvider.url | quote }}
-        {{- else if .Values.stepCA.enabled }}
+        {{- else if eq (include "mnemoshare.stepCAMode" .) "inCluster" }}
         - name: CA_SMALLSTEP_URL
           value: "https://{{ include "mnemoshare.fullname" . }}-step-ca:9000"
         {{- end }}

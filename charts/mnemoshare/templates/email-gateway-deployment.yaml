@@ -107,7 +107,7 @@ spec:
         {{- end }}
         # ICAP virus scanning
         {{- $icapURL := .Values.emailGateway.icap.url }}
-        {{- if and (not $icapURL) .Values.clamav.enabled }}
+        {{- if and (not $icapURL) (eq (include "mnemoshare.icapMode" .) "inCluster") }}
         {{- $icapURL = printf "icap://%s-clamav:1344/avscan" (include "mnemoshare.fullname" .) }}
         {{- end }}
         {{- if $icapURL }}

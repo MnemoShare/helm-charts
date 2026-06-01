@@ -32,6 +32,17 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# Extra labels merged into every rendered resource's metadata.labels.
+# NOT used in spec.selector — selector labels are deliberately frozen
+# (name + instance) so adding/removing entries here never causes a
+# "field is immutable" failure on Deployment/StatefulSet upgrades.
+#
+# The operator uses this to inject tenant identifiers, e.g.:
+#   commonLabels:
+#     mnemoshare.io/customer-id: "acme-clinic"
+#     mnemoshare.io/tier: "saas_business"
+commonLabels: {}
+
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
@@ -366,7 +377,18 @@ kms:
 # ClamAV ICAP antivirus scanning (optional)
 # Provides free, open-source virus scanning for uploaded files
 clamav:
-  # Enable/disable ClamAV deployment
+  # Deployment mode. Preferred over the legacy `enabled` / `external.enabled`
+  # flags below. Three values:
+  #   external  — chart does NOT deploy ClamAV; consumer reads `clamav.external.url`
+  #   inCluster — chart deploys the mnemoshare/clamav-icap image alongside the app
+  #   disabled  — ClamAV not configured; ICAP scanning is off
+  # When empty, mode resolves from the legacy flags for backwards compatibility:
+  #   clamav.enabled=true            → inCluster
+  #   clamav.external.enabled=true   → external
+  #   neither                        → disabled
+  mode: ""
+
+  # Legacy toggle for in-cluster ClamAV. Prefer `mode: inCluster` above.
   enabled: false
 
   image:
@@ -413,6 +435,12 @@ clamav:
     enabled: false
     url: ""        # e.g., "icap://clamav.mnemoshare-clamav.svc.cluster.local:1344"
     service: "avscan"
+    # When true, the api and worker refuse uploads/scans if ICAP is
+    # unreachable (fail-closed for compliance — HIPAA/HITRUST tenants
+    # typically want this). Default false = fail-open (continue without
+    # AV scan if the ICAP endpoint is down). Sets DEFAULT_ICAP_REQUIRED
+    # env var on the api Deployment and workflow-worker.
+    required: false
 
   # Node selector for ClamAV pods
   nodeSelector: {}
@@ -424,7 +452,21 @@ clamav:
 # Enables hardware-bound mTLS authentication with YubiKey, TPM 2.0, Secure Enclave
 # https://smallstep.com/docs/step-ca
 stepCA:
-  # Enable/disable Step CA deployment
+  # Deployment mode. Preferred over the legacy `enabled` flag below.
+  # Three values:
+  #   external  — chart does NOT deploy Step-CA; consumer points at an
+  #               external CA via mtls.caProvider.url
+  #   inCluster — chart deploys Step-CA in-cluster (single-replica)
+  #   disabled  — Step-CA / hardware mTLS not configured
+  # When empty, mode resolves from the legacy `enabled` flag for backwards
+  # compatibility:
+  #   stepCA.enabled=true   → inCluster
+  #   stepCA.enabled=false  → disabled
+  # ("external" must be set explicitly — the legacy flag cannot distinguish
+  # between "external" and "disabled".)
+  mode: ""
+
+  # Legacy toggle for in-cluster Step-CA. Prefer `mode: inCluster` above.
   enabled: false
 
   image:
@@ -843,7 +885,19 @@ minio:
 # Required when running the workflow worker for inbound file processing.
 # Provides the Asynq job queue for distributed task processing.
 redis:
-  # Enable/disable Redis deployment
+  # Deployment mode. Preferred over the legacy `enabled` / `external.enabled`
+  # flags below. Three values:
+  #   external  — chart does NOT deploy Redis; consumer reads `redis.external.url`
+  #   inCluster — chart deploys a single-replica in-cluster Redis (dev / small
+  #               self-hosted; not recommended for production)
+  #   disabled  — Redis not configured (workflow worker must also be disabled)
+  # When empty, mode resolves from the legacy flags for backwards compatibility:
+  #   redis.enabled=true             → inCluster
+  #   redis.external.enabled=true    → external
+  #   neither                        → disabled
+  mode: ""
+
+  # Legacy toggle for in-cluster Redis. Prefer `mode: inCluster` above.
   enabled: false
 
   image:
@@ -886,6 +940,15 @@ redis:
     #            redis+sentinel://:password@sentinel1:26379,sentinel2:26379/0?master=mymaster
     # Sentinel URLs enable automatic master failover — recommended for HA production deployments.
     url: ""
+    # Full REDIS_URL from a secret — preferred when the URL contains an
+    # embedded password (e.g. Sentinel URLs) and you don't want it in the
+    # rendered Deployment manifest as plaintext. Wins over `url` above when
+    # both are set. The operator uses this to keep tenant Redis credentials
+    # out of `kubectl get deploy -o yaml`.
+    urlExistingSecret: ""
+    # Key inside urlExistingSecret holding the full REDIS_URL. Defaults to
+    # "redis-url" to match the operator/provisioner secret convention.
+    urlExistingSecretKey: ""
     # Alternatively, construct URL from parts (standard Redis only, not Sentinel):
     host: ""
     port: 6379

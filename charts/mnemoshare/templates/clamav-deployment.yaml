@@ -1,4 +1,4 @@
-{{- if .Values.clamav.enabled }}
+{{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

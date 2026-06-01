@@ -1,4 +1,4 @@
-{{- if and .Values.clamav.enabled .Values.clamav.persistence.enabled }}
+{{- if and (eq (include "mnemoshare.icapMode" .) "inCluster") .Values.clamav.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
