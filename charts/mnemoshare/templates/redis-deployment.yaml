@@ -1,4 +1,4 @@
-{{- if .Values.redis.enabled }}
+{{- if eq (include "mnemoshare.redisMode" .) "inCluster" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

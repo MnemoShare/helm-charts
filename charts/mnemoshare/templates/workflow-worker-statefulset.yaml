@@ -1,7 +1,7 @@
 {{- if .Values.workflowWorker.enabled }}
 {{- if .Values.workflowWorker.persistence.enabled }}
-{{- if not (or .Values.redis.enabled .Values.redis.external.enabled) }}
-{{- fail "workflowWorker.enabled requires redis.enabled=true or redis.external.enabled=true" }}
+{{- if eq (include "mnemoshare.redisMode" .) "disabled" }}
+{{- fail "workflowWorker.enabled requires Redis: set redis.mode=external (with redis.external.url) or redis.mode=inCluster (or legacy redis.enabled=true / redis.external.enabled=true)" }}
 {{- end }}
 {{- if eq .Values.database.driver "sqlite" }}
 {{- fail "workflowWorker.enabled is not compatible with database.driver=sqlite. Use mongodb or postgres." }}
@@ -81,9 +81,17 @@ spec:
         {{- end }}
         # Redis Connection
         # Note: REDIS_PASSWORD must be defined BEFORE REDIS_URL for $(REDIS_PASSWORD) substitution to work
-        {{- if .Values.redis.external.enabled }}
+        {{- if eq (include "mnemoshare.redisMode" .) "external" }}
         # External Redis
-        {{- if .Values.redis.external.url }}
+        {{- if .Values.redis.external.urlExistingSecret }}
+        # Full URL (with embedded password) from a secret — used by the operator
+        # to avoid plaintext REDIS_URL in the rendered StatefulSet/Deployment.
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.redis.external.urlExistingSecret }}
+              key: {{ .Values.redis.external.urlExistingSecretKey | default "redis-url" }}
+        {{- else if .Values.redis.external.url }}
         - name: REDIS_URL
           value: {{ .Values.redis.external.url | quote }}
         {{- else }}
@@ -200,12 +208,12 @@ spec:
           value: {{ .Values.workflowWorker.logLevel | default "info" | quote }}
         # ClamAV ICAP endpoint (background.scan handler — env-seeded fallback;
         # primary config comes from MongoDB IcapConfig row)
-        {{- if .Values.clamav.enabled }}
+        {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
         - name: DEFAULT_ICAP_URL
           value: "icap://{{ include "mnemoshare.fullname" . }}-clamav:1344"
         - name: DEFAULT_ICAP_SERVICE
           value: "avscan"
-        {{- else if .Values.clamav.external.enabled }}
+        {{- else if eq (include "mnemoshare.icapMode" .) "external" }}
         - name: DEFAULT_ICAP_URL
           value: {{ .Values.clamav.external.url | quote }}
         - name: DEFAULT_ICAP_SERVICE

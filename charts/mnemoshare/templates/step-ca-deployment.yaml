@@ -1,4 +1,4 @@
-{{- if .Values.stepCA.enabled }}
+{{- if eq (include "mnemoshare.stepCAMode" .) "inCluster" }}
 {{- $hsmEnabled := .Values.stepCA.hsm.enabled | default false }}
 {{- $imageRepo := ternary .Values.stepCA.hsm.image.repository .Values.stepCA.image.repository $hsmEnabled }}
 {{- $imageTag := ternary .Values.stepCA.hsm.image.tag .Values.stepCA.image.tag $hsmEnabled }}

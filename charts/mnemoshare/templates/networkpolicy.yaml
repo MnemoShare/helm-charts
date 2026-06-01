@@ -127,7 +127,7 @@ spec:
           port: 9000
     {{- end }}
     # ClamAV ICAP (embedded)
-    {{- if .Values.clamav.enabled }}
+    {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
     - to:
         - podSelector:
             matchLabels:
@@ -137,7 +137,7 @@ spec:
           port: 1344
     {{- end }}
     # ClamAV ICAP (external)
-    {{- if .Values.clamav.external.enabled }}
+    {{- if eq (include "mnemoshare.icapMode" .) "external" }}
     - to:
         - namespaceSelector: {}
       ports:
@@ -145,7 +145,7 @@ spec:
           port: 1344
     {{- end }}
     # Redis (embedded)
-    {{- if .Values.redis.enabled }}
+    {{- if eq (include "mnemoshare.redisMode" .) "inCluster" }}
     - to:
         - podSelector:
             matchLabels:
@@ -155,7 +155,7 @@ spec:
           port: 6379
     {{- end }}
     # Redis (external)
-    {{- if .Values.redis.external.enabled }}
+    {{- if eq (include "mnemoshare.redisMode" .) "external" }}
     - to:
         - namespaceSelector: {}
       ports:
@@ -163,7 +163,7 @@ spec:
           port: {{ .Values.redis.external.port | default 6379 }}
     {{- end }}
     # Step CA (for mTLS)
-    {{- if .Values.stepCA.enabled }}
+    {{- if eq (include "mnemoshare.stepCAMode" .) "inCluster" }}
     - to:
         - podSelector:
             matchLabels:
@@ -274,7 +274,7 @@ spec:
         - protocol: TCP          # TCP only — block UDP egress
     {{- end }}
 ---
-{{- if .Values.clamav.enabled }}
+{{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
 # ClamAV NetworkPolicy - only allow traffic from MnemoShare pods
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -328,7 +328,7 @@ spec:
           port: 80
 {{- end }}
 ---
-{{- if .Values.redis.enabled }}
+{{- if eq (include "mnemoshare.redisMode" .) "inCluster" }}
 # Redis NetworkPolicy - only allow traffic from MnemoShare and workflow workers
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -558,7 +558,7 @@ spec:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
     # ClamAV ICAP (embedded) for attachment scanning
-    {{- if .Values.clamav.enabled }}
+    {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
     - to:
         - podSelector:
             matchLabels:
@@ -648,7 +648,7 @@ spec:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
     # ClamAV ICAP (embedded) for attachment scanning
-    {{- if .Values.clamav.enabled }}
+    {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
     - to:
         - podSelector:
             matchLabels:

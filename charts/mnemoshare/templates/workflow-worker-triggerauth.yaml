@@ -2,7 +2,7 @@
 {{- $hasAuth := false }}
 {{- $secretName := "" }}
 {{- $secretKey := "redis-password" }}
-{{- if .Values.redis.external.enabled }}
+{{- if eq (include "mnemoshare.redisMode" .) "external" }}
 {{- if or .Values.redis.external.existingSecret .Values.existingSecrets.redis }}
 {{- $hasAuth = true }}
 {{- $secretName = (.Values.redis.external.existingSecret | default .Values.existingSecrets.redis) }}

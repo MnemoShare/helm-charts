@@ -29,7 +29,14 @@ Create chart name and version as used by the chart label.
 {{- end }}
 
 {{/*
-Common labels
+Common labels.
+
+Emits the standard k8s recommended labels plus any user-supplied
+.Values.commonLabels entries. commonLabels are deliberately NOT included
+in selectorLabels: spec.selector.matchLabels is immutable on Deployment/
+StatefulSet, so injecting extra labels there would break in-place upgrades
+for any chart consumer (especially tenants being migrated from the
+operator's old mnemoshare-saas chart).
 */}}
 {{- define "mnemoshare.labels" -}}
 helm.sh/chart: {{ include "mnemoshare.chart" . }}
@@ -38,14 +45,76 @@ helm.sh/chart: {{ include "mnemoshare.chart" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- with .Values.commonLabels }}
+{{ toYaml . }}
+{{- end }}
 {{- end }}
 
 {{/*
-Selector labels
+Selector labels — DO NOT add fields here without a migration plan.
+Selector labels land in spec.selector.matchLabels which is immutable.
 */}}
 {{- define "mnemoshare.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "mnemoshare.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Deployment-mode helpers for optional in-cluster dependencies.
+
+Each helper resolves the effective mode for a dependency from either the
+explicit .Values.<dep>.mode field (preferred) or the legacy .enabled /
+.external.enabled flags (backwards compatibility). Three possible outputs:
+
+  inCluster — chart should render the dependency's workload templates
+  external  — chart should NOT render workloads; consumer reads .external.url
+  disabled  — dependency is not configured at all
+
+Default values produce identical gate decisions to the pre-1.20 chart:
+  redis.enabled=true             → inCluster      (was: rendered)
+  redis.external.enabled=true    → external       (was: not rendered)
+  neither                        → disabled       (was: not rendered)
+  clamav.enabled=true            → inCluster
+  clamav.external.enabled=true   → external
+  neither                        → disabled
+  stepCA.enabled=true            → inCluster
+  stepCA.enabled=false           → disabled
+
+So existing consumers see byte-identical renders. New consumers (and the
+operator) should set .Values.<dep>.mode explicitly.
+*/}}
+{{- define "mnemoshare.redisMode" -}}
+{{- if .Values.redis.mode -}}
+{{- .Values.redis.mode -}}
+{{- else if .Values.redis.enabled -}}
+inCluster
+{{- else if and .Values.redis.external .Values.redis.external.enabled -}}
+external
+{{- else -}}
+disabled
+{{- end -}}
+{{- end }}
+
+{{- define "mnemoshare.icapMode" -}}
+{{- if .Values.clamav.mode -}}
+{{- .Values.clamav.mode -}}
+{{- else if .Values.clamav.enabled -}}
+inCluster
+{{- else if and .Values.clamav.external .Values.clamav.external.enabled -}}
+external
+{{- else -}}
+disabled
+{{- end -}}
+{{- end }}
+
+{{- define "mnemoshare.stepCAMode" -}}
+{{- if .Values.stepCA.mode -}}
+{{- .Values.stepCA.mode -}}
+{{- else if .Values.stepCA.enabled -}}
+inCluster
+{{- else -}}
+disabled
+{{- end -}}
 {{- end }}
 
 {{/*

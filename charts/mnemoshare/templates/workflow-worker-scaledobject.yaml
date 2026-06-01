@@ -1,12 +1,12 @@
 {{- if and .Values.workflowWorker.enabled .Values.workflowWorker.autoscaling.enabled }}
 {{- $redisAddress := "" }}
-{{- if .Values.redis.external.enabled }}
+{{- if eq (include "mnemoshare.redisMode" .) "external" }}
 {{- $redisAddress = printf "%s:%s" .Values.redis.external.host (toString (.Values.redis.external.port | default 6379)) }}
 {{- else }}
 {{- $redisAddress = printf "%s-redis.%s.svc.cluster.local:6379" (include "mnemoshare.fullname" .) .Release.Namespace }}
 {{- end }}
 {{- $hasAuth := false }}
-{{- if .Values.redis.external.enabled }}
+{{- if eq (include "mnemoshare.redisMode" .) "external" }}
 {{- $hasAuth = or (not (empty .Values.redis.external.existingSecret)) (not (empty .Values.existingSecrets.redis)) }}
 {{- else }}
 {{- $hasAuth = or (not (empty .Values.redis.password)) (not (empty .Values.redis.existingSecret)) }}
