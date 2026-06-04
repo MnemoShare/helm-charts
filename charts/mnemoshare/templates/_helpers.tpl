@@ -273,4 +273,29 @@ Values consumed (all optional — only emitted when set):
 {{- end }}
 - name: KMS_ENVELOPE_ENABLED
   value: {{ $envelope | quote }}
+{{- /* DATA_PLANE_KMS_* (MSC-391). Defaults to the app's builtin MKEK when
+       provider is unset; SaaS tenants populate provider=aws_kms +
+       keyID=alias/msaas/<id> via the operator. Without these, the app
+       defaults to provider="" = Builtin, which means an envelopeEnabled=true
+       tenant SILENTLY routes through the builtin MKEK derived from
+       ENCRYPTION_KEY instead of the per-tenant CMK — bypassing the entire
+       KeyGuard isolation model. All four are emitted only when set, so
+       legacy / self-hosted installs without an explicit KMS block are
+       unaffected. */}}
+{{- if and .Values.kms .Values.kms.dataPlaneProvider }}
+- name: DATA_PLANE_KMS_PROVIDER
+  value: {{ .Values.kms.dataPlaneProvider | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.dataPlaneKeyID }}
+- name: DATA_PLANE_KMS_KEY_ID
+  value: {{ .Values.kms.dataPlaneKeyID | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.dataPlaneRegion }}
+- name: DATA_PLANE_KMS_REGION
+  value: {{ .Values.kms.dataPlaneRegion | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.dataPlaneLogicalKeyID }}
+- name: DATA_PLANE_KMS_LOGICAL_KEY_ID
+  value: {{ .Values.kms.dataPlaneLogicalKeyID | quote }}
+{{- end }}
 {{- end }}

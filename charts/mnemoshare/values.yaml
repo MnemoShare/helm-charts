@@ -371,8 +371,25 @@ dlp:
 # are wrapped with a per-file DEK and the DEK is wrapped with the master KEK.
 # Worker decrypt path requires this codepath regardless of whether new uploads
 # use v2; existing v2 files always need the envelope-aware decrypt.
+#
+# dataPlane* fields select WHICH master KEK wraps the per-file DEKs:
+#  - All empty (default) → app uses its builtin MKEK derived from
+#    ENCRYPTION_KEY. Fine for single-tenant self-hosted; never for SaaS
+#    (no per-tenant key isolation).
+#  - dataPlaneProvider=aws_kms + dataPlaneKeyID=alias/... → app calls AWS
+#    KMS for envelope ops, scoped to that CMK. Required for the per-tenant
+#    SaaS isolation model (KeyGuard) — see MSC-391.
+#  - dataPlaneRegion defaults to us-east-1 if dataPlaneProvider=aws_kms and
+#    nothing else sets AWS_REGION (the AWS SDK still needs SOME region).
+#  - dataPlaneLogicalKeyID is a free-form label stored on each encrypted
+#    record so a future key rotation can map old wrap-IDs to the current
+#    physical CMK (see KMS Rewrap fix in app PR #878). Defaults to "master".
 kms:
   envelopeEnabled: true
+  # dataPlaneProvider: "aws_kms"
+  # dataPlaneKeyID: "alias/msaas/your-customer-id"
+  # dataPlaneRegion: "us-east-1"
+  # dataPlaneLogicalKeyID: "master"
 
 # ClamAV ICAP antivirus scanning (optional)
 # Provides free, open-source virus scanning for uploaded files
