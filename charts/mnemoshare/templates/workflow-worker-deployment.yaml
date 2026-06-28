@@ -10,7 +10,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "mnemoshare.fullname" . }}-workflow-worker
+  name: {{ include "mnemoshare.fullname" . }}-worker
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: workflow-worker

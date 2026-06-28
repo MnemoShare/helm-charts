@@ -9,12 +9,12 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "mnemoshare.fullname" . }}-workflow-worker
+  name: {{ include "mnemoshare.fullname" . }}-worker
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: workflow-worker
 spec:
-  serviceName: {{ include "mnemoshare.fullname" . }}-workflow-worker
+  serviceName: {{ include "mnemoshare.fullname" . }}-worker
   {{- if not .Values.workflowWorker.autoscaling.enabled }}
   replicas: {{ .Values.workflowWorker.replicas }}
   {{- end }}
