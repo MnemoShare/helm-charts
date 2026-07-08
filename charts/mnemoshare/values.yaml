@@ -157,7 +157,12 @@ s3:
 # JWT authentication (ES256 / ECDSA P-256)
 jwt:
   ecPrivateKey: ""  # PEM-encoded EC P-256 private key for ES256 JWT signing (auto-generated if empty)
-  expiration: "24h"
+  # Legacy single-token lifetime, in whole hours (env JWT_EXPIRY_HOURS). Governs
+  # the deprecated GenerateToken path (register/MFA-pending/device intermediate
+  # tokens); browser SSO/SAML now use short access + refresh pairs (MSC-486).
+  # Renamed from the old `expiration: "24h"`, which the backend never read
+  # (MSC-493) — tokens silently used the 1-year code default.
+  expiryHours: 24
 
 # Encryption
 encryption:
@@ -1334,7 +1339,15 @@ inboundGateway:
 # Restricts pod-to-pod communication using Kubernetes NetworkPolicies.
 # Requires a CNI plugin that supports NetworkPolicy (Calico, Cilium, etc.)
 networkPolicy:
-  # Enable/disable network policies
+  # Enable/disable network policies.
+  #
+  # MSC-489 / HITRUST r2: this chart ships a complete default-deny + per-component
+  # allow set (API ingress/egress, worker, redis, clamav, mcp, sftp-gateway,
+  # email-gateway, step-ca). It defaults OFF so installs on clusters without a
+  # NetworkPolicy-enforcing CNI aren't given a false sense of isolation, and to
+  # avoid breaking connectivity before an operator validates the allow set on
+  # their CNI. For a regulated/HITRUST posture, set this to `true` after
+  # confirming pod-to-pod + egress connectivity on your cluster.
   enabled: false
 
   # Namespace where ingress controller runs (for allowing ingress traffic)
