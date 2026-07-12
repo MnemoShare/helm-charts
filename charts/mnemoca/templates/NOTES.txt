@@ -1,0 +1,23 @@
+MnemoCA {{ .Chart.AppVersion }} deployed ({{ .Values.storage.backend }} mode{{ if eq .Values.storage.backend "mongo" }}, {{ .Values.replicaCount }} replicas{{ end }}).
+
+In-cluster endpoint:
+  http://{{ include "mnemoca.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+
+First steps:
+  # The bootstrap operator API key is printed ONCE in the server log on
+  # first start — capture it now:
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }} | grep mnemoca_
+
+  # Health and roots:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "mnemoca.fullname" . }} 8443:{{ .Values.service.port }} &
+  curl http://localhost:8443/healthz
+  curl http://localhost:8443/roots
+
+ACME directory (per tenant, for cert-manager):
+  {{ .Values.ca.externalURL | default "http://<service>" }}/acme/<tenant>/directory
+{{- if not .Values.ca.existingSecret }}
+
+WARNING: ca.existingSecret is unset — the release will not start. Create:
+  kubectl -n {{ .Release.Namespace }} create secret generic mnemoca-passphrase --from-literal=passphrase="$(openssl rand -base64 32)"
+and set ca.existingSecret=mnemoca-passphrase.
+{{- end }}

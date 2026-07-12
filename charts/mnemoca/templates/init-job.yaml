@@ -1,0 +1,40 @@
+{{- if and .Values.ca.init.enabled (eq .Values.storage.backend "mongo") }}
+# One-time root initialization (mongo mode). A single hook Job avoids the
+# replica race; `mnemoca init --if-needed` no-ops when the CA already
+# exists, so install and upgrade are both safe. In bolt mode initialization
+# runs as an initContainer on the StatefulSet pod instead (same RWO volume).
+# Root creation is an explicit, auditable event — the server refuses to
+# start uninitialized rather than creating a root implicitly.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mnemoca.fullname" . }}-init
+  labels: {{- include "mnemoca.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels: {{- include "mnemoca.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: init
+          image: {{ include "mnemoca.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - init
+            - --if-needed
+            - --name={{ .Values.ca.init.name }}
+            - --alg={{ .Values.ca.init.alg }}
+            {{- if .Values.ca.init.pairAlg }}
+            - --pair-alg={{ .Values.ca.init.pairAlg }}
+            {{- end }}
+          env: {{- include "mnemoca.env" . | nindent 12 }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+{{- end }}

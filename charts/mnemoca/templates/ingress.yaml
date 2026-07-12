@@ -1,0 +1,28 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "mnemoca.fullname" . }}
+  labels: {{- include "mnemoca.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ required "ingress.host is required" .Values.ingress.host | quote }}]
+      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" (include "mnemoca.fullname" .)) }}
+  {{- end }}
+  rules:
+    - host: {{ required "ingress.host is required" .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "mnemoca.fullname" . }}
+                port:
+                  name: https
+{{- end }}

@@ -1,0 +1,90 @@
+# MnemoCA Helm chart values.
+#
+# Two storage modes (ADR-0010 in the MnemoCA repo):
+#   bolt  — embedded store on a PVC; exactly 1 replica (StatefulSet)
+#   mongo — MongoDB via goodm; stateless replicas (Deployment), HA
+
+image:
+  # Docker Hub is the vetted release registry (Docker Scout); use
+  # ghcr.io/mnemoshare/mnemoca for development builds.
+  repository: mnemoshare/mnemoca
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+storage:
+  backend: bolt      # bolt | mongo
+
+  bolt:
+    # PVC for /data (bbolt store, softkey keys, audit log)
+    size: 1Gi
+    storageClassName: ""
+
+  mongo:
+    # mongodb:// connection string, or leave empty and set existingSecret.
+    uri: ""
+    database: mnemoca
+    # Secret with key "uri" holding the connection string (preferred over
+    # putting credentials in values).
+    existingSecret: ""
+
+# Replicas apply to mongo mode only; bolt mode is always 1.
+replicaCount: 2
+
+ca:
+  # One-time root initialization (post-install hook Job). Algorithms are
+  # MnemoCA registry IDs; pairAlg enables hybrid parallel chains (ADR-0004).
+  init:
+    enabled: true
+    name: "MnemoCA Root"
+    alg: ml-dsa-87
+    pairAlg: ecdsa-p384   # "" to disable the classical pair
+  # Passphrase protecting stored key envelopes. REQUIRED: create a Secret
+  # with key "passphrase" and reference it here.
+  existingSecret: ""
+  # ACME External Account Binding required (SaaS multi-tenant mode).
+  acmeEAB: false
+  # External URL advertised in ACME directory / API responses.
+  externalURL: ""
+
+service:
+  type: ClusterIP
+  port: 8443
+
+ingress:
+  enabled: false
+  className: nginx
+  host: ""
+  # TLS terminates at the ingress; the pod listens on cluster-internal HTTP.
+  # (A CA has a bootstrap problem issuing its own serving cert — see chart
+  # README for the self-issued alternative.)
+  tls:
+    enabled: true
+    secretName: ""
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+# Image runs as 65532 (distroless nonroot) with FIPS 140-3 mode on.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+extraEnv: []

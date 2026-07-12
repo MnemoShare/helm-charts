@@ -1,0 +1,47 @@
+{{- if eq .Values.storage.backend "mongo" }}
+# mongo mode: all state (documents, key envelopes, audit chain) lives in
+# MongoDB — replicas are stateless and horizontally scalable.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mnemoca.fullname" . }}
+  labels: {{- include "mnemoca.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "mnemoca.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "mnemoca.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: mnemoca
+          image: {{ include "mnemoca.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: {{- include "mnemoca.serveArgs" . | nindent 12 }}
+          env: {{- include "mnemoca.env" . | nindent 12 }}
+          ports:
+            - name: https
+              containerPort: {{ .Values.service.port }}
+          livenessProbe:
+            httpGet: {path: /healthz, port: https}
+            initialDelaySeconds: 5
+          readinessProbe:
+            httpGet: {path: /healthz, port: https}
+            initialDelaySeconds: 2
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

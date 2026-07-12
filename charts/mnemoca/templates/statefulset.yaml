@@ -1,0 +1,80 @@
+{{- if eq .Values.storage.backend "bolt" }}
+# bolt mode: embedded single-writer store — exactly one replica on a PVC.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mnemoca.fullname" . }}
+  labels: {{- include "mnemoca.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "mnemoca.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels: {{- include "mnemoca.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "mnemoca.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.ca.init.enabled }}
+      initContainers:
+        - name: init
+          image: {{ include "mnemoca.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - init
+            - --if-needed
+            - --name={{ .Values.ca.init.name }}
+            - --alg={{ .Values.ca.init.alg }}
+            {{- if .Values.ca.init.pairAlg }}
+            - --pair-alg={{ .Values.ca.init.pairAlg }}
+            {{- end }}
+          env: {{- include "mnemoca.env" . | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- end }}
+      containers:
+        - name: mnemoca
+          image: {{ include "mnemoca.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: {{- include "mnemoca.serveArgs" . | nindent 12 }}
+          env: {{- include "mnemoca.env" . | nindent 12 }}
+          ports:
+            - name: https
+              containerPort: {{ .Values.service.port }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            httpGet: {path: /healthz, port: https}
+            initialDelaySeconds: 5
+          readinessProbe:
+            httpGet: {path: /healthz, port: https}
+            initialDelaySeconds: 2
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.storage.bolt.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.bolt.size }}
+{{- end }}
