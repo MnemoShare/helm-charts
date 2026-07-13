@@ -82,6 +82,16 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # Header buffers sized for ML-DSA-65 JWTs (MSC-530): a post-quantum
+    # bearer token is ~4.8 KB vs ~0.7 KB for ES256; nginx defaults
+    # (client_header_buffer_size 1k, large_client_header_buffers 4 8k)
+    # would return 400/431 once combined with cookies. Required BEFORE
+    # JWT_SIGNING_ALG=ML-DSA-65 is enabled on the app (PQC rollout
+    # runbook Phase D). Non-nginx ingress: set the controller's
+    # equivalent (e.g. Envoy max_request_headers_kb >= 32).
+    nginx.ingress.kubernetes.io/client-header-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/large-client-header-buffers: "4 32k"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "32k"
   hosts:
     - host: mnemoshare.example.com
       paths:
