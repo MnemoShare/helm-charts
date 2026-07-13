@@ -1363,6 +1363,27 @@ networkPolicy:
   # Namespace where ingress controller runs (for allowing ingress traffic)
   ingressNamespace: "ingress-nginx"
 
+  # Extra ingress rules appended verbatim to the API ingress NetworkPolicy.
+  # Use for traffic sources the standard rules don't cover — e.g. an AS2
+  # trading partner (OpenAS2) in another namespace posting EDI messages to
+  # /as2/receive, or a monitoring namespace. Each entry is a standard
+  # NetworkPolicy ingress rule ({from: [...], ports: [...]}).
+  #
+  # Without an explicit rule here, a NetworkPolicy re-apply silently cuts any
+  # manually-allowed source: senders hang, retry, and abandon delivery
+  # (observed with the AS2→EDI workflow path, MNS-901).
+  #
+  # Example:
+  #   extraApiIngress:
+  #     - from:
+  #         - namespaceSelector:
+  #             matchLabels:
+  #               kubernetes.io/metadata.name: my-as2-partner
+  #       ports:
+  #         - protocol: TCP
+  #           port: 8080
+  extraApiIngress: []
+
   # MongoDB access configuration
   mongodb:
     # Enable egress to MongoDB
