@@ -141,8 +141,11 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.jwt }}{{ .Values.existingSecrets.jwt }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: jwt-ec-private-key
-        - name: JWT_EXPIRATION
-          value: {{ .Values.jwt.expiration | quote }}
+        # MSC-493: the app reads JWT_EXPIRY_HOURS (integer hours); the old
+        # JWT_EXPIRATION ("24h") was never read by the backend, so token
+        # lifetime silently fell back to the 1-year code default.
+        - name: JWT_EXPIRY_HOURS
+          value: {{ .Values.jwt.expiryHours | quote }}
         {{- if ne (include "mnemoshare.redisMode" .) "disabled" }}
         # Redis - for workflow task enqueueing (manual triggers)
         # Note: REDIS_PASSWORD must be defined BEFORE REDIS_URL for $(REDIS_PASSWORD) substitution to work

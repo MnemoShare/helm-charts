@@ -82,6 +82,16 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # Header buffers sized for ML-DSA-65 JWTs (MSC-530): a post-quantum
+    # bearer token is ~4.8 KB vs ~0.7 KB for ES256; nginx defaults
+    # (client_header_buffer_size 1k, large_client_header_buffers 4 8k)
+    # would return 400/431 once combined with cookies. Required BEFORE
+    # JWT_SIGNING_ALG=ML-DSA-65 is enabled on the app (PQC rollout
+    # runbook Phase D). Non-nginx ingress: set the controller's
+    # equivalent (e.g. Envoy max_request_headers_kb >= 32).
+    nginx.ingress.kubernetes.io/client-header-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/large-client-header-buffers: "4 32k"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "32k"
   hosts:
     - host: mnemoshare.example.com
       paths:
@@ -157,7 +167,12 @@ s3:
 # JWT authentication (ES256 / ECDSA P-256)
 jwt:
   ecPrivateKey: ""  # PEM-encoded EC P-256 private key for ES256 JWT signing (auto-generated if empty)
-  expiration: "24h"
+  # Legacy single-token lifetime, in whole hours (env JWT_EXPIRY_HOURS). Governs
+  # the deprecated GenerateToken path (register/MFA-pending/device intermediate
+  # tokens); browser SSO/SAML now use short access + refresh pairs (MSC-486).
+  # Renamed from the old `expiration: "24h"`, which the backend never read
+  # (MSC-493) — tokens silently used the 1-year code default.
+  expiryHours: 24
 
 # Encryption
 encryption:
@@ -1334,7 +1349,15 @@ inboundGateway:
 # Restricts pod-to-pod communication using Kubernetes NetworkPolicies.
 # Requires a CNI plugin that supports NetworkPolicy (Calico, Cilium, etc.)
 networkPolicy:
-  # Enable/disable network policies
+  # Enable/disable network policies.
+  #
+  # MSC-489 / HITRUST r2: this chart ships a complete default-deny + per-component
+  # allow set (API ingress/egress, worker, redis, clamav, mcp, sftp-gateway,
+  # email-gateway, step-ca). It defaults OFF so installs on clusters without a
+  # NetworkPolicy-enforcing CNI aren't given a false sense of isolation, and to
+  # avoid breaking connectivity before an operator validates the allow set on
+  # their CNI. For a regulated/HITRUST posture, set this to `true` after
+  # confirming pod-to-pod + egress connectivity on your cluster.
   enabled: false
 
   # Namespace where ingress controller runs (for allowing ingress traffic)
