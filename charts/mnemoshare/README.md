@@ -132,6 +132,12 @@ helm install mnemoshare mnemoshare/mnemoshare \
 | `ingress.enabled` | Enable ingress | `true` |
 | `autoscaling.enabled` | Enable HPA | `false` |
 | `sendgrid.apiKey` | SendGrid API key for emails | `""` |
+| `platformEmail.transport` | Tiered outbound email transport (`smtp` or `ses`; empty = auto) | `""` |
+| `platformEmail.fromAddress` | Tiered outbound email from-address (empty disables) | `""` |
+| `platformEmail.ses.region` | AWS SES region for tiered outbound email | `""` |
+| `sesAdmin.region` | SESv2 admin region (domain-authenticated sending) | `""` |
+| `sesAdmin.roleArn` | IAM role for SESv2 admin calls | `""` |
+| `sesEvents.webhookToken` | Token enabling the SES events webhook | `""` |
 
 See [values.yaml](./values.yaml) for all configuration options.
 
@@ -168,6 +174,34 @@ sendgrid:
   apiKey: "SG.xxx"
   fromEmail: "noreply@example.com"
   fromName: "MnemoShare"
+```
+
+### Configure Tiered Outbound Email (app v0.17+)
+
+All values optional — leaving them empty disables tiered email. Static AWS
+credentials go into the chart-managed secret; prefer IRSA/pod identity and
+leave the key fields empty. Existing-secret escape hatches:
+`existingSecrets.platformEmailSes`, `existingSecrets.sesAdmin`,
+`existingSecrets.sesEvents`.
+
+```yaml
+platformEmail:
+  transport: "ses"            # "smtp" or "ses"; empty = auto-detect
+  fromAddress: "notify@example.com"
+  fromName: "MnemoShare"
+  ses:
+    region: "us-east-1"
+    accessKeyId: ""           # prefer IRSA; leave empty
+    secretKey: ""
+
+sesAdmin:                     # SESv2 management for domain-authenticated sending
+  region: "us-east-1"
+  roleArn: "arn:aws:iam::123456789012:role/ses-admin"
+  accessKeyId: ""             # prefer IRSA; leave empty
+  secretKey: ""
+
+sesEvents:
+  webhookToken: "xxx"         # enables /api/v1/webhooks/ses-events
 ```
 
 ### Custom Resource Limits
