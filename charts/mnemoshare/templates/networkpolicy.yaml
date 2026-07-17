@@ -206,8 +206,8 @@ spec:
         - protocol: TCP
           port: 443
     {{- end }}
-    # SendGrid API (external)
-    {{- if .Values.sendgrid.apiKey }}
+    # SendGrid / AWS SES API (external, 443)
+    {{- if or .Values.sendgrid.apiKey (eq .Values.platformEmail.transport "ses") .Values.platformEmail.ses.region .Values.sesAdmin.region }}
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

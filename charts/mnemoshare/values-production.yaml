@@ -47,6 +47,21 @@ sendgrid:
   fromEmail: "noreply@yourdomain.com"
   fromName: "MnemoShare"
 
+# Tiered outbound platform email (app v0.17+, optional; empty disables)
+# platformEmail:
+#   transport: "ses"          # "smtp" or "ses"; empty = auto-detect
+#   fromAddress: "notify@yourdomain.com"
+#   fromName: "MnemoShare"
+#   ses:
+#     region: "us-east-1"
+#     accessKeyId: ""         # prefer IRSA; leave empty
+#     secretKey: ""
+# sesAdmin:                   # SESv2 management for domain-authenticated sending
+#   region: "us-east-1"
+#   roleArn: ""
+# sesEvents:
+#   webhookToken: ""          # enables /api/v1/webhooks/ses-events
+
 # Ingress - Enable with TLS
 ingress:
   enabled: true

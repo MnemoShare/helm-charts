@@ -283,6 +283,61 @@ spec:
         - name: SENDGRID_FROM_NAME
           value: {{ .Values.sendgrid.fromName | quote }}
         {{- end }}
+        # Tiered platform email (MNS-954, optional)
+        {{- if .Values.platformEmail.transport }}
+        - name: PLATFORM_EMAIL_TRANSPORT
+          value: {{ .Values.platformEmail.transport | quote }}
+        {{- end }}
+        {{- if .Values.platformEmail.fromAddress }}
+        - name: PLATFORM_EMAIL_FROM_ADDRESS
+          value: {{ .Values.platformEmail.fromAddress | quote }}
+        - name: PLATFORM_EMAIL_FROM_NAME
+          value: {{ .Values.platformEmail.fromName | quote }}
+        {{- end }}
+        {{- if .Values.platformEmail.ses.region }}
+        - name: PLATFORM_EMAIL_SES_REGION
+          value: {{ .Values.platformEmail.ses.region | quote }}
+        {{- end }}
+        {{- if or .Values.platformEmail.ses.accessKeyId .Values.existingSecrets.platformEmailSes }}
+        - name: PLATFORM_EMAIL_SES_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.platformEmailSes }}{{ .Values.existingSecrets.platformEmailSes }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: platform-email-ses-access-key-id
+        - name: PLATFORM_EMAIL_SES_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.platformEmailSes }}{{ .Values.existingSecrets.platformEmailSes }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: platform-email-ses-secret-key
+        {{- end }}
+        # SESv2 admin for domain-authenticated sending (MNS-954, optional)
+        {{- if .Values.sesAdmin.region }}
+        - name: SES_ADMIN_REGION
+          value: {{ .Values.sesAdmin.region | quote }}
+        {{- end }}
+        {{- if .Values.sesAdmin.roleArn }}
+        - name: SES_ADMIN_ROLE_ARN
+          value: {{ .Values.sesAdmin.roleArn | quote }}
+        {{- end }}
+        {{- if or .Values.sesAdmin.accessKeyId .Values.existingSecrets.sesAdmin }}
+        - name: SES_ADMIN_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.sesAdmin }}{{ .Values.existingSecrets.sesAdmin }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: ses-admin-access-key-id
+        - name: SES_ADMIN_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.sesAdmin }}{{ .Values.existingSecrets.sesAdmin }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: ses-admin-secret-key
+        {{- end }}
+        {{- if or .Values.sesEvents.webhookToken .Values.existingSecrets.sesEvents }}
+        - name: SES_EVENTS_WEBHOOK_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.sesEvents }}{{ .Values.existingSecrets.sesEvents }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: ses-events-webhook-token
+        {{- end }}
         # Cloudflare Turnstile CAPTCHA (optional)
         {{- if .Values.turnstile.siteKey }}
         - name: TURNSTILE_SITE_KEY

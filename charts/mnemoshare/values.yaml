@@ -202,6 +202,34 @@ sendgrid:
   fromEmail: "noreply@example.com"
   fromName: "MnemoShare"
 
+# Tiered outbound platform email (MNS-954, app v0.17+, optional)
+# All values optional; leaving them empty disables tiered email entirely.
+platformEmail:
+  transport: ""            # "smtp" or "ses"; empty = auto-detect
+  fromAddress: ""          # e.g. notify@example.com; empty disables
+  fromName: "MnemoShare"
+  ses:
+    region: ""             # e.g. us-east-1
+    # Static SES credentials are sensitive -> stored in the chart-managed
+    # secret (or existingSecrets.platformEmailSes). Prefer IRSA / pod
+    # identity and leave both empty.
+    accessKeyId: ""
+    secretKey: ""
+
+# SESv2 management for domain-authenticated sending (Tier 1, MNS-954, optional)
+sesAdmin:
+  region: ""               # e.g. us-east-1
+  roleArn: ""              # IAM role to assume for SESv2 admin calls
+  # Sensitive -> secret (or existingSecrets.sesAdmin). Prefer IRSA; leave empty.
+  accessKeyId: ""
+  secretKey: ""
+
+# SES event webhook (MNS-954, optional)
+sesEvents:
+  # Sensitive -> secret (or existingSecrets.sesEvents).
+  # Setting this enables /api/v1/webhooks/ses-events.
+  webhookToken: ""
+
 # Cloudflare Turnstile CAPTCHA (optional)
 # Used to protect public forms (access requests, etc.) from bots
 # Get keys from: https://dash.cloudflare.com/?to=/:account/turnstile
@@ -326,6 +354,9 @@ existingSecrets:
   siem: ""       # Name of existing secret with SIEM S3 credentials (keys configurable via existingSecretKeys)
   turnstile: ""  # Name of existing secret with 'turnstile-secret-key' key
   sendgrid: ""   # Name of existing secret with 'sendgrid-api-key' key
+  platformEmailSes: ""  # Name of existing secret with 'platform-email-ses-access-key-id' and 'platform-email-ses-secret-key' keys
+  sesAdmin: ""   # Name of existing secret with 'ses-admin-access-key-id' and 'ses-admin-secret-key' keys
+  sesEvents: ""  # Name of existing secret with 'ses-events-webhook-token' key
 
 # Configurable key names within existing secrets
 # Override these when your existing secrets use different key names
