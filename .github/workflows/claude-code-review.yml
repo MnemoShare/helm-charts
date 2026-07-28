@@ -50,6 +50,8 @@ jobs:
           persist-credentials: false
 
       - name: Run Claude Code Review
+        id: review
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -120,6 +122,65 @@ jobs:
           # bot" rather than "BLOCK silently disappears."
           claude_args: '--model claude-sonnet-4-6 --allowed-tools "Read,Glob,Grep,Write,Bash"'
 
+      # A model-chosen side effect is not a control-flow primitive: recover the
+      # verdict from any durable artifact before deciding the PR is blocked.
+      # See .github/scripts/resolve-claude-verdict.sh for the full rationale.
+      - name: Resolve verdict from artifacts
+        id: resolve
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+        run: bash .github/scripts/resolve-claude-verdict.sh
+
+      # One retry, and ONLY when nothing produced a verdict. The observed
+      # failure is a clean no-op (is_error=false, 0 denials, 4 turns), so a
+      # single re-ask with the file-write made the explicit exit condition is
+      # usually enough — and costs about three cents.
+      - name: Retry Claude Code Review (no verdict from first pass)
+        id: review_retry
+        if: always() && steps.resolve.outputs.has_verdict != 'true'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this pull request for bugs, security issues, missing tests,
+            and violations of repository conventions (see CLAUDE.md if present).
+
+            YOUR RUN IS NOT COMPLETE UNTIL BOTH OF THESE EXIST:
+
+            1. The file `/tmp/claude-verdict.txt`, written with the Write tool,
+               whose FIRST LINE is exactly one of:
+                 APPROVE
+                 BLOCK: <one-line reason>
+            2. A formal review submitted with `gh pr review`
+               (--approve / --request-changes / --comment) whose body ends with
+               `VERDICT: APPROVE`, `VERDICT: BLOCK`, or `VERDICT: COMMENT`.
+
+            Write the verdict file FIRST, before composing your prose review.
+            A missing verdict file blocks the pull request with no explanation,
+            which is worse for the author than either verdict. Do not end your
+            turn until that file exists.
+
+            Calibration: APPROVE when you would genuinely sign off for a
+            colleague. Bugs, security gaps, broken contracts, and missing tests
+            for new logic are BLOCK-worthy; typos and formatting preferences
+            are not.
+          claude_args: '--model claude-sonnet-4-6 --allowed-tools "Read,Glob,Grep,Write,Bash"'
+
+      - name: Resolve verdict (after retry)
+        id: resolve2
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          EXECUTION_FILE: ${{ steps.review_retry.outputs.execution_file }}
+        run: bash .github/scripts/resolve-claude-verdict.sh
+
       # Resilience layer: if the bot reached a BLOCK verdict but
       # couldn't complete the formal `gh pr review --request-changes`
       # call (silent-failure mode — see commit message), surface the
@@ -177,7 +238,7 @@ jobs:
       - name: Enforce verdict
         run: |
           if [ ! -f /tmp/claude-verdict.txt ]; then
-            echo "::error::Claude did not produce /tmp/claude-verdict.txt — treating as BLOCK."
+            echo "::error::REVIEW TOOLING FAILED (not a review finding): the bot produced no verdict on two attempts via any channel — verdict file, execution log, or PR review. There is no blocking issue to fix and nothing was posted to the PR. Re-run this job, or merge on a human approval if the other checks pass."
             exit 1
           fi
           verdict=$(head -n1 /tmp/claude-verdict.txt | sed 's/[[:space:]]*$//')
