@@ -497,6 +497,12 @@ spec:
         # pod's K8s Secret. See templates/_keyguard.tpl.
         {{- include "mnemoshare.keyguard.envMain" . | nindent 8 }}
         {{- end }}
+        {{- if .Values.startupProbe }}
+        # MNS-1033: gate liveness/readiness behind a boot budget so a long
+        # startup migration cannot be mistaken for a wedged process.
+        startupProbe:
+          {{- toYaml .Values.startupProbe | nindent 12 }}
+        {{- end }}
         livenessProbe:
           {{- toYaml .Values.livenessProbe | nindent 12 }}
         readinessProbe:

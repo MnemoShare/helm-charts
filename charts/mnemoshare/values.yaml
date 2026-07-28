@@ -317,7 +317,31 @@ rateLimit:
   requests: 100
   window: "1m"
 
-# Liveness probe
+# Startup probe (MNS-1033).
+#
+# The API runs its startup migrations BEFORE it binds :8080, so /health is
+# unreachable for the whole boot. A long migration has been observed taking
+# 12+ minutes. Without a startupProbe, liveness begins at 30s and kills the pod
+# after 3 more failures (~60s) — the migration never finishes, the pod restarts,
+# the migration starts over: CrashLoopBackOff. That is a total outage on any
+# single-replica deployment (the SaaS-tenant and self-hosted default).
+#
+# Kubernetes suspends liveness AND readiness until the startup probe succeeds,
+# so this buys boot time without weakening steady-state liveness detection.
+# Budget = periodSeconds * failureThreshold = 10s * 90 = 15 minutes.
+# Raise failureThreshold if your dataset makes migrations slower than that.
+startupProbe:
+  httpGet:
+    path: /health
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 90
+
+# Liveness probe.
+# NOTE: with startupProbe set, initialDelaySeconds here is largely redundant —
+# liveness does not begin until the startup probe has succeeded. Keep it small
+# so a process that wedges AFTER boot is still detected promptly.
 livenessProbe:
   httpGet:
     path: /health
