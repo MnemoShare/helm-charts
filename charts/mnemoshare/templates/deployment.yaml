@@ -78,8 +78,12 @@ spec:
         #   - workflow-worker enabled -> it hosts every engine ("*"); the API
         #     stays "none" (pure HTTP) to avoid double-processing.
         #   - no worker (the chart default) -> the API hosts "*" itself.
-        #     db2 exception: the kmsrotation engine refuses that backend at
-        #     boot even under "*", so db2 gets "background,messaging".
+        #     db2 exception: on app releases to date the kmsrotation engine
+        #     refuses that backend at boot even under "*", so db2 gets
+        #     "background,messaging". WARNING: an apiFilteredProcess override
+        #     of "*" (or any list naming "kmsrotation") on db2 crash-loops
+        #     those app versions — only widen on an app release that lifts
+        #     the db2 rotation restriction (MNS-1159).
         # Override via .Values.apiFilteredProcess.
         - name: FILTERED_PROCESS
         {{- if .Values.apiFilteredProcess }}

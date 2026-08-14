@@ -1060,7 +1060,9 @@ redis:
 # the worker, hosting scans, the workflows engine (database-backed queue
 # when Redis is absent), and key rotation/rewrap in-process (MNS-1159;
 # db2 derives "background,messaging" because the kmsrotation engine
-# refuses that backend at boot). Set only for edge configs.
+# refuses that backend at boot — overriding with "*" or a list naming
+# "kmsrotation" on db2 crash-loops app releases to date, MNS-1159).
+# Set only for edge configs.
 apiFilteredProcess: ""
 
 workflowWorker:

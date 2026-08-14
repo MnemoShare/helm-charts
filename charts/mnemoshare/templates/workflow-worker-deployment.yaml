@@ -46,7 +46,7 @@ spec:
         # retired in MNI-27 PR#4 (commit e6e243d). cmd/worker hosts every engine
         # at compile time and activates the configured subset via FILTERED_PROCESS.
         # For this Deployment the active set is .Values.workflowWorker.filteredProcess
-        # (default: "background,workflow") — see the FILTERED_PROCESS env below.
+        # (default: "*"; "background,messaging" on db2) — see the FILTERED_PROCESS env below.
         command: ["/usr/local/bin/worker"]
         env:
         # Tenant Identity — required for dispatch keyspace isolation.
@@ -60,9 +60,12 @@ spec:
         # folded into "messaging". "*" always includes "background" (so
         # uploads never stick on the Pending scan badge) and "kmsrotation"
         # (Settings rotate/rewrap + scheduled rotation).
-        # db2 exception: the kmsrotation engine refuses that backend at boot
-        # even in wildcard mode, so db2 gets an explicit minimal list —
-        # override .Values.workflowWorker.filteredProcess to widen it.
+        # db2 exception: on app releases to date the kmsrotation engine
+        # refuses that backend at boot even in wildcard mode, so db2 gets an
+        # explicit list WITHOUT kmsrotation. WARNING: overriding
+        # .Values.workflowWorker.filteredProcess with "*" or any list naming
+        # "kmsrotation" on db2 crash-loops those app versions; only do so on
+        # an app release that lifts the db2 rotation restriction (MNS-1159).
         - name: FILTERED_PROCESS
         {{- if .Values.workflowWorker.filteredProcess }}
           value: {{ .Values.workflowWorker.filteredProcess | quote }}
