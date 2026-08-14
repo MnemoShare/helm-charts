@@ -1054,6 +1054,15 @@ redis:
 # ============================================================================
 # Processes inbound file transfers from SFTP/FTPS/rsync sources.
 # Requires Redis to be enabled for the job queue.
+# API-pod engine activation override (see templates/deployment.yaml).
+# Empty = derived: "none" when the workflow worker is enabled (the worker
+# hosts every engine), else "*" — with no external worker the API pod IS
+# the worker, hosting scans, the workflows engine (database-backed queue
+# when Redis is absent), and key rotation/rewrap in-process (MNS-1159;
+# db2 derives "background,messaging" because the kmsrotation engine
+# refuses that backend at boot). Set only for edge configs.
+apiFilteredProcess: ""
+
 workflowWorker:
   # Enable/disable workflow worker deployment
   enabled: false
@@ -1071,12 +1080,15 @@ workflowWorker:
   concurrency: 10
 
   # Engine activation filter — selects which dispatch engines this pod
-  # hosts. Post-MNI-27, cmd/worker hosts the background engine
-  # (virus_scan + metadata_extract + report_generate) in addition to
-  # the workflow engine. MUST include "background" or file uploads sit
-  # on the "Pending" scan_status badge forever because nothing consumes
-  # the background.* dispatch messages cmd/api publishes. See MNS-505.
-  filteredProcess: "background,workflow"
+  # hosts. Empty = derived by the template: "*" (every engine the app
+  # binary registers), or a minimal "background" list on db2 (whose
+  # backend the kmsrotation engine refuses at boot). Do NOT hardcode an
+  # engine list here: names drift across app versions and an unknown
+  # name is a boot fatal — the earlier "background,workflow" default
+  # fatals on app >= 0.16, where "workflow" was folded into "messaging".
+  # Whatever you set MUST include "background" or file uploads sit on
+  # the "Pending" scan_status badge forever (MNS-505).
+  filteredProcess: ""
 
   # Temporary directory for file processing
   # Leave empty to use system default
