@@ -1057,8 +1057,10 @@ redis:
 # API-pod engine activation override (see templates/deployment.yaml).
 # Empty = derived: "none" when the workflow worker is enabled (the worker
 # hosts every engine), else "*" — with no external worker the API pod IS
-# the worker, hosting scans, the workflows engine (database-backed queue
-# when Redis is absent), and key rotation/rewrap in-process (MNS-1159;
+# the worker, hosting scans, the workflows engine (over the database-backed
+# inproc dispatch queue when Redis is absent — dispatchinproc.NewBackend in
+# cmd/worker/main.go, tested in internal/dispatch/inproc/backend_test.go),
+# and key rotation/rewrap in-process (MNS-1159;
 # db2 derives "background,messaging" because the kmsrotation engine
 # refuses that backend at boot — overriding with "*" or a list naming
 # "kmsrotation" on db2 crash-loops app releases to date, MNS-1159).
@@ -1083,8 +1085,9 @@ workflowWorker:
 
   # Engine activation filter — selects which dispatch engines this pod
   # hosts. Empty = derived by the template: "*" (every engine the app
-  # binary registers), or a minimal "background" list on db2 (whose
-  # backend the kmsrotation engine refuses at boot). Do NOT hardcode an
+  # binary registers), or "background,messaging" on db2 — every engine
+  # except kmsrotation, whose backend db2's driver refuses at boot on app
+  # releases to date. Do NOT hardcode an
   # engine list here: names drift across app versions and an unknown
   # name is a boot fatal — the earlier "background,workflow" default
   # fatals on app >= 0.16, where "workflow" was folded into "messaging".

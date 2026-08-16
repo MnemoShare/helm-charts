@@ -6,6 +6,9 @@
 {{- if eq .Values.database.driver "sqlite" }}
 {{- fail "workflowWorker.enabled is not compatible with database.driver=sqlite. Use mongodb or postgres." }}
 {{- end }}
+{{- if and .Values.workflowWorker.filteredProcess (contains "workflow" .Values.workflowWorker.filteredProcess) }}
+{{- fail "workflowWorker.filteredProcess names the retired \"workflow\" engine (folded into \"messaging\" in app 0.16; an unknown engine name is a boot fatal). Remove the override to use the derived default, or replace \"workflow\" with \"messaging\"." }}
+{{- end }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
