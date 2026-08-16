@@ -7,6 +7,9 @@
 {{- if eq .Values.database.driver "sqlite" }}
 {{- fail "workflowWorker.enabled is not compatible with database.driver=sqlite. Use mongodb or postgres." }}
 {{- end }}
+{{- if and .Values.workflowWorker.filteredProcess (contains "workflow" .Values.workflowWorker.filteredProcess) }}
+{{- fail "workflowWorker.filteredProcess names the retired \"workflow\" engine (folded into \"messaging\" in app 0.16; an unknown engine name is a boot fatal). Remove the override to use the derived default, or replace \"workflow\" with \"messaging\"." }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -46,19 +49,34 @@ spec:
         # retired in MNI-27 PR#4 (commit e6e243d). cmd/worker hosts every engine
         # at compile time and activates the configured subset via FILTERED_PROCESS.
         # For this Deployment the active set is .Values.workflowWorker.filteredProcess
-        # (default: "background,workflow") — see the FILTERED_PROCESS env below.
+        # (default: "*"; "background,messaging" on db2) — see the FILTERED_PROCESS env below.
         command: ["/usr/local/bin/worker"]
         env:
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
           value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
-        # Engine activation filter (MNS-505). Defaults to
-        # "background,workflow" so the workflow-worker pod also consumes
-        # background.* dispatch messages (virus_scan, metadata_extract,
-        # report_generate). Override via .Values.workflowWorker.filteredProcess
-        # — see values.yaml for the hazards of dropping "background".
+        # Engine activation filter (MNS-505 / MNS-1159). Defaults to "*" —
+        # host every engine the deployed app binary registers. Do NOT
+        # hardcode an engine list: names drift across app versions and an
+        # unknown name is a boot fatal — the previous "background,workflow"
+        # default fatals on app >= 0.16, where the "workflow" engine was
+        # folded into "messaging". "*" always includes "background" (so
+        # uploads never stick on the Pending scan badge) and "kmsrotation"
+        # (Settings rotate/rewrap + scheduled rotation).
+        # db2 exception: on app releases to date the kmsrotation engine
+        # refuses that backend at boot even in wildcard mode, so db2 gets an
+        # explicit list WITHOUT kmsrotation. WARNING: overriding
+        # .Values.workflowWorker.filteredProcess with "*" or any list naming
+        # "kmsrotation" on db2 crash-loops those app versions; only do so on
+        # an app release that lifts the db2 rotation restriction (MNS-1159).
         - name: FILTERED_PROCESS
-          value: {{ .Values.workflowWorker.filteredProcess | default "background,workflow" | quote }}
+        {{- if .Values.workflowWorker.filteredProcess }}
+          value: {{ .Values.workflowWorker.filteredProcess | quote }}
+        {{- else if eq .Values.database.driver "db2" }}
+          value: "background,messaging"
+        {{- else }}
+          value: "*"
+        {{- end }}
         # Database Configuration (supports MongoDB and PostgreSQL for distributed workers)
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}
