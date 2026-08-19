@@ -56,14 +56,57 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
-            Review this pull request. Focus on:
+            SCOPE — THE DIFF IS THE REVIEW BOUNDARY:
+            Use `gh pr diff` as the diff source (API-computed against the correct
+            merge base; never diff against a branch name locally). Every finding
+            MUST anchor to a line this PR adds or modifies — a file appearing in
+            the diff is not enough; the specific defective line must be in the
+            diff. Pre-existing issues you notice in surrounding code go in a
+            clearly-labeled "Out of scope (pre-existing)" section as non-blocking
+            notes and NEVER affect the verdict.
+
+            EXHAUSTIVE IN ONE PASS:
+            This review is expected to be COMPLETE. Enumerate every finding you
+            can defend NOW — bugs, security, missing tests, convention breaks —
+            rather than surfacing a few and holding the rest for a later round.
+            A finding you could have made this round but raise only after the
+            author pushes fixes is a review failure. Budget your effort for one
+            thorough pass over the full diff.
+
+            VERIFY BEFORE FILING — AT THE PR HEAD:
+            Before writing any finding, Read the actual file at the PR head and
+            confirm the defect exists there. If the code already contains the
+            guard/fix you were about to demand, do not file it. Quote the
+            defective line verbatim in the finding; if you cannot produce the
+            line from the head, you may not file the finding.
+
+            RE-REVIEWS (synchronize events):
+            First read your own previous review(s) on this PR. For each prior
+            finding, verify at the current head whether it is resolved and say so
+            explicitly. Do NOT re-file resolved findings. New findings on a
+            re-review are legitimate ONLY when introduced by the new commits, or
+            when in-diff, verified, and genuinely missed — in which case say
+            "missed in the previous round" rather than presenting it as new code.
+
+            SEVERITY HONESTY:
+            - Request-changes is reserved for verified defects with a concrete
+              failure scenario: inputs/state -> wrong behavior, reproducible from
+              the diff. Security holes, data loss, crashes, broken contracts.
+            - Style preferences, test-strictness wishes, speculative "could bite
+              later" concerns, refactor suggestions, and doc nits are COMMENT
+              material and must never produce a request-changes verdict on their
+              own.
+            - If every finding is comment-grade, the verdict is APPROVE with
+              comments, not COMMENT — do not withhold approval over nits.
+
+            Review focus, in priority order:
             - Bugs, logic errors, and edge cases
             - Security concerns (injection, auth, secrets, IDOR)
             - Test coverage for new behavior
             - Adherence to repository conventions in CLAUDE.md when present
             - Performance issues
 
-            Be specific: cite file paths and line numbers. Skip nits unless
+            Be specific: cite file paths and line numbers from the PR head. Skip nits unless
             they cluster into a real concern.
 
             **Submit a formal review.** Use `gh pr review` — not a plain comment:
