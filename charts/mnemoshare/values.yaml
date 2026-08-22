@@ -1179,6 +1179,138 @@ workflowWorker:
     cooldownPeriod: 60
 
 # ============================================================================
+# Threat-Intel Feeds (ICES threat-scanning lane)
+# ============================================================================
+# Optional threat-intelligence feeds consumed by the ICES threat-scanning
+# lane (URL / IP reputation on inbound + post-delivery mail). Default OFF —
+# nothing is emitted onto any pod until threatFeed.enabled=true.
+#
+# The abuse.ch feeds (URLhaus, Feodo Tracker) are free for internal use.
+# Enabling them for redistribution or in a multi-tenant SaaS offering needs
+# a licensing review against abuse.ch's terms before you ship.
+threatFeed:
+  # Master switch. When false, no THREATFEED_* env is set on any pod.
+  enabled: false
+
+  # How often (seconds) each feed is refreshed from source.
+  refreshSec: 3600
+
+  # abuse.ch URLhaus — malicious URL feed. Leave url empty to use the
+  # binary's built-in default endpoint.
+  urlhaus:
+    enabled: true
+    url: ""
+
+  # abuse.ch Feodo Tracker — botnet C2 IP feed. Leave url empty for the
+  # built-in default endpoint.
+  feodo:
+    enabled: true
+    url: ""
+
+  # Optional custom feed. Only wired when custom.url is set.
+  #   kind — the feed's payload type (e.g. "url", "ip", "domain").
+  #   name — a label for attribution in scan verdicts / audit.
+  custom:
+    url: ""
+    kind: ""
+    name: ""
+
+# ============================================================================
+# ICES — Standalone Email-Security Service (mail monitoring)
+# ============================================================================
+# Runs the dedicated `ices` binary (workerboot) as a stateless Deployment.
+# ICES hosts mail-monitoring: the BEC poller, the Pub/Sub subscriber, and the
+# mail-security sweepers. It shards across replicas via Redis + the worker
+# registry (no PVC).
+#
+# Enabling ices sets ICES_STANDALONE=true on the workflow worker, so the
+# worker's google engine drops mail-monitoring and it is hosted exactly once
+# by this dedicated pod.
+#
+# Requires Redis and a real database (mongodb/postgres) — sqlite is rejected.
+ices:
+  # Enable the standalone ICES deployment.
+  enabled: false
+
+  # Number of replicas (ignored when autoscaling.enabled=true).
+  replicas: 1
+
+  image:
+    # Same image as the main app — `ices` is a separate entrypoint.
+    repository: mnemoshare/mnemoshare
+    tag: ""  # Defaults to chart appVersion
+    pullPolicy: IfNotPresent
+
+  # Log level for the ICES pod.
+  logLevel: "info"
+
+  # Writable /tmp emptyDir. ICES does ICAP attachment scanning that spools
+  # decrypted streams to /tmp; the base image runs readOnlyRootFilesystem=true
+  # so the mount is required for scanning to work.
+  tmpVolume:
+    enabled: true
+    # Optional sizeLimit on the tmpfs-backed emptyDir.
+    sizeLimit: ""
+
+  # Resource requests/limits.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  # Node selector for ICES pods.
+  nodeSelector: {}
+
+  # Tolerations for ICES pods.
+  tolerations: []
+
+  # ==========================================================================
+  # KEDA Autoscaling (gcp-pubsub subscription backlog)
+  # ==========================================================================
+  # Scales ICES on the backlog of its per-integration Pub/Sub PULL
+  # subscription. Requires KEDA installed in the cluster.
+  #
+  # minReplicas MUST be >= 1 — never 0: the always-on Pub/Sub subscriber and
+  # the leader-elected sweeper components need a resident pod at all times.
+  autoscaling:
+    # Enable KEDA-based autoscaling.
+    enabled: false
+
+    # Minimum replicas (>= 1, never 0 — see note above).
+    minReplicas: 1
+
+    # Maximum replicas.
+    maxReplicas: 10
+
+    # REQUIRED when autoscaling.enabled: the fully-qualified per-integration
+    # Pub/Sub PULL subscription the gcp-pubsub trigger polls
+    # (e.g. "projects/<proj>/subscriptions/<sub>").
+    subscriptionName: ""
+
+    # Target undelivered messages per pod (SubscriptionSize mode).
+    targetBacklogPerPod: "100"
+
+    # How often KEDA polls the subscription backlog (seconds).
+    pollingInterval: 15
+
+    # How long to wait before scaling down after backlog clears (seconds).
+    cooldownPeriod: 60
+
+    # Optional GCP project ID for the trigger metadata. Usually inferable
+    # from the fully-qualified subscriptionName; set to override.
+    projectID: ""
+
+    # Secret holding GCP service-account JSON for KEDA to authenticate the
+    # gcp-pubsub trigger. When name is empty the trigger relies on workload
+    # identity / the pod service account instead of a TriggerAuthentication.
+    credentialsFromSecret:
+      name: ""
+      key: "gcp-credentials.json"
+
+# ============================================================================
 # Email Gateway (Outbound SMTP Relay with DLP/Policy Enforcement)
 # ============================================================================
 # Deploys a separate email-gateway pod (same image, different binary).

@@ -299,3 +299,57 @@ Values consumed (all optional — only emitted when set):
   value: {{ .Values.kms.dataPlaneLogicalKeyID | quote }}
 {{- end }}
 {{- end }}
+
+{{/*
+Threat-feed env for the ICES threat-scanning lane. Emits nothing unless
+.Values.threatFeed.enabled is true, so pods on installs that don't opt in
+carry no THREATFEED_* vars at all. When enabled, the abuse.ch feeds
+(URLhaus, Feodo Tracker) are each independently gate-able, and an optional
+custom feed can be pointed at any URL. Feeds are refreshed on an interval.
+
+Usage:
+  env:
+    {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
+
+Values consumed (only when .Values.threatFeed.enabled):
+  - .Values.threatFeed.refreshSec
+  - .Values.threatFeed.urlhaus.enabled, .Values.threatFeed.urlhaus.url
+  - .Values.threatFeed.feodo.enabled, .Values.threatFeed.feodo.url
+  - .Values.threatFeed.custom.url, .kind, .name
+*/}}
+{{- define "mnemoshare.threatfeedEnv" -}}
+{{- if .Values.threatFeed.enabled }}
+- name: THREATFEED_ENABLED
+  value: "true"
+- name: THREATFEED_REFRESH_SEC
+  value: {{ .Values.threatFeed.refreshSec | default 3600 | quote }}
+{{- if .Values.threatFeed.urlhaus.enabled }}
+- name: THREATFEED_URLHAUS_ENABLED
+  value: "true"
+{{- if .Values.threatFeed.urlhaus.url }}
+- name: THREATFEED_URLHAUS_URL
+  value: {{ .Values.threatFeed.urlhaus.url | quote }}
+{{- end }}
+{{- end }}
+{{- if .Values.threatFeed.feodo.enabled }}
+- name: THREATFEED_FEODO_ENABLED
+  value: "true"
+{{- if .Values.threatFeed.feodo.url }}
+- name: THREATFEED_FEODO_URL
+  value: {{ .Values.threatFeed.feodo.url | quote }}
+{{- end }}
+{{- end }}
+{{- if .Values.threatFeed.custom.url }}
+- name: THREATFEED_CUSTOM_URL
+  value: {{ .Values.threatFeed.custom.url | quote }}
+{{- if .Values.threatFeed.custom.kind }}
+- name: THREATFEED_CUSTOM_KIND
+  value: {{ .Values.threatFeed.custom.kind | quote }}
+{{- end }}
+{{- if .Values.threatFeed.custom.name }}
+- name: THREATFEED_CUSTOM_NAME
+  value: {{ .Values.threatFeed.custom.name | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

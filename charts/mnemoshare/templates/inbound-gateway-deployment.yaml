@@ -143,6 +143,8 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: encryption-key
+        # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
+        {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
         livenessProbe:
           httpGet:
             path: /healthz

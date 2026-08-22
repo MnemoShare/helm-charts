@@ -1,0 +1,35 @@
+{{- if and .Values.ices.enabled .Values.ices.autoscaling.enabled }}
+{{- if not .Values.ices.autoscaling.subscriptionName }}
+{{- fail "ices.autoscaling.enabled requires ices.autoscaling.subscriptionName: the KEDA gcp-pubsub trigger polls a specific Pub/Sub PULL subscription (e.g. projects/<proj>/subscriptions/<sub>). Set it, or disable ices.autoscaling." }}
+{{- end }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-ices
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ices
+spec:
+  scaleTargetRef:
+    name: {{ include "mnemoshare.fullname" . }}-ices
+  # minReplicaCount MUST stay >= 1: the always-on Pub/Sub subscriber and the
+  # leader-elected sweepers need a resident pod at all times.
+  minReplicaCount: {{ .Values.ices.autoscaling.minReplicas }}
+  maxReplicaCount: {{ .Values.ices.autoscaling.maxReplicas }}
+  pollingInterval: {{ .Values.ices.autoscaling.pollingInterval | default 15 }}
+  cooldownPeriod: {{ .Values.ices.autoscaling.cooldownPeriod | default 60 }}
+  triggers:
+  # Scale on the backlog of the per-integration Pub/Sub PULL subscription.
+  - type: gcp-pubsub
+    metadata:
+      subscriptionName: {{ .Values.ices.autoscaling.subscriptionName | quote }}
+      mode: "SubscriptionSize"
+      value: {{ .Values.ices.autoscaling.targetBacklogPerPod | quote }}
+      {{- if .Values.ices.autoscaling.projectID }}
+      projectID: {{ .Values.ices.autoscaling.projectID | quote }}
+      {{- end }}
+    {{- if .Values.ices.autoscaling.credentialsFromSecret.name }}
+    authenticationRef:
+      name: {{ include "mnemoshare.fullname" . }}-ices-pubsub-auth
+    {{- end }}
+{{- end }}

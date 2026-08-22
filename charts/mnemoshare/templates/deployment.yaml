@@ -417,6 +417,8 @@ spec:
         # Cross-service integrations (rich-media, Tika, Presidio, AI DLP, KMS)
         # See templates/_helpers.tpl::mnemoshare.integrationEnv
         {{- include "mnemoshare.integrationEnv" . | nindent 8 }}
+        # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
+        {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
         # Disk buffer configuration (memory management for large uploads)
         {{- if .Values.diskBuffer.enabled }}
         - name: DISK_BUFFER_THRESHOLD_MB
