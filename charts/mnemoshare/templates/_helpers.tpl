@@ -298,6 +298,38 @@ Values consumed (all optional — only emitted when set):
 - name: DATA_PLANE_KMS_LOGICAL_KEY_ID
   value: {{ .Values.kms.dataPlaneLogicalKeyID | quote }}
 {{- end }}
+{{- if and .Values.kms .Values.kms.jwtSignerType }}
+- name: JWT_SIGNER_TYPE
+  value: {{ .Values.kms.jwtSignerType | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.jwtSigningKeyID }}
+- name: JWT_SIGNING_KEY_ID
+  value: {{ .Values.kms.jwtSigningKeyID | quote }}
+{{- end }}
+{{- /* PADES_SIGNING_* (MNS-664/MNS-723). BYOK PAdES document signing with a
+       customer-owned CMK reached cross-account by assuming the role in the
+       customer's account. Emitted only when set; unset leaves the app on its
+       in-pod software signer. ExternalID is optional (confused-deputy guard). */}}
+{{- if and .Values.kms .Values.kms.padesSignerType }}
+- name: PADES_SIGNER_TYPE
+  value: {{ .Values.kms.padesSignerType | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.padesSigningKeyID }}
+- name: PADES_SIGNING_KEY_ID
+  value: {{ .Values.kms.padesSigningKeyID | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.padesSigningRegion }}
+- name: PADES_SIGNING_KMS_REGION
+  value: {{ .Values.kms.padesSigningRegion | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.padesRoleARN }}
+- name: PADES_SIGNING_KMS_ROLE_ARN
+  value: {{ .Values.kms.padesRoleARN | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.padesExternalID }}
+- name: PADES_SIGNING_KMS_EXTERNAL_ID
+  value: {{ .Values.kms.padesExternalID | quote }}
+{{- end }}
 {{- end }}
 
 {{/*

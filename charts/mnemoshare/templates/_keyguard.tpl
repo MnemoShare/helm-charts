@@ -162,10 +162,17 @@ each consuming Deployment / StatefulSet.
     periodSeconds: 30
   resources:
     {{- toYaml (.Values.keyguard.sidecar.resources | default (dict "requests" (dict "cpu" "5m" "memory" "16Mi") "limits" (dict "memory" "32Mi"))) | nindent 4 }}
+  volumeMounts:
+    {{- include "mnemoshare.keyguard.volumeMountsSidecar" . | nindent 4 }}
   securityContext:
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
     runAsNonRoot: true
+    # The federation-sidecar image (distroless:nonroot) declares a NON-numeric
+    # USER (nonroot), so with only runAsNonRoot:true the kubelet cannot verify
+    # the user is non-root and fails the container with CreateContainerConfigError.
+    # Pin a numeric UID (matches the working demo sidecar) so the check passes.
+    runAsUser: {{ .Values.keyguard.sidecar.runAsUser | default 1000 }}
     capabilities:
       drop: ["ALL"]
 {{- end -}}

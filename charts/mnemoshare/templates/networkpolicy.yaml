@@ -74,211 +74,39 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # DNS resolution
-    - to:
-        - namespaceSelector: {}
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-    # MongoDB (external or in-cluster)
-    {{- if .Values.networkPolicy.mongodb.enabled }}
-    - to:
-        {{- if .Values.networkPolicy.mongodb.cidr }}
-        - ipBlock:
-            cidr: {{ .Values.networkPolicy.mongodb.cidr }}
-        {{- else }}
-        - namespaceSelector: {}
-        {{- end }}
-      ports:
-        - protocol: TCP
-          port: {{ .Values.networkPolicy.mongodb.port | default 27017 }}
-    {{- end }}
-    # S3/MinIO
-    {{- if .Values.minio.enabled }}
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: minio
-      ports:
-        - protocol: TCP
-          port: 9000
-    {{- else if .Values.networkPolicy.s3.enabled }}
-    - to:
-        {{- if .Values.networkPolicy.s3.cidr }}
-        - ipBlock:
-            cidr: {{ .Values.networkPolicy.s3.cidr }}
-        {{- else }}
-        # Allow all egress to S3 (typically AWS/GCS public endpoints).
-        # Excepts: RFC1918 (cluster pod/service CIDRs), 169.254.0.0/16
-        # (cloud IMDS SSRF gate — AWS/GCP/Azure/DO metadata at port 80),
-        # 100.64.0.0/10 (Tailscale CGNAT — must traverse the tailscale ns).
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8       # RFC1918
-              - 172.16.0.0/12    # RFC1918
-              - 192.168.0.0/16   # RFC1918
-              - 169.254.0.0/16   # Cloud IMDS SSRF gate
-              - 100.64.0.0/10    # Tailscale CGNAT
-        {{- end }}
-      ports:
-        - protocol: TCP
-          port: 443
-        - protocol: TCP
-          port: 9000
-    {{- end }}
-    # ClamAV ICAP (embedded)
-    {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: clamav
-      ports:
-        - protocol: TCP
-          port: 1344
-    {{- end }}
-    # ClamAV ICAP (external)
-    {{- if eq (include "mnemoshare.icapMode" .) "external" }}
-    - to:
-        - namespaceSelector: {}
-      ports:
-        - protocol: TCP
-          port: 1344
-    {{- end }}
-    # Redis (embedded)
-    {{- if eq (include "mnemoshare.redisMode" .) "inCluster" }}
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: redis
-      ports:
-        - protocol: TCP
-          port: 6379
-    {{- end }}
-    # Redis (external)
-    {{- if eq (include "mnemoshare.redisMode" .) "external" }}
-    - to:
-        - namespaceSelector: {}
-      ports:
-        - protocol: TCP
-          port: {{ .Values.redis.external.port | default 6379 }}
-    {{- end }}
-    # Step CA (for mTLS)
-    {{- if eq (include "mnemoshare.stepCAMode" .) "inCluster" }}
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: step-ca
-      ports:
-        - protocol: TCP
-          port: 9000
-    {{- end }}
-    # License server (external via public endpoint, or via ingress controller for in-cluster hairpin)
-    {{- if .Values.networkPolicy.licenseServer.enabled }}
-    - to:
-        {{- if .Values.networkPolicy.licenseServer.cidr }}
-        - ipBlock:
-            cidr: {{ .Values.networkPolicy.licenseServer.cidr }}
-        {{- else }}
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8       # RFC1918
-              - 172.16.0.0/12    # RFC1918
-              - 192.168.0.0/16   # RFC1918
-              - 169.254.0.0/16   # Cloud IMDS SSRF gate
-              - 100.64.0.0/10    # Tailscale CGNAT
-        {{- end }}
-      ports:
-        - protocol: TCP
-          port: 443
-    # Allow traffic to ingress controller for license server hairpin NAT
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | default "ingress-nginx" }}
-      ports:
-        - protocol: TCP
-          port: 443
-    {{- end }}
-    # SendGrid / AWS SES API (external, 443)
-    {{- if or .Values.sendgrid.apiKey (eq .Values.platformEmail.transport "ses") .Values.platformEmail.ses.region .Values.sesAdmin.region }}
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8       # RFC1918
-              - 172.16.0.0/12    # RFC1918
-              - 192.168.0.0/16   # RFC1918
-              - 169.254.0.0/16   # Cloud IMDS SSRF gate
-              - 100.64.0.0/10    # Tailscale CGNAT
-      ports:
-        - protocol: TCP
-          port: 443
-    {{- end }}
-    # OAuth/SSO providers (external)
-    {{- if .Values.networkPolicy.oauth.enabled }}
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8       # RFC1918
-              - 172.16.0.0/12    # RFC1918
-              - 192.168.0.0/16   # RFC1918
-              - 169.254.0.0/16   # Cloud IMDS SSRF gate
-              - 100.64.0.0/10    # Tailscale CGNAT
-      ports:
-        - protocol: TCP
-          port: 443
-    {{- end }}
-    # External SMTP (customer-configured outbound mail relays — Gmail, Office365, SES, etc.)
-    {{- if .Values.networkPolicy.smtp.enabled }}
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8       # RFC1918
-              - 172.16.0.0/12    # RFC1918
-              - 192.168.0.0/16   # RFC1918
-              - 169.254.0.0/16   # Cloud IMDS SSRF gate
-              - 100.64.0.0/10    # Tailscale CGNAT
-      ports:
-        - protocol: TCP
-          port: 25
-        - protocol: TCP
-          port: 465
-        - protocol: TCP
-          port: 587
-        - protocol: TCP
-          port: 2525
-    {{- end }}
-    # Workflow engine — broad egress for customer-authored workflow steps
-    # (call_api, webhook, database_connect, sftp_*, ftps_*, as2_send, swift_*,
-    # ebics_*, oftp2, llm_prompt, etc.) which accept arbitrary host:port.
-    # An L4 port allowlist is theatrical for a workflows-enabled tenant, so
-    # the substantive boundary moves up the stack to DLP, audit chain, and
-    # anomaly detection. Private ranges are excluded for cluster + IMDS
-    # isolation; UDP is denied (TCP-only) to block DNS exfil and QUIC.
-    # Off by default for self-hosted; flip to true if the tenant has Workflows
-    # licensed and you want the iPaaS-style egress posture.
-    {{- if and .Values.networkPolicy.workflows .Values.networkPolicy.workflows.enabled }}
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8       # RFC1918
-              - 172.16.0.0/12    # RFC1918
-              - 192.168.0.0/16   # RFC1918
-              - 169.254.0.0/16   # Link-local (cloud IMDS SSRF gate)
-              - 100.64.0.0/10    # Tailscale CGNAT
-      ports:
-        - protocol: TCP          # TCP only — block UDP egress
-    {{- end }}
+    {{- include "mnemoshare.workloadEgressRules" . | nindent 4 }}
+{{- if and .Values.workflowWorker .Values.workflowWorker.enabled }}
+---
+# Allow egress from the EXTERNAL workflow-worker pods (business_plus / enterprise).
+#
+# MSA-46: the workflow-worker StatefulSet runs the SAME app binary as the API's
+# embedded background engine, so it needs the IDENTICAL outbound reachability
+# (Mongo, S3, ClamAV/ICAP, Redis, rich-media/Tika/Presidio, Step-CA,
+# license-server, the KeyGuard federation sidecar, SMTP/SendGrid, ...). But these
+# pods are component=workflow-worker, NOT component=api, so the api-egress policy
+# above does not select them — and the default-deny policy DOES select them
+# (it matches all mnemoshare pods). Without this policy their egress is
+# blackholed and scans / workflow steps silently fail.
+#
+# The rules are shared verbatim with api-egress via the
+# "mnemoshare.workloadEgressRules" template so the two can never drift.
+# See _networkpolicy-egress.tpl for the full rationale.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-workflow-worker-egress
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: workflow-worker
+  policyTypes:
+    - Egress
+  egress:
+    {{- include "mnemoshare.workloadEgressRules" . | nindent 4 }}
+{{- end }}
 ---
 {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
 # ClamAV NetworkPolicy - only allow traffic from MnemoShare pods

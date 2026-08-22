@@ -42,7 +42,7 @@ spec:
       - name: workflow-worker
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: "{{ .Values.workflowWorker.image.repository }}:{{ .Values.workflowWorker.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+        image: "{{ .Values.workflowWorker.image.repository | default .Values.image.repository }}:{{ .Values.workflowWorker.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.workflowWorker.image.pullPolicy }}
         # Override command to run cmd/worker (MNI-27 unified hosted-binary).
         # Pre-MNI-27 this was /usr/local/bin/workflow-worker; that entrypoint was

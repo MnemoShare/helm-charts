@@ -460,6 +460,19 @@ kms:
   # dataPlaneKeyID: "alias/msaas/your-customer-id"
   # dataPlaneRegion: "us-east-1"
   # dataPlaneLogicalKeyID: "master"
+  # BYOK JWT signing. When set, the app signs session/download JWTs with a
+  # KMS-held key instead of the in-pod EC key. Emitted only when set.
+  # jwtSignerType: "aws_kms"
+  # jwtSigningKeyID: "arn:aws:kms:us-east-1:444455556666:key/your-jwt-cmk"
+  # BYOK PAdES document signing (MNS-664/MNS-723). The CMK is customer-owned and
+  # lives in the customer's AWS account; the tenant reaches it by assuming
+  # padesRoleARN. Emitted only when set; unset leaves the app on its in-pod
+  # software signer. padesExternalID is optional (confused-deputy guard).
+  # padesSignerType: "aws_kms"
+  # padesSigningKeyID: "arn:aws:kms:us-east-1:444455556666:key/your-cmk"
+  # padesSigningRegion: "us-east-1"
+  # padesRoleARN: "arn:aws:iam::444455556666:role/customer-pades-signer"
+  # padesExternalID: "your-external-id"
 
 # ClamAV ICAP antivirus scanning (optional)
 # Provides free, open-source virus scanning for uploaded files
@@ -1039,6 +1052,13 @@ redis:
     # Alternatively, construct URL from parts (standard Redis only, not Sentinel):
     host: ""
     port: 6379
+    # Sentinel discovery port for the NetworkPolicy egress allow. Opt-in: when
+    # set, an egress rule on this port is added in ADDITION to `port`, so
+    # redis-sentinel:// URLs (HA / shared Sentinel for Business+ and external
+    # workflow-worker tenants) can reach Sentinel. Left empty by default so
+    # single-node external Redis gets no extra surface — set it to 26379 when
+    # wiring a tenant at a shared Sentinel.
+    sentinelPort: ""
     db: 0
     # Existing secret with Redis password (key configurable via existingSecretKeys.redisPassword)
     existingSecret: ""
@@ -1075,8 +1095,10 @@ workflowWorker:
   replicas: 2
 
   image:
-    # Uses same image as main app (workflow-worker is a separate entrypoint)
-    repository: mnemoshare/mnemoshare
+    # Uses same image as main app (workflow-worker is a separate entrypoint).
+    # Empty chains to the global .Values.image.repository so a single
+    # image.repository + image.tag drives every app-entrypoint component.
+    repository: ""
     tag: ""  # Defaults to chart appVersion
     pullPolicy: IfNotPresent
 
@@ -1237,7 +1259,9 @@ ices:
 
   image:
     # Same image as the main app — `ices` is a separate entrypoint.
-    repository: mnemoshare/mnemoshare
+    # Empty chains to the global .Values.image.repository so a single
+    # image.repository + image.tag drives every app-entrypoint component.
+    repository: ""
     tag: ""  # Defaults to chart appVersion
     pullPolicy: IfNotPresent
 
@@ -1611,6 +1635,64 @@ networkPolicy:
     enabled: true
     # CIDR block (leave empty to allow public internet)
     cidr: ""
+    # In-cluster license server reachability (optional). Leave empty on a
+    # self-hosted install that validates against the public license endpoint
+    # (the cidr/443 rule above already covers that). Set to the namespace of
+    # your in-cluster license-server if you run one and the app validates
+    # against http://license-server.<ns>:<port> directly, or the instance would
+    # latch into admin-only mode. Harmless when empty (rule omitted).
+    internalNamespace: ""
+    internalPort: 8090
+    # The license-server Service maps 443 -> targetPort 8443; Cilium enforces
+    # egress against the targetPort, not the Service port. Only used when
+    # internalNamespace is set.
+    externalTargetPort: 8443
+
+  # Shared platform Step-CA reachability, used when stepCA.mode=external.
+  #
+  # "external" means external to this RELEASE, not off-cluster: it points at a
+  # shared Step-CA living in its own namespace. That is a cross-namespace hop,
+  # and neither the inCluster podSelector (same namespace only) nor the broad
+  # 0.0.0.0/0 rules (which except RFC1918 as an SSRF gate) permit it — so
+  # without this the sign request is dropped and every PAdES signature degrades
+  # to unsealed after a 20s timeout (MNS-1118).
+  #
+  # Leave namespace empty to omit the rule (self-hosted with an in-cluster or
+  # disabled CA). port is the Service's targetPort — Cilium enforces egress
+  # against the targetPort, not the Service port.
+  stepCA:
+    namespace: ""
+    port: 9000
+    # Pod label VALUE for app.kubernetes.io/name on the platform CA pods,
+    # ANDed with the namespace so the rule targets the CA rather than the
+    # whole namespace. Empty = namespace-only.
+    podLabel: "step-ca"
+
+  # In-cluster DLP / media infrastructure egress. Each rule renders only when
+  # the matching service URL is configured (richMedia.url / dlp.tikaUrl /
+  # dlp.presidioUrl). The port here is the service's targetPort, which Cilium
+  # enforces egress against (not the Service port).
+  #
+  # `namespace` scopes the rule to the namespace that actually hosts the
+  # service. It MUST be set on a MULTI-tenant cluster: without it the rule
+  # degrades to `namespaceSelector: {}` — egress to ANY pod in ANY namespace on
+  # that port — and 8080 is every other tenant's API container port, so an
+  # unscoped rule hands each tenant a lateral path to every other tenant. Empty
+  # is fine on a single-tenant self-hosted cluster.
+  richMedia:
+    namespace: ""
+    port: 8080
+  tika:
+    namespace: ""
+    port: 9998
+  presidio:
+    namespace: ""
+    port: 3000
+
+  # External (out-of-namespace) ClamAV ICAP. Same scoping contract as above:
+  # empty namespace degrades to every namespace on :1344 (fine single-tenant).
+  icap:
+    namespace: ""
 
   # OAuth/SSO providers access
   oauth:
