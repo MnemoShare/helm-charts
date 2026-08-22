@@ -51,12 +51,14 @@ spec:
           containerPort: 10070
           protocol: TCP
         env:
+        # Leading colon is required — the binary passes these straight to
+        # net.Listen, which rejects a bare port ("missing port in address").
         - name: CONTENT_FILTER_PORT
-          value: "10025"
+          value: ":10025"
         - name: SOCKETMAP_PORT
-          value: "10070"
+          value: ":10070"
         - name: HEALTH_PORT
-          value: "8080"
+          value: ":8080"
         - name: PROCESSING_WORKERS
           value: {{ .Values.inboundGateway.processingWorkers | quote }}
         - name: DELIVERY_WORKERS
@@ -143,6 +145,41 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: encryption-key
+        # Database — the inbound gateway persists relay/socketmap state. Without
+        # an explicit driver it falls back to sqlite and cannot open a file on
+        # the read-only rootfs. Mirror the api's DB wiring.
+        - name: DB_DRIVER
+          value: {{ .Values.database.driver | default "mongodb" | quote }}
+        {{- if eq .Values.database.driver "mongodb" }}
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.mongodb }}{{ .Values.existingSecrets.mongodb }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: mongodb-uri
+        - name: MONGODB_DATABASE
+          value: {{ .Values.mongodb.external.database | quote }}
+        {{- end }}
+        # S3 — inbound attachment persistence (external S3-compatible storage).
+        {{- if not .Values.minio.enabled }}
+        - name: S3_ENDPOINT
+          value: {{ .Values.s3.endpoint | quote }}
+        - name: S3_REGION
+          value: {{ .Values.s3.region | quote }}
+        - name: S3_BUCKET
+          value: {{ .Values.s3.bucket | quote }}
+        - name: S3_USE_SSL
+          value: {{ .Values.s3.useSSL | quote }}
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.s3 }}{{ .Values.existingSecrets.s3 }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: s3-access-key
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.s3 }}{{ .Values.existingSecrets.s3 }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: s3-secret-key
+        {{- end }}
         # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
         {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
         livenessProbe:
@@ -155,7 +192,10 @@ spec:
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /readyz
+            # /readyz reports 503 until an inbound-relay destination is wired
+            # (INBOUND_RELAY_HOST). In the relay-less topology the gateway is
+            # serviceable on /healthz alone, which is what gates readiness.
+            path: /healthz
             port: health
           initialDelaySeconds: 5
           periodSeconds: 10

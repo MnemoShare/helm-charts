@@ -108,6 +108,31 @@ spec:
     {{- include "mnemoshare.workloadEgressRules" . | nindent 4 }}
 {{- end }}
 ---
+{{- if .Values.ices.enabled }}
+# Allow egress from the standalone ICES pods (component=ices). ICES runs the
+# SAME app binary as the worker's embedded mail-monitoring host, so it needs the
+# IDENTICAL outbound reachability (Mongo, Redis, ClamAV/ICAP, rich-media/Tika/
+# Presidio, Gmail/Pub-Sub, threat feeds, the KeyGuard federation sidecar, ...).
+# component=ices pods are matched by default-deny but NOT by api-egress, so
+# without this their egress (including DNS) is blackholed and mail monitoring
+# silently fails. Rules shared verbatim via "mnemoshare.workloadEgressRules".
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-ices-egress
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ices
+  policyTypes:
+    - Egress
+  egress:
+    {{- include "mnemoshare.workloadEgressRules" . | nindent 4 }}
+{{- end }}
+---
 {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
 # ClamAV NetworkPolicy - only allow traffic from MnemoShare pods
 apiVersion: networking.k8s.io/v1

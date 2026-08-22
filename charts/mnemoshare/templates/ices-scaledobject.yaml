@@ -2,6 +2,9 @@
 {{- if not .Values.ices.autoscaling.subscriptionName }}
 {{- fail "ices.autoscaling.enabled requires ices.autoscaling.subscriptionName: the KEDA gcp-pubsub trigger polls a specific Pub/Sub PULL subscription (e.g. projects/<proj>/subscriptions/<sub>). Set it, or disable ices.autoscaling." }}
 {{- end }}
+{{- if lt (int .Values.ices.autoscaling.minReplicas) 1 }}
+{{- fail "ices.autoscaling.minReplicas must be >= 1: the always-on Pub/Sub subscriber and leader-elected sweepers need a resident pod at all times." }}
+{{- end }}
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
