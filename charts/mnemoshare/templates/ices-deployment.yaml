@@ -39,7 +39,7 @@ spec:
       - name: ices
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: "{{ .Values.ices.image.repository }}:{{ .Values.ices.image.tag | default .Chart.AppVersion }}"
+        image: "{{ .Values.ices.image.repository }}:{{ .Values.ices.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.ices.image.pullPolicy }}
         # Dedicated email-security binary (workerboot). Hosts mail-monitoring:
         # BEC poller + Pub/Sub subscriber + mail-security sweepers. It pins its
