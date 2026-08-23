@@ -385,3 +385,114 @@ Values consumed (only when .Values.threatFeed.enabled):
 {{- end }}
 {{- end }}
 {{- end }}
+
+{{/*
+Tiered platform-email + SES env (MNS-954). Shared by the api Deployment and any
+background engine that sends platform email (worker, ices) — they MUST match the
+api's surface or the engine silently can't send.
+*/}}
+{{- define "mnemoshare.platformEmailEnv" -}}
+{{- if .Values.platformEmail.transport }}
+- name: PLATFORM_EMAIL_TRANSPORT
+  value: {{ .Values.platformEmail.transport | quote }}
+{{- end }}
+{{- if .Values.platformEmail.fromAddress }}
+- name: PLATFORM_EMAIL_FROM_ADDRESS
+  value: {{ .Values.platformEmail.fromAddress | quote }}
+- name: PLATFORM_EMAIL_FROM_NAME
+  value: {{ .Values.platformEmail.fromName | quote }}
+{{- end }}
+{{- if .Values.platformEmail.ses.region }}
+- name: PLATFORM_EMAIL_SES_REGION
+  value: {{ .Values.platformEmail.ses.region | quote }}
+{{- end }}
+{{- if or .Values.platformEmail.ses.accessKeyId .Values.existingSecrets.platformEmailSes }}
+- name: PLATFORM_EMAIL_SES_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.platformEmailSes }}{{ .Values.existingSecrets.platformEmailSes }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: platform-email-ses-access-key-id
+- name: PLATFORM_EMAIL_SES_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.platformEmailSes }}{{ .Values.existingSecrets.platformEmailSes }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: platform-email-ses-secret-key
+{{- end }}
+{{- if .Values.sesAdmin.region }}
+- name: SES_ADMIN_REGION
+  value: {{ .Values.sesAdmin.region | quote }}
+{{- end }}
+{{- if .Values.sesAdmin.roleArn }}
+- name: SES_ADMIN_ROLE_ARN
+  value: {{ .Values.sesAdmin.roleArn | quote }}
+{{- end }}
+{{- if or .Values.sesAdmin.accessKeyId .Values.existingSecrets.sesAdmin }}
+- name: SES_ADMIN_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.sesAdmin }}{{ .Values.existingSecrets.sesAdmin }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: ses-admin-access-key-id
+- name: SES_ADMIN_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.sesAdmin }}{{ .Values.existingSecrets.sesAdmin }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: ses-admin-secret-key
+{{- end }}
+{{- if .Values.sesEvents.snsTopicArn }}
+- name: SES_EVENTS_SNS_TOPIC_ARN
+  value: {{ .Values.sesEvents.snsTopicArn | quote }}
+{{- end }}
+{{- if or .Values.sesEvents.webhookToken .Values.existingSecrets.sesEvents }}
+- name: SES_EVENTS_WEBHOOK_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.sesEvents }}{{ .Values.existingSecrets.sesEvents }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: ses-events-webhook-token
+{{- end }}
+{{- end }}
+
+{{/*
+Mail-monitoring env for whichever engine hosts it (worker when embedded, or the
+standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud/webhook/*.
+*/}}
+{{- define "mnemoshare.mailMonitoringEnv" -}}
+{{- if .Values.mailMonitoring.enabled }}
+{{- $base := trimSuffix "/" (.Values.appUrl | default "") -}}
+{{- if $base }}
+- name: GOOGLE_WEBHOOK_URL
+  value: {{ .Values.mailMonitoring.googleWebhookUrl | default (printf "%s/api/v1/integrations/cloud/webhook/google" $base) | quote }}
+- name: MICROSOFT_WEBHOOK_URL
+  value: {{ .Values.mailMonitoring.microsoftWebhookUrl | default (printf "%s/api/v1/integrations/cloud/webhook/microsoft" $base) | quote }}
+{{- end }}
+- name: GOOGLE_MAIL_ENROLLMENT_INTERVAL_SEC
+  value: {{ .Values.mailMonitoring.enrollmentIntervalSec | default 60 | quote }}
+- name: GOOGLE_INTERNAL_MAIL_INTERVAL_SEC
+  value: {{ .Values.mailMonitoring.internalMailIntervalSec | default 60 | quote }}
+- name: GOOGLE_INTERNAL_MAIL_WATCH_INTERVAL_SEC
+  value: {{ .Values.mailMonitoring.internalMailWatchIntervalSec | default 90 | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
+API callback env for a background engine (worker/ices) that calls the app API.
+Emitted ONLY when explicitly configured (apiUrl / apiKey / existingAPIKeySecret)
+so SaaS tenants whose reconciler injects these via ConfigMap are untouched.
+apiUrl defaults to the in-cluster service; the key comes from a secret when
+existingAPIKeySecret is set, else an inline apiKey.
+*/}}
+{{- define "mnemoshare.workerApiCallbackEnv" -}}
+{{- if or .Values.workflowWorker.apiUrl .Values.workflowWorker.apiKey .Values.workflowWorker.existingAPIKeySecret }}
+- name: MNEMOSHARE_API_URL
+  value: {{ .Values.workflowWorker.apiUrl | default (printf "http://%s:%v/api/v1" (include "mnemoshare.fullname" .) .Values.service.port) | quote }}
+{{- if .Values.workflowWorker.existingAPIKeySecret }}
+- name: MNEMOSHARE_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.workflowWorker.existingAPIKeySecret }}
+      key: {{ .Values.workflowWorker.apiKeySecretKey | default "gateway-api-key" }}
+{{- else if .Values.workflowWorker.apiKey }}
+- name: MNEMOSHARE_API_KEY
+  value: {{ .Values.workflowWorker.apiKey | quote }}
+{{- end }}
+{{- end }}
+{{- end }}

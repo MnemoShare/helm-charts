@@ -209,6 +209,14 @@ spec:
         {{- include "mnemoshare.integrationEnv" . | nindent 8 }}
         # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
         {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
+        # ICES hosts mail-monitoring when standalone — API callback + platform
+        # email + mail-monitoring surface, matching the worker's embedded form.
+        {{- include "mnemoshare.workerApiCallbackEnv" . | nindent 8 }}
+        {{- include "mnemoshare.platformEmailEnv" . | nindent 8 }}
+        {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
+        {{- with .Values.ices.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- if include "mnemoshare.keyguard.enabled" . }}
         # KeyGuard (MSC-371): ICES reaches per-org KMS / S3 SIEM bucket via the
         # federation-sidecar — no static AWS creds on this pod.

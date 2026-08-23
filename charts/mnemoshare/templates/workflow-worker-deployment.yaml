@@ -255,6 +255,16 @@ spec:
         {{- include "mnemoshare.integrationEnv" . | nindent 8 }}
         # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
         {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
+        # API callback + platform email + embedded mail-monitoring — the worker's
+        # background engines need the same surface the api serves in-process.
+        {{- include "mnemoshare.workerApiCallbackEnv" . | nindent 8 }}
+        {{- include "mnemoshare.platformEmailEnv" . | nindent 8 }}
+        {{- if not .Values.ices.enabled }}
+        {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.workflowWorker.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         # Disk buffer configuration (memory management for large file processing)
         {{- if .Values.diskBuffer.enabled }}
         - name: DISK_BUFFER_THRESHOLD_MB

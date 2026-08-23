@@ -229,6 +229,21 @@ sesEvents:
   # Sensitive -> secret (or existingSecrets.sesEvents).
   # Setting this enables /api/v1/webhooks/ses-events.
   webhookToken: ""
+  # SNS topic the SES event webhook validates against (non-secret).
+  snsTopicArn: ""
+
+# Mail-monitoring (ICES) tuning for whichever engine hosts it — the worker when
+# ices.enabled=false, otherwise the standalone ices pod. Webhook URLs default to
+# <appUrl>/api/v1/integrations/cloud/webhook/{google,microsoft}.
+mailMonitoring:
+  # Off by default so SaaS/reconciler-driven deployments keep providing this via
+  # ConfigMap (envFrom). Self-hosted ICES users set enabled=true.
+  enabled: false
+  googleWebhookUrl: ""      # empty = derive from appUrl
+  microsoftWebhookUrl: ""   # empty = derive from appUrl
+  enrollmentIntervalSec: 60
+  internalMailIntervalSec: 60
+  internalMailWatchIntervalSec: 90
 
 # Cloudflare Turnstile CAPTCHA (optional)
 # Used to protect public forms (access requests, etc.) from bots
@@ -1091,6 +1106,16 @@ workflowWorker:
   # Enable/disable workflow worker deployment
   enabled: false
 
+  # API callback — the worker's background engines call the app API.
+  apiUrl: ""                 # empty = http://<fullname>:<service.port>/api/v1
+  apiKey: ""                 # plaintext (discouraged); prefer existingAPIKeySecret
+  existingAPIKeySecret: ""   # secret holding the API key
+  apiKeySecretKey: gateway-api-key
+
+  # Extra env injected verbatim onto the worker (escape valve for site-specific
+  # settings the typed knobs above don't cover).
+  extraEnv: []
+
   # Number of worker replicas (scale for more concurrent processing)
   replicas: 2
 
@@ -1254,6 +1279,9 @@ ices:
   # Enable the standalone ICES deployment.
   enabled: false
 
+  # Extra env injected verbatim onto the ices pod (escape valve).
+  extraEnv: []
+
   # Number of replicas (ignored when autoscaling.enabled=true).
   replicas: 1
 
@@ -1343,6 +1371,13 @@ ices:
 emailGateway:
   # Enable the email gateway deployment
   enabled: false
+
+  # Explicit relay-host allow-list (RELAY_HOSTS) — distinct from upstream.host,
+  # which is the next-hop. List form, joined with commas.
+  relayHosts: []
+
+  # Extra env injected verbatim onto the email gateway (escape valve).
+  extraEnv: []
 
   # Operating mode:
   #   "gateway"       — outbound proxy to upstream SMTP relay (default)
@@ -1513,6 +1548,24 @@ emailGateway:
 inboundGateway:
   # Enable the inbound gateway deployment
   enabled: false
+
+  # Post-processing relay target (INBOUND_RELAY_HOST) — where the gateway hands
+  # off a message after DLP/scan. Empty = the binary's default delivery path.
+  relayHost: ""
+
+  # BEC (business-email-compromise) detection. Off unless enabled.
+  bec:
+    enabled: false
+
+  # AI DLP classifier for inbound mail.
+  ai:
+    provider: ""            # e.g. anthropic
+    apiKey: ""              # plaintext (discouraged); prefer existingSecret
+    existingSecret: ""      # secret holding the AI API key
+    secretKey: ai-api-key
+
+  # Extra env injected verbatim onto the inbound gateway (escape valve).
+  extraEnv: []
 
   # Number of gateway replicas
   replicas: 1

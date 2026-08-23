@@ -182,6 +182,32 @@ spec:
         {{- end }}
         # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
         {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
+        # BEC detection, AI DLP classifier, and the post-processing relay target.
+        {{- if .Values.inboundGateway.bec.enabled }}
+        - name: BEC_ENABLED
+          value: "true"
+        {{- end }}
+        {{- if .Values.inboundGateway.ai.provider }}
+        - name: AI_PROVIDER
+          value: {{ .Values.inboundGateway.ai.provider | quote }}
+        {{- end }}
+        {{- if .Values.inboundGateway.ai.existingSecret }}
+        - name: AI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.inboundGateway.ai.existingSecret }}
+              key: {{ .Values.inboundGateway.ai.secretKey | default "ai-api-key" }}
+        {{- else if .Values.inboundGateway.ai.apiKey }}
+        - name: AI_API_KEY
+          value: {{ .Values.inboundGateway.ai.apiKey | quote }}
+        {{- end }}
+        {{- if .Values.inboundGateway.relayHost }}
+        - name: INBOUND_RELAY_HOST
+          value: {{ .Values.inboundGateway.relayHost | quote }}
+        {{- end }}
+        {{- with .Values.inboundGateway.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         livenessProbe:
           httpGet:
             path: /healthz
