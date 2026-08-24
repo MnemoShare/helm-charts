@@ -150,7 +150,7 @@ spec:
         # the read-only rootfs. Mirror the api's DB wiring.
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}
-        {{- if eq .Values.database.driver "mongodb" }}
+        {{- if eq (.Values.database.driver | default "mongodb") "mongodb" }}
         - name: MONGODB_URI
           valueFrom:
             secretKeyRef:

@@ -113,7 +113,7 @@ spec:
         # Database Configuration (v0.6.0+ supports MongoDB, PostgreSQL, SQLite)
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}
-        {{- if eq .Values.database.driver "mongodb" }}
+        {{- if eq (.Values.database.driver | default "mongodb") "mongodb" }}
         # MongoDB
         - name: MONGODB_URI
           valueFrom:
