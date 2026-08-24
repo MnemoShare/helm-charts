@@ -298,4 +298,205 @@ Values consumed (all optional — only emitted when set):
 - name: DATA_PLANE_KMS_LOGICAL_KEY_ID
   value: {{ .Values.kms.dataPlaneLogicalKeyID | quote }}
 {{- end }}
+{{- if and .Values.kms .Values.kms.jwtSignerType }}
+- name: JWT_SIGNER_TYPE
+  value: {{ .Values.kms.jwtSignerType | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.jwtSigningKeyID }}
+- name: JWT_SIGNING_KEY_ID
+  value: {{ .Values.kms.jwtSigningKeyID | quote }}
+{{- end }}
+{{- /* PADES_SIGNING_* (MNS-664/MNS-723). BYOK PAdES document signing with a
+       customer-owned CMK reached cross-account by assuming the role in the
+       customer's account. Emitted only when set; unset leaves the app on its
+       in-pod software signer. ExternalID is optional (confused-deputy guard). */}}
+{{- if and .Values.kms .Values.kms.padesSignerType }}
+- name: PADES_SIGNER_TYPE
+  value: {{ .Values.kms.padesSignerType | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.padesSigningKeyID }}
+- name: PADES_SIGNING_KEY_ID
+  value: {{ .Values.kms.padesSigningKeyID | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.padesSigningRegion }}
+- name: PADES_SIGNING_KMS_REGION
+  value: {{ .Values.kms.padesSigningRegion | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.padesRoleARN }}
+- name: PADES_SIGNING_KMS_ROLE_ARN
+  value: {{ .Values.kms.padesRoleARN | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.padesExternalID }}
+- name: PADES_SIGNING_KMS_EXTERNAL_ID
+  value: {{ .Values.kms.padesExternalID | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
+Threat-feed env for the ICES threat-scanning lane. Emits nothing unless
+.Values.threatFeed.enabled is true, so pods on installs that don't opt in
+carry no THREATFEED_* vars at all. When enabled, the abuse.ch feeds
+(URLhaus, Feodo Tracker) are each independently gate-able, and an optional
+custom feed can be pointed at any URL. Feeds are refreshed on an interval.
+
+Usage:
+  env:
+    {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
+
+Values consumed (only when .Values.threatFeed.enabled):
+  - .Values.threatFeed.refreshSec
+  - .Values.threatFeed.urlhaus.enabled, .Values.threatFeed.urlhaus.url
+  - .Values.threatFeed.feodo.enabled, .Values.threatFeed.feodo.url
+  - .Values.threatFeed.custom.url, .kind, .name
+*/}}
+{{- define "mnemoshare.threatfeedEnv" -}}
+{{- if .Values.threatFeed.enabled }}
+- name: THREATFEED_ENABLED
+  value: "true"
+- name: THREATFEED_REFRESH_SEC
+  value: {{ .Values.threatFeed.refreshSec | default 3600 | quote }}
+{{- if .Values.threatFeed.urlhaus.enabled }}
+- name: THREATFEED_URLHAUS_ENABLED
+  value: "true"
+{{- if .Values.threatFeed.urlhaus.url }}
+- name: THREATFEED_URLHAUS_URL
+  value: {{ .Values.threatFeed.urlhaus.url | quote }}
+{{- end }}
+{{- end }}
+{{- if .Values.threatFeed.feodo.enabled }}
+- name: THREATFEED_FEODO_ENABLED
+  value: "true"
+{{- if .Values.threatFeed.feodo.url }}
+- name: THREATFEED_FEODO_URL
+  value: {{ .Values.threatFeed.feodo.url | quote }}
+{{- end }}
+{{- end }}
+{{- if .Values.threatFeed.custom.url }}
+- name: THREATFEED_CUSTOM_URL
+  value: {{ .Values.threatFeed.custom.url | quote }}
+{{- if .Values.threatFeed.custom.kind }}
+- name: THREATFEED_CUSTOM_KIND
+  value: {{ .Values.threatFeed.custom.kind | quote }}
+{{- end }}
+{{- if .Values.threatFeed.custom.name }}
+- name: THREATFEED_CUSTOM_NAME
+  value: {{ .Values.threatFeed.custom.name | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Tiered platform-email + SES env (MNS-954). Shared by the api Deployment and any
+background engine that sends platform email (worker, ices) — they MUST match the
+api's surface or the engine silently can't send.
+*/}}
+{{- define "mnemoshare.platformEmailEnv" -}}
+{{- if .Values.platformEmail.transport }}
+- name: PLATFORM_EMAIL_TRANSPORT
+  value: {{ .Values.platformEmail.transport | quote }}
+{{- end }}
+{{- if .Values.platformEmail.fromAddress }}
+- name: PLATFORM_EMAIL_FROM_ADDRESS
+  value: {{ .Values.platformEmail.fromAddress | quote }}
+- name: PLATFORM_EMAIL_FROM_NAME
+  value: {{ .Values.platformEmail.fromName | quote }}
+{{- end }}
+{{- if .Values.platformEmail.ses.region }}
+- name: PLATFORM_EMAIL_SES_REGION
+  value: {{ .Values.platformEmail.ses.region | quote }}
+{{- end }}
+{{- if or .Values.platformEmail.ses.accessKeyId .Values.existingSecrets.platformEmailSes }}
+- name: PLATFORM_EMAIL_SES_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.platformEmailSes }}{{ .Values.existingSecrets.platformEmailSes }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: platform-email-ses-access-key-id
+- name: PLATFORM_EMAIL_SES_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.platformEmailSes }}{{ .Values.existingSecrets.platformEmailSes }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: platform-email-ses-secret-key
+{{- end }}
+{{- if .Values.sesAdmin.region }}
+- name: SES_ADMIN_REGION
+  value: {{ .Values.sesAdmin.region | quote }}
+{{- end }}
+{{- if .Values.sesAdmin.roleArn }}
+- name: SES_ADMIN_ROLE_ARN
+  value: {{ .Values.sesAdmin.roleArn | quote }}
+{{- end }}
+{{- if or .Values.sesAdmin.accessKeyId .Values.existingSecrets.sesAdmin }}
+- name: SES_ADMIN_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.sesAdmin }}{{ .Values.existingSecrets.sesAdmin }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: ses-admin-access-key-id
+- name: SES_ADMIN_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.sesAdmin }}{{ .Values.existingSecrets.sesAdmin }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: ses-admin-secret-key
+{{- end }}
+{{- if .Values.sesEvents.snsTopicArn }}
+- name: SES_EVENTS_SNS_TOPIC_ARN
+  value: {{ .Values.sesEvents.snsTopicArn | quote }}
+{{- end }}
+{{- if or .Values.sesEvents.webhookToken .Values.existingSecrets.sesEvents }}
+- name: SES_EVENTS_WEBHOOK_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.sesEvents }}{{ .Values.existingSecrets.sesEvents }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: ses-events-webhook-token
+{{- end }}
+{{- end }}
+
+{{/*
+Mail-monitoring env for whichever engine hosts it (worker when embedded, or the
+standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud/webhook/*.
+*/}}
+{{- define "mnemoshare.mailMonitoringEnv" -}}
+{{- if .Values.mailMonitoring.enabled }}
+{{- $base := trimSuffix "/" (.Values.appUrl | default "") -}}
+{{- /* Gate each URL independently: an explicitly-set webhook URL must emit
+       even when appUrl (and thus $base) is empty. */ -}}
+{{- if or $base .Values.mailMonitoring.googleWebhookUrl }}
+- name: GOOGLE_WEBHOOK_URL
+  value: {{ .Values.mailMonitoring.googleWebhookUrl | default (printf "%s/api/v1/integrations/cloud/webhook/google" $base) | quote }}
+{{- end }}
+{{- if or $base .Values.mailMonitoring.microsoftWebhookUrl }}
+- name: MICROSOFT_WEBHOOK_URL
+  value: {{ .Values.mailMonitoring.microsoftWebhookUrl | default (printf "%s/api/v1/integrations/cloud/webhook/microsoft" $base) | quote }}
+{{- end }}
+- name: GOOGLE_MAIL_ENROLLMENT_INTERVAL_SEC
+  value: {{ .Values.mailMonitoring.enrollmentIntervalSec | default 60 | quote }}
+- name: GOOGLE_INTERNAL_MAIL_INTERVAL_SEC
+  value: {{ .Values.mailMonitoring.internalMailIntervalSec | default 60 | quote }}
+- name: GOOGLE_INTERNAL_MAIL_WATCH_INTERVAL_SEC
+  value: {{ .Values.mailMonitoring.internalMailWatchIntervalSec | default 90 | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
+API callback env for a background engine (worker/ices) that calls the app API.
+Emitted ONLY when explicitly configured (apiUrl / apiKey / existingAPIKeySecret)
+so SaaS tenants whose reconciler injects these via ConfigMap are untouched.
+apiUrl defaults to the in-cluster service; the key comes from a secret when
+existingAPIKeySecret is set, else an inline apiKey.
+*/}}
+{{- define "mnemoshare.workerApiCallbackEnv" -}}
+{{- if or .Values.workflowWorker.apiUrl .Values.workflowWorker.apiKey .Values.workflowWorker.existingAPIKeySecret }}
+- name: MNEMOSHARE_API_URL
+  value: {{ .Values.workflowWorker.apiUrl | default (printf "http://%s:%v/api/v1" (include "mnemoshare.fullname" .) .Values.service.port) | quote }}
+{{- if .Values.workflowWorker.existingAPIKeySecret }}
+- name: MNEMOSHARE_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.workflowWorker.existingAPIKeySecret }}
+      key: {{ .Values.workflowWorker.apiKeySecretKey | default "gateway-api-key" }}
+{{- else if .Values.workflowWorker.apiKey }}
+- name: MNEMOSHARE_API_KEY
+  value: {{ .Values.workflowWorker.apiKey | quote }}
+{{- end }}
+{{- end }}
 {{- end }}

@@ -64,7 +64,7 @@ spec:
       - name: mcp
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: "{{ .Values.mcp.image.repository }}:{{ .Values.mcp.image.tag | default .Chart.AppVersion }}"
+        image: "{{ .Values.mcp.image.repository }}:{{ .Values.mcp.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.mcp.image.pullPolicy }}
         # Run the MCP admin server binary. Path matches the canonical
         # Dockerfile install location (`COPY --from=go-builder /bin/mcp-admin

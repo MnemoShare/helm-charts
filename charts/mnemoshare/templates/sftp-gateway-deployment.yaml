@@ -42,7 +42,7 @@ spec:
         runAsGroup: 1000
       containers:
       - name: sftp-gateway
-        image: "{{ .Values.sftpGateway.image.repository }}:{{ .Values.sftpGateway.image.tag | default .Chart.AppVersion }}"
+        image: "{{ .Values.sftpGateway.image.repository | default .Values.image.repository }}:{{ .Values.sftpGateway.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.sftpGateway.image.pullPolicy }}
         {{- with .Values.sftpGateway.command }}
         # Explicit entrypoint override. Set this when pointing at the unified

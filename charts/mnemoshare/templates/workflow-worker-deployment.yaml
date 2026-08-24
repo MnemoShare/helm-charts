@@ -42,7 +42,7 @@ spec:
       - name: workflow-worker
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: "{{ .Values.workflowWorker.image.repository }}:{{ .Values.workflowWorker.image.tag | default .Chart.AppVersion }}"
+        image: "{{ .Values.workflowWorker.image.repository | default .Values.image.repository }}:{{ .Values.workflowWorker.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.workflowWorker.image.pullPolicy }}
         # Override command to run cmd/worker (MNI-27 unified hosted-binary).
         # Pre-MNI-27 this was /usr/local/bin/workflow-worker; that entrypoint was
@@ -76,6 +76,13 @@ spec:
           value: "background,messaging"
         {{- else }}
           value: "*"
+        {{- end }}
+        {{- if .Values.ices.enabled }}
+        # A dedicated ICES pod hosts mail-monitoring (BEC poller + pub/sub
+        # subscriber + sweepers). ICES_STANDALONE tells this worker's google
+        # engine to drop mail-monitoring so it is hosted exactly once.
+        - name: ICES_STANDALONE
+          value: "true"
         {{- end }}
         # Database Configuration (supports MongoDB and PostgreSQL for distributed workers)
         - name: DB_DRIVER
@@ -246,6 +253,18 @@ spec:
         # skip integration work that the api previously did in-process.
         # See templates/_helpers.tpl::mnemoshare.integrationEnv
         {{- include "mnemoshare.integrationEnv" . | nindent 8 }}
+        # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
+        {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
+        # API callback + platform email + embedded mail-monitoring — the worker's
+        # background engines need the same surface the api serves in-process.
+        {{- include "mnemoshare.workerApiCallbackEnv" . | nindent 8 }}
+        {{- include "mnemoshare.platformEmailEnv" . | nindent 8 }}
+        {{- if not .Values.ices.enabled }}
+        {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.workflowWorker.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         # Disk buffer configuration (memory management for large file processing)
         {{- if .Values.diskBuffer.enabled }}
         - name: DISK_BUFFER_THRESHOLD_MB

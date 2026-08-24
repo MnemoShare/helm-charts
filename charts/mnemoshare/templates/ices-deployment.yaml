@@ -1,35 +1,32 @@
-{{- if .Values.workflowWorker.enabled }}
-{{- if .Values.workflowWorker.persistence.enabled }}
+{{- if .Values.ices.enabled }}
+{{- /* ICES is a stateless Deployment — it shards via Redis + the worker
+       registry and needs no PVC, so there is no StatefulSet branch here. */}}
 {{- if eq (include "mnemoshare.redisMode" .) "disabled" }}
-{{- fail "workflowWorker.enabled requires Redis: set redis.mode=external (with redis.external.url) or redis.mode=inCluster (or legacy redis.enabled=true / redis.external.enabled=true)" }}
+{{- fail "ices.enabled requires Redis: set redis.mode=external (with redis.external.url) or redis.mode=inCluster (or legacy redis.enabled=true / redis.external.enabled=true)" }}
 {{- end }}
 {{- if eq .Values.database.driver "sqlite" }}
-{{- fail "workflowWorker.enabled is not compatible with database.driver=sqlite. Use mongodb or postgres." }}
-{{- end }}
-{{- if and .Values.workflowWorker.filteredProcess (contains "workflow" .Values.workflowWorker.filteredProcess) }}
-{{- fail "workflowWorker.filteredProcess names the retired \"workflow\" engine (folded into \"messaging\" in app 0.16; an unknown engine name is a boot fatal). Remove the override to use the derived default, or replace \"workflow\" with \"messaging\"." }}
+{{- fail "ices.enabled is not compatible with database.driver=sqlite. Use mongodb or postgres." }}
 {{- end }}
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: {{ include "mnemoshare.fullname" . }}-worker
+  name: {{ include "mnemoshare.fullname" . }}-ices
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
-    app.kubernetes.io/component: workflow-worker
+    app.kubernetes.io/component: ices
 spec:
-  serviceName: {{ include "mnemoshare.fullname" . }}-worker
-  {{- if not .Values.workflowWorker.autoscaling.enabled }}
-  replicas: {{ .Values.workflowWorker.replicas }}
+  {{- if not .Values.ices.autoscaling.enabled }}
+  replicas: {{ .Values.ices.replicas }}
   {{- end }}
   selector:
     matchLabels:
       {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: workflow-worker
+      app.kubernetes.io/component: ices
   template:
     metadata:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: workflow-worker
+        app.kubernetes.io/component: ices
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -39,52 +36,20 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-      - name: workflow-worker
+      - name: ices
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: "{{ .Values.workflowWorker.image.repository | default .Values.image.repository }}:{{ .Values.workflowWorker.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
-        imagePullPolicy: {{ .Values.workflowWorker.image.pullPolicy }}
-        # Override command to run cmd/worker (MNI-27 unified hosted-binary).
-        # Pre-MNI-27 this was /usr/local/bin/workflow-worker; that entrypoint was
-        # retired in MNI-27 PR#4 (commit e6e243d). cmd/worker hosts every engine
-        # at compile time and activates the configured subset via FILTERED_PROCESS.
-        # For this StatefulSet the active set is .Values.workflowWorker.filteredProcess
-        # (default: "*"; "background,messaging" on db2) — see the FILTERED_PROCESS env below.
-        command: ["/usr/local/bin/worker"]
+        image: "{{ .Values.ices.image.repository | default .Values.image.repository }}:{{ .Values.ices.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.ices.image.pullPolicy }}
+        # Dedicated email-security binary (workerboot). Hosts mail-monitoring:
+        # BEC poller + Pub/Sub subscriber + mail-security sweepers. It pins its
+        # own FILTERED_PROCESS internally, so none is set on this pod.
+        command: ["/usr/local/bin/ices"]
         env:
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
           value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
-        # Engine activation filter (MNS-505 / MNS-1159). Defaults to "*" —
-        # host every engine the deployed app binary registers. Do NOT
-        # hardcode an engine list: names drift across app versions and an
-        # unknown name is a boot fatal — the previous "background,workflow"
-        # default fatals on app >= 0.16, where the "workflow" engine was
-        # folded into "messaging". "*" always includes "background" (so
-        # uploads never stick on the Pending scan badge) and "kmsrotation"
-        # (Settings rotate/rewrap + scheduled rotation).
-        # db2 exception: on app releases to date the kmsrotation engine
-        # refuses that backend at boot even in wildcard mode, so db2 gets an
-        # explicit list WITHOUT kmsrotation. WARNING: overriding
-        # .Values.workflowWorker.filteredProcess with "*" or any list naming
-        # "kmsrotation" on db2 crash-loops those app versions; only do so on
-        # an app release that lifts the db2 rotation restriction (MNS-1159).
-        - name: FILTERED_PROCESS
-        {{- if .Values.workflowWorker.filteredProcess }}
-          value: {{ .Values.workflowWorker.filteredProcess | quote }}
-        {{- else if eq .Values.database.driver "db2" }}
-          value: "background,messaging"
-        {{- else }}
-          value: "*"
-        {{- end }}
-        {{- if .Values.ices.enabled }}
-        # A dedicated ICES pod hosts mail-monitoring (BEC poller + pub/sub
-        # subscriber + sweepers). ICES_STANDALONE tells this worker's google
-        # engine to drop mail-monitoring so it is hosted exactly once.
-        - name: ICES_STANDALONE
-          value: "true"
-        {{- end }}
-        # Database Configuration (supports MongoDB and PostgreSQL for distributed workers)
+        # Database Configuration (supports MongoDB and PostgreSQL)
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}
         {{- if or (eq .Values.database.driver "mongodb") (not .Values.database.driver) }}
@@ -110,7 +75,7 @@ spec:
         # External Redis
         {{- if .Values.redis.external.urlExistingSecret }}
         # Full URL (with embedded password) from a secret — used by the operator
-        # to avoid plaintext REDIS_URL in the rendered StatefulSet/Deployment.
+        # to avoid plaintext REDIS_URL in the rendered Deployment.
         - name: REDIS_URL
           valueFrom:
             secretKeyRef:
@@ -148,13 +113,6 @@ spec:
           value: "redis://{{ include "mnemoshare.fullname" . }}-redis:6379/0"
         {{- end }}
         {{- end }}
-        # Worker Configuration
-        - name: WORKER_CONCURRENCY
-          value: {{ .Values.workflowWorker.concurrency | quote }}
-        {{- if .Values.workflowWorker.tempDir }}
-        - name: TEMP_DIR
-          value: {{ .Values.workflowWorker.tempDir | quote }}
-        {{- end }}
         # Encryption Key (same as API server)
         - name: ENCRYPTION_KEY
           valueFrom:
@@ -175,12 +133,10 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.jwt }}{{ .Values.existingSecrets.jwt }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: jwt-ec-private-key
-        # S3-compatible object storage. The worker hosts the background
-        # engine (virus_scan, metadata_extract, report_generate, sftp etc.)
-        # which all stream through storage.NewStorageManagerWithRepos. Without
-        # these vars the worker's storage manager defaults to localhost:9000
-        # and crashloops on the bucket pre-flight before the harness comes up.
-        # Mirrors the API deployment's S3 wiring.
+        # S3-compatible object storage. ICES streams quarantined/scanned
+        # attachments through storage.NewStorageManagerWithRepos; without these
+        # vars the storage manager defaults to localhost:9000 and crashloops on
+        # the bucket pre-flight. Mirrors the worker/API S3 wiring.
         {{- if .Values.minio.enabled }}
         # MinIO is enabled - use internal MinIO service endpoint
         - name: S3_ENDPOINT
@@ -222,16 +178,13 @@ spec:
         - name: S3_USE_SSL
           value: {{ .Values.s3.useSSL | quote }}
         {{- end }}
-        # API Base URL (for uploading files to MnemoShare)
+        # API Base URL (for reaching MnemoShare's internal API)
         - name: API_BASE_URL
           value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}/api/v1"
-        # App URL (for generating links in notifications)
-        - name: APP_URL
-          value: {{ .Values.appUrl | quote }}
         # Logging
         - name: LOG_LEVEL
-          value: {{ .Values.workflowWorker.logLevel | default "info" | quote }}
-        # ClamAV ICAP endpoint (background.scan handler — env-seeded fallback;
+          value: {{ .Values.ices.logLevel | default "info" | quote }}
+        # ClamAV ICAP endpoint (attachment scanning — env-seeded fallback;
         # primary config comes from MongoDB IcapConfig row)
         {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
         - name: DEFAULT_ICAP_URL
@@ -244,126 +197,92 @@ spec:
         - name: DEFAULT_ICAP_SERVICE
           value: {{ .Values.clamav.external.service | default "avscan" | quote }}
         {{- if .Values.clamav.external.required }}
-        # When required=true the background scan handler refuses to process
-        # files if ICAP is unreachable (matches the api Deployment's posture).
+        # When required=true attachment scanning refuses to process files if
+        # ICAP is unreachable (matches the api/worker posture).
         - name: DEFAULT_ICAP_REQUIRED
           value: "true"
         {{- end }}
         {{- end }}
         # Cross-service integrations (rich-media thumbnails, Tika text
         # extraction, Presidio NER, AI DLP, KMS envelope flag) — MUST match
-        # the api Deployment's surface or the background engine will silently
-        # skip integration work that the api previously did in-process.
-        # See templates/_helpers.tpl::mnemoshare.integrationEnv
+        # the api/worker surface. See templates/_helpers.tpl::mnemoshare.integrationEnv
         {{- include "mnemoshare.integrationEnv" . | nindent 8 }}
         # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
         {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
-        # API callback + platform email + embedded mail-monitoring — the worker's
-        # background engines need the same surface the api serves in-process.
+        # ICES hosts mail-monitoring when standalone — API callback + platform
+        # email + mail-monitoring surface, matching the worker's embedded form.
         {{- include "mnemoshare.workerApiCallbackEnv" . | nindent 8 }}
         {{- include "mnemoshare.platformEmailEnv" . | nindent 8 }}
-        {{- if not .Values.ices.enabled }}
         {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
-        {{- end }}
-        {{- with .Values.workflowWorker.extraEnv }}
+        {{- with .Values.ices.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        # Disk buffer configuration (memory management for large file processing)
-        {{- if .Values.diskBuffer.enabled }}
-        - name: DISK_BUFFER_THRESHOLD_MB
-          value: {{ .Values.diskBuffer.thresholdMB | quote }}
-        - name: DISK_BUFFER_TEMP_DIR
-          value: "/mnt/disk-buffer"
-        - name: DISK_BUFFER_ENCRYPT
-          value: {{ .Values.diskBuffer.encrypt | quote }}
-        {{- end }}
-        # Temp directories for file processing (StatefulSet PVC mount)
-        - name: TEMP_DIR
-          value: "/mnt/workflow-data/temp"
-        - name: TEMP_FALLBACK_DIR
-          value: "/mnt/workflow-data/fallback"
         {{- if include "mnemoshare.keyguard.enabled" . }}
-        # KeyGuard (MSC-371): worker reaches per-org KMS / S3 SIEM bucket
-        # via the federation-sidecar — no static AWS creds on this pod.
+        # KeyGuard (MSC-371): ICES reaches per-org KMS / S3 SIEM bucket via the
+        # federation-sidecar — no static AWS creds on this pod.
         {{- include "mnemoshare.keyguard.envMain" . | nindent 8 }}
         {{- end }}
         resources:
-          {{- toYaml .Values.workflowWorker.resources | nindent 12 }}
+          {{- toYaml .Values.ices.resources | nindent 12 }}
+        {{- if or .Values.ices.tmpVolume.enabled (include "mnemoshare.keyguard.enabled" .) }}
         volumeMounts:
-        - name: workflow-data
-          mountPath: /mnt/workflow-data
-        {{- if .Values.diskBuffer.enabled }}
-        - name: disk-buffer
-          mountPath: /mnt/disk-buffer
-        {{- end }}
-        {{- if .Values.workflowWorker.tmpVolume.enabled }}
-        # MNS-504: writable /tmp for background.scan handler (spools
-        # decrypted streams to /tmp before posting to ICAP). Required
-        # because the base image runs with readOnlyRootFilesystem=true.
+        {{- if .Values.ices.tmpVolume.enabled }}
+        # Writable /tmp: ICES spools decrypted attachment streams to /tmp before
+        # posting to ICAP. Required because the base image runs with
+        # readOnlyRootFilesystem=true.
         - name: tmp
           mountPath: /tmp
         {{- end }}
         {{- if include "mnemoshare.keyguard.enabled" . }}
         {{- include "mnemoshare.keyguard.volumeMountsMain" . | nindent 8 }}
         {{- end }}
+        {{- end }}
         livenessProbe:
           exec:
             command:
             - /bin/sh
             - -c
-            # busybox pgrep on alpine matches against full /proc/N/cmdline,
-            # so `-x worker` (basename) never matches `/usr/local/bin/worker`.
-            # Drop -x → substring match (works for both procps and busybox).
-            - "pgrep worker"
+            # Anchored full-cmdline match: bare `pgrep ices` matches the probe's
+            # own `/bin/sh -c ...` cmdline (contains "ices") → false-positive
+            # even when the binary is dead. `-f` + ^...$ works on both procps
+            # and busybox pgrep and cannot match the probe shell.
+            - "pgrep -f '^/usr/local/bin/ices$'"
           initialDelaySeconds: 30
           periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "pgrep -f '^/usr/local/bin/ices$'"
+          initialDelaySeconds: 10
+          periodSeconds: 15
           timeoutSeconds: 5
           failureThreshold: 3
       {{- if include "mnemoshare.keyguard.enabled" . }}
       # KeyGuard federation-sidecar (MSC-371).
       {{- include "mnemoshare.keyguard.sidecarContainer" . | nindent 6 }}
       {{- end }}
-      {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled (include "mnemoshare.keyguard.enabled" .) }}
+      {{- if or .Values.ices.tmpVolume.enabled (include "mnemoshare.keyguard.enabled" .) }}
       volumes:
-      {{- if .Values.workflowWorker.tmpVolume.enabled }}
+      {{- if .Values.ices.tmpVolume.enabled }}
       - name: tmp
         emptyDir:
-          {{- if .Values.workflowWorker.tmpVolume.sizeLimit }}
-          sizeLimit: {{ .Values.workflowWorker.tmpVolume.sizeLimit }}
+          {{- if .Values.ices.tmpVolume.sizeLimit }}
+          sizeLimit: {{ .Values.ices.tmpVolume.sizeLimit }}
           {{- end }}
-      {{- end }}
-      {{- if .Values.diskBuffer.enabled }}
-      - name: disk-buffer
-        {{- if eq .Values.diskBuffer.volume.type "emptyDir" }}
-        emptyDir:
-          {{- if .Values.diskBuffer.volume.emptyDir.medium }}
-          medium: {{ .Values.diskBuffer.volume.emptyDir.medium }}
-          {{- end }}
-          {{- if .Values.diskBuffer.volume.emptyDir.sizeLimit }}
-          sizeLimit: {{ .Values.diskBuffer.volume.emptyDir.sizeLimit }}
-          {{- end }}
-        {{- else if eq .Values.diskBuffer.volume.type "ephemeral" }}
-        ephemeral:
-          volumeClaimTemplate:
-            spec:
-              accessModes: ["ReadWriteOnce"]
-              {{- if .Values.diskBuffer.volume.ephemeral.storageClassName }}
-              storageClassName: {{ .Values.diskBuffer.volume.ephemeral.storageClassName }}
-              {{- end }}
-              resources:
-                requests:
-                  storage: {{ .Values.diskBuffer.volume.ephemeral.size }}
-        {{- end }}
       {{- end }}
       {{- if include "mnemoshare.keyguard.enabled" . }}
       {{- include "mnemoshare.keyguard.volumes" . | nindent 6 }}
       {{- end }}
       {{- end }}
-      {{- with .Values.workflowWorker.nodeSelector }}
+      {{- with .Values.ices.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.workflowWorker.tolerations }}
+      {{- with .Values.ices.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -371,17 +290,4 @@ spec:
       dnsConfig:
         {{- toYaml .Values.dnsConfig | nindent 8 }}
       {{- end }}
-  # Per-pod PVC for workflow data (temp files, downloads, etc.)
-  volumeClaimTemplates:
-  - metadata:
-      name: workflow-data
-    spec:
-      accessModes: ["ReadWriteOnce"]
-      {{- if .Values.workflowWorker.persistence.storageClass }}
-      storageClassName: {{ .Values.workflowWorker.persistence.storageClass | quote }}
-      {{- end }}
-      resources:
-        requests:
-          storage: {{ .Values.workflowWorker.persistence.size | default "10Gi" }}
-{{- end }}
 {{- end }}

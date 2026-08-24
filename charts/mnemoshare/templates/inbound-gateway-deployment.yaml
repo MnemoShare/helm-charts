@@ -51,12 +51,14 @@ spec:
           containerPort: 10070
           protocol: TCP
         env:
+        # Leading colon is required — the binary passes these straight to
+        # net.Listen, which rejects a bare port ("missing port in address").
         - name: CONTENT_FILTER_PORT
-          value: "10025"
+          value: ":10025"
         - name: SOCKETMAP_PORT
-          value: "10070"
+          value: ":10070"
         - name: HEALTH_PORT
-          value: "8080"
+          value: ":8080"
         - name: PROCESSING_WORKERS
           value: {{ .Values.inboundGateway.processingWorkers | quote }}
         - name: DELIVERY_WORKERS
@@ -143,6 +145,96 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: encryption-key
+        # Database — the inbound gateway persists relay/socketmap state. Without
+        # an explicit driver it falls back to sqlite and cannot open a file on
+        # the read-only rootfs. Mirror the api's DB wiring.
+        - name: DB_DRIVER
+          value: {{ .Values.database.driver | default "mongodb" | quote }}
+        {{- if eq (.Values.database.driver | default "mongodb") "mongodb" }}
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.mongodb }}{{ .Values.existingSecrets.mongodb }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: mongodb-uri
+        - name: MONGODB_DATABASE
+          value: {{ .Values.mongodb.external.database | quote }}
+        {{- else if eq .Values.database.driver "postgres" }}
+        - name: POSTGRES_DSN
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.postgres }}{{ .Values.existingSecrets.postgres }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: postgres-dsn
+        {{- end }}
+        # S3 — inbound attachment persistence.
+        {{- if .Values.minio.enabled }}
+        # MinIO is enabled - use internal MinIO service endpoint
+        - name: S3_ENDPOINT
+          value: "{{ include "mnemoshare.fullname" . }}-minio:9000"
+        - name: S3_REGION
+          value: "us-east-1"
+        - name: S3_BUCKET
+          value: {{ .Values.s3.bucket | default "mnemoshare" | quote }}
+        - name: S3_USE_SSL
+          value: "false"
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.minio.existingSecret }}{{ .Values.minio.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-minio{{ end }}
+              key: rootUser
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.minio.existingSecret }}{{ .Values.minio.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-minio{{ end }}
+              key: rootPassword
+        {{- else }}
+        # External S3-compatible storage
+        - name: S3_ENDPOINT
+          value: {{ .Values.s3.endpoint | quote }}
+        - name: S3_REGION
+          value: {{ .Values.s3.region | quote }}
+        - name: S3_BUCKET
+          value: {{ .Values.s3.bucket | quote }}
+        - name: S3_USE_SSL
+          value: {{ .Values.s3.useSSL | quote }}
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.s3 }}{{ .Values.existingSecrets.s3 }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: s3-access-key
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.s3 }}{{ .Values.existingSecrets.s3 }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: s3-secret-key
+        {{- end }}
+        # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
+        {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
+        # BEC detection, AI DLP classifier, and the post-processing relay target.
+        {{- if .Values.inboundGateway.bec.enabled }}
+        - name: BEC_ENABLED
+          value: "true"
+        {{- end }}
+        {{- if .Values.inboundGateway.ai.provider }}
+        - name: AI_PROVIDER
+          value: {{ .Values.inboundGateway.ai.provider | quote }}
+        {{- end }}
+        {{- if .Values.inboundGateway.ai.existingSecret }}
+        - name: AI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.inboundGateway.ai.existingSecret }}
+              key: {{ .Values.inboundGateway.ai.secretKey | default "ai-api-key" }}
+        {{- else if .Values.inboundGateway.ai.apiKey }}
+        - name: AI_API_KEY
+          value: {{ .Values.inboundGateway.ai.apiKey | quote }}
+        {{- end }}
+        {{- if .Values.inboundGateway.relayHost }}
+        - name: INBOUND_RELAY_HOST
+          value: {{ .Values.inboundGateway.relayHost | quote }}
+        {{- end }}
+        {{- with .Values.inboundGateway.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         livenessProbe:
           httpGet:
             path: /healthz
@@ -153,7 +245,10 @@ spec:
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /readyz
+            # /readyz reports 503 until an inbound-relay destination is wired
+            # (INBOUND_RELAY_HOST). In the relay-less topology the gateway is
+            # serviceable on /healthz alone, which is what gates readiness.
+            path: /healthz
             port: health
           initialDelaySeconds: 5
           periodSeconds: 10

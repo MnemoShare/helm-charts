@@ -1,0 +1,19 @@
+{{- if and .Values.ices.enabled .Values.ices.autoscaling.enabled }}
+{{- if not .Values.ices.autoscaling.subscriptionName }}
+{{- fail "ices.autoscaling.enabled requires ices.autoscaling.subscriptionName: the KEDA gcp-pubsub trigger polls a specific Pub/Sub PULL subscription (e.g. projects/<proj>/subscriptions/<sub>). Set it, or disable ices.autoscaling." }}
+{{- end }}
+{{- if .Values.ices.autoscaling.credentialsFromSecret.name }}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-ices-pubsub-auth
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ices
+spec:
+  secretTargetRef:
+  - parameter: GoogleApplicationCredentials
+    name: {{ .Values.ices.autoscaling.credentialsFromSecret.name }}
+    key: {{ .Values.ices.autoscaling.credentialsFromSecret.key | default "gcp-credentials.json" }}
+{{- end }}
+{{- end }}
