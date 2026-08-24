@@ -242,10 +242,11 @@ spec:
             command:
             - /bin/sh
             - -c
-            # busybox pgrep on alpine matches against full /proc/N/cmdline, so
-            # `-x ices` (basename) never matches `/usr/local/bin/ices`.
-            # Drop -x → substring match (works for both procps and busybox).
-            - "pgrep ices"
+            # Anchored full-cmdline match: bare `pgrep ices` matches the probe's
+            # own `/bin/sh -c ...` cmdline (contains "ices") → false-positive
+            # even when the binary is dead. `-f` + ^...$ works on both procps
+            # and busybox pgrep and cannot match the probe shell.
+            - "pgrep -f '^/usr/local/bin/ices$'"
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
@@ -255,7 +256,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - "pgrep ices"
+            - "pgrep -f '^/usr/local/bin/ices$'"
           initialDelaySeconds: 10
           periodSeconds: 15
           timeoutSeconds: 5
