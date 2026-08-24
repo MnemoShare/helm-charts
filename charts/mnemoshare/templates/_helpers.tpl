@@ -458,9 +458,13 @@ standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud
 {{- define "mnemoshare.mailMonitoringEnv" -}}
 {{- if .Values.mailMonitoring.enabled }}
 {{- $base := trimSuffix "/" (.Values.appUrl | default "") -}}
-{{- if $base }}
+{{- /* Gate each URL independently: an explicitly-set webhook URL must emit
+       even when appUrl (and thus $base) is empty. */ -}}
+{{- if or $base .Values.mailMonitoring.googleWebhookUrl }}
 - name: GOOGLE_WEBHOOK_URL
   value: {{ .Values.mailMonitoring.googleWebhookUrl | default (printf "%s/api/v1/integrations/cloud/webhook/google" $base) | quote }}
+{{- end }}
+{{- if or $base .Values.mailMonitoring.microsoftWebhookUrl }}
 - name: MICROSOFT_WEBHOOK_URL
   value: {{ .Values.mailMonitoring.microsoftWebhookUrl | default (printf "%s/api/v1/integrations/cloud/webhook/microsoft" $base) | quote }}
 {{- end }}

@@ -158,9 +158,36 @@ spec:
               key: mongodb-uri
         - name: MONGODB_DATABASE
           value: {{ .Values.mongodb.external.database | quote }}
+        {{- else if eq .Values.database.driver "postgres" }}
+        - name: POSTGRES_DSN
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.postgres }}{{ .Values.existingSecrets.postgres }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: postgres-dsn
         {{- end }}
-        # S3 — inbound attachment persistence (external S3-compatible storage).
-        {{- if not .Values.minio.enabled }}
+        # S3 — inbound attachment persistence.
+        {{- if .Values.minio.enabled }}
+        # MinIO is enabled - use internal MinIO service endpoint
+        - name: S3_ENDPOINT
+          value: "{{ include "mnemoshare.fullname" . }}-minio:9000"
+        - name: S3_REGION
+          value: "us-east-1"
+        - name: S3_BUCKET
+          value: {{ .Values.s3.bucket | default "mnemoshare" | quote }}
+        - name: S3_USE_SSL
+          value: "false"
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.minio.existingSecret }}{{ .Values.minio.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-minio{{ end }}
+              key: rootUser
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.minio.existingSecret }}{{ .Values.minio.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-minio{{ end }}
+              key: rootPassword
+        {{- else }}
+        # External S3-compatible storage
         - name: S3_ENDPOINT
           value: {{ .Values.s3.endpoint | quote }}
         - name: S3_REGION

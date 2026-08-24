@@ -110,6 +110,17 @@ spec:
         {{- else }}
           value: "*"
         {{- end }}
+        {{- if .Values.ices.enabled }}
+        # Standalone ICES hosts mail-monitoring; suppress the embedded
+        # mail-monitoring engine here so it is registered exactly once.
+        - name: ICES_STANDALONE
+          value: "true"
+        {{- end }}
+        {{- if not .Values.ices.enabled }}
+        # No standalone ICES: the API pod's embedded mail-monitoring engine
+        # needs the webhook/interval env when mailMonitoring.enabled.
+        {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
+        {{- end }}
         # Database Configuration (v0.6.0+ supports MongoDB, PostgreSQL, SQLite)
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}

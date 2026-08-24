@@ -107,8 +107,8 @@ spec:
   egress:
     {{- include "mnemoshare.workloadEgressRules" . | nindent 4 }}
 {{- end }}
----
 {{- if .Values.ices.enabled }}
+---
 # Allow egress from the standalone ICES pods (component=ices). ICES runs the
 # SAME app binary as the worker's embedded mail-monitoring host, so it needs the
 # IDENTICAL outbound reachability (Mongo, Redis, ClamAV/ICAP, rich-media/Tika/
