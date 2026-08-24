@@ -131,6 +131,22 @@ spec:
     - Egress
   egress:
     {{- include "mnemoshare.workloadEgressRules" . | nindent 4 }}
+    # Google Pub/Sub + Gmail API (external, 443). ICES-only: the shared
+    # workloadEgressRules must NOT carry this rule — it is included by the
+    # api/worker policies too, and those pods have no business reaching
+    # Pub/Sub or Gmail when ICES hosts mail monitoring.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8       # RFC1918
+              - 172.16.0.0/12    # RFC1918
+              - 192.168.0.0/16   # RFC1918
+              - 169.254.0.0/16   # Cloud IMDS SSRF gate
+              - 100.64.0.0/10    # Tailscale CGNAT
+      ports:
+        - protocol: TCP
+          port: 443
 {{- end }}
 ---
 {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
@@ -515,6 +531,17 @@ spec:
       ports:
         - protocol: TCP
           port: 1344
+    {{- end }}
+    # In-cluster MinIO — same storage pre-flight as the external-S3 rule
+    # below; without it the gateway crashes on boot when minio.enabled=true.
+    {{- if .Values.minio.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio
+      ports:
+        - protocol: TCP
+          port: 9000
     {{- end }}
     # Public HTTPS — inbound-gateway writes raw .eml messages to S3 and on
     # startup verifies the bucket exists. Without this rule the gateway

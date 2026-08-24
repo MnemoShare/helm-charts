@@ -370,23 +370,6 @@ hard way more than once, most recently MSA-46):
     - protocol: TCP
       port: 2525
 {{- end }}
-# ICES standalone — Google Pub/Sub + Gmail API (external, 443). Without this
-# the default-deny policy blackholes mail monitoring (the ICES pod's primary
-# purpose) from first deploy on MinIO-only installs.
-{{- if .Values.ices.enabled }}
-- to:
-    - ipBlock:
-        cidr: 0.0.0.0/0
-        except:
-          - 10.0.0.0/8       # RFC1918
-          - 172.16.0.0/12    # RFC1918
-          - 192.168.0.0/16   # RFC1918
-          - 169.254.0.0/16   # Cloud IMDS SSRF gate
-          - 100.64.0.0/10    # Tailscale CGNAT
-  ports:
-    - protocol: TCP
-      port: 443
-{{- end }}
 # Workflow engine — broad egress for customer-authored workflow steps
 # (call_api, webhook, database_connect, sftp_*, ftps_*, as2_send, swift_*,
 # ebics_*, oftp2, llm_prompt, etc.) which accept arbitrary host:port.
