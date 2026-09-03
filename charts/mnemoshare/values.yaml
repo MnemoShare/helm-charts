@@ -1054,6 +1054,17 @@ redis:
     # Sentinel:  redis-sentinel://:password@sentinel1:26379,sentinel2:26379/0?master=mymaster
     #            redis+sentinel://:password@sentinel1:26379,sentinel2:26379/0?master=mymaster
     # Sentinel URLs enable automatic master failover — recommended for HA production deployments.
+    #
+    # A url may reference $(REDIS_PASSWORD) when `existingSecret` (or
+    # existingSecrets.redis) is set: the chart emits REDIS_PASSWORD from that
+    # secret immediately before REDIS_URL, so the kubelet substitutes it and the
+    # password never appears literally in the rendered manifest. This is the
+    # supported way to point at a shared Sentinel, e.g.
+    #   existingSecret: mnemoshare-redis
+    #   sentinelPort: 26379
+    #   url: "redis-sentinel://:$(REDIS_PASSWORD)@node-0.hl:26379,node-1.hl:26379,node-2.hl:26379/0?master=mymaster"
+    # List every Sentinel; discovery only needs one reachable, so naming all of
+    # them keeps master lookup working while any single node is down.
     url: ""
     # Full REDIS_URL from a secret — preferred when the URL contains an
     # embedded password (e.g. Sentinel URLs) and you don't want it in the
