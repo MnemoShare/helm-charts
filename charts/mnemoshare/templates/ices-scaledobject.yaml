@@ -28,6 +28,10 @@ spec:
       subscriptionName: {{ .Values.ices.autoscaling.subscriptionName | quote }}
       mode: "SubscriptionSize"
       value: {{ .Values.ices.autoscaling.targetBacklogPerPod | quote }}
+      # Without this the scaler reports an empty subscription as a FAILED query
+      # (kedacore/keda#5896), not as 0 — which parks the HPA at
+      # ScalingActive=False, so it cannot scale up when traffic returns.
+      valueIfNull: {{ .Values.ices.autoscaling.valueIfNull | default "0" | quote }}
       {{- if .Values.ices.autoscaling.projectID }}
       projectID: {{ .Values.ices.autoscaling.projectID | quote }}
       {{- end }}
