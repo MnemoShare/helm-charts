@@ -82,6 +82,16 @@ spec:
               name: {{ .Values.redis.external.urlExistingSecret }}
               key: {{ .Values.redis.external.urlExistingSecretKey | default "redis-url" }}
         {{- else if .Values.redis.external.url }}
+        {{- if or .Values.redis.external.existingSecret .Values.existingSecrets.redis }}
+        # Emitted BEFORE REDIS_URL so a url containing $(REDIS_PASSWORD) is
+        # substituted by the kubelet. This is what lets a redis-sentinel:// URL
+        # carry its password without baking the literal into the rendered manifest.
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.redis.external.existingSecret | default .Values.existingSecrets.redis }}
+              key: {{ .Values.existingSecretKeys.redisPassword | default "redis-password" }}
+        {{- end }}
         - name: REDIS_URL
           value: {{ .Values.redis.external.url | quote }}
         {{- else }}
