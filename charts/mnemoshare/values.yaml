@@ -1356,6 +1356,11 @@ ices:
     # Target undelivered messages per pod (SubscriptionSize mode).
     targetBacklogPerPod: "100"
 
+    # Backlog reported when Cloud Monitoring returns no timeseries. Leave "0":
+    # an idle subscription returns nothing, and without this the scaler raises
+    # an error instead, parking the HPA at ScalingActive=False.
+    valueIfNull: "0"
+
     # How often KEDA polls the subscription backlog (seconds).
     pollingInterval: 15
 
