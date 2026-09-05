@@ -1,0 +1,168 @@
+{{- if ne .Values.formatMigrations.mode "automatic" }}
+{{- $fullname := include "mnemoshare.fullname" . }}
+{{- $name := printf "%s-format-migration-mode-fence" $fullname }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration-mode-fence
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-96"
+    "helm.sh/hook-delete-policy": before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration-mode-fence
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-95"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "patch"]
+  {{- if .Values.networkPolicy.enabled }}
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "patch"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration-mode-fence
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-94"
+    "helm.sh/hook-delete-policy": before-hook-creation
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration-mode-fence
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-93"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: format-migration-mode-fence
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    {{- range .Values.formatMigrations.networkPolicy.kubernetesApiTargets }}
+    - to:
+        - ipBlock: { cidr: {{ .cidr | quote }} }
+      ports:
+        - { protocol: TCP, port: {{ .port }} }
+    {{- end }}
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration-mode-fence
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-90"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.formatMigrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: format-migration-mode-fence
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ $name }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: reject-unresolved-state
+          image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
+          imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              job_uid="$(kubectl get job "${JOB_NAME}" -o jsonpath='{.metadata.uid}')"
+              owner_patch='{"metadata":{"ownerReferences":[{"apiVersion":"batch/v1","kind":"Job","name":"'"${JOB_NAME}"'","uid":"'"${job_uid}"'"}]}}'
+              for resource in serviceaccount/{{ $name }} role.rbac.authorization.k8s.io/{{ $name }} rolebinding.rbac.authorization.k8s.io/{{ $name }}{{ if .Values.networkPolicy.enabled }} networkpolicy.networking.k8s.io/{{ $name }}{{ end }}; do
+                kubectl patch "${resource}" --type=merge -p "${owner_patch}"
+              done
+              active="$(kubectl get configmaps \
+                -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=format-migration-state' \
+                -o name)"
+              if [ -n "${active}" ]; then
+                echo "unresolved automatic migration state fences formatMigrations.mode={{ .Values.formatMigrations.mode }}: ${active}" >&2
+                echo "retry the frozen automatic target, or perform an explicit operator-owned state handoff before changing mode" >&2
+                exit 1
+              fi
+          env:
+            - name: JOB_NAME
+              value: {{ $name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

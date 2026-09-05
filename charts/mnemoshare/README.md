@@ -115,6 +115,12 @@ helm install mnemoshare mnemoshare/mnemoshare \
 `formatMigrations.mode` controls the standalone chart's pre-install/pre-upgrade format
 migration orchestration:
 
+> **Safety requirement:** never run `helm upgrade --atomic` with
+> `formatMigrations.mode=automatic`. Helm does not expose the `--atomic` flag to
+> templates, so the chart cannot enforce this at render time. A post-migration
+> upgrade failure followed by automatic rollback could restart old writers
+> against the migrated database. Retry the same target forward instead.
+
 - `automatic` (default) renders a pre-install/pre-upgrade hook using the target application
   image. The plan runs before any disruption. An `ordinary` decision preserves
   the running fleet; a `maintenance` decision removes the API HPA and enabled
@@ -125,7 +131,10 @@ migration orchestration:
   autoscalers. Redis, ClamAV, Step-CA, and MinIO remain running.
 - `operator` renders no migration Job because the operator owns orchestration.
 - `disabled` renders no migration Job for externally coordinated maintenance.
-  Both modes retain only the stale-hook cleanup path.
+  Both modes render a pre-upgrade fence that rejects any retained release-owned
+  automatic-migration state. Resolve it by retrying the exact frozen automatic
+  target, or perform an explicit operator-owned state handoff; changing mode can
+  never silently restart the writers.
 
 The target-image CLI contract is application-owned and provisional until the
 corresponding application release lands. The target image supplies the

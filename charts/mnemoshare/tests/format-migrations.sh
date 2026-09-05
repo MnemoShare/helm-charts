@@ -42,6 +42,10 @@ assert_has() {
 }
 
 assert_has 'name: test-mnemoshare-format-migration'
+if grep -Fq 'name: test-mnemoshare-format-migration-mode-fence' <<<"$render"; then
+  echo 'automatic mode rendered the non-automatic state fence' >&2
+  exit 1
+fi
 assert_has 'image: "docker.io/alpine/k8s@sha256:66dd3f7db6c4cf152b688d83aad11ceed9eb2da0c4e7de1034c7d4ccea1b55ef"'
 application_ref='mnemoshare/mnemoshare@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 if [ "$(grep -Fc "image: \"${application_ref}\"" <<<"$render")" -lt 10 ]; then
@@ -342,6 +346,24 @@ for mode in operator disabled; do
   fi
   if ! grep -Fq '"helm.sh/hook": pre-delete' <<<"$without_hook"; then
     echo "retained-hook cleanup path missing in ${mode} mode" >&2
+    exit 1
+  fi
+  for fence_fragment in \
+    'name: test-mnemoshare-format-migration-mode-fence' \
+    '"helm.sh/hook": pre-upgrade' \
+    'app.kubernetes.io/component=format-migration-state' \
+    "unresolved automatic migration state fences formatMigrations.mode=${mode}" \
+    'explicit operator-owned state handoff'; do
+    if ! grep -Fq "$fence_fragment" <<<"$without_hook"; then
+      echo "retained-state mode fence missing in ${mode}: ${fence_fragment}" >&2
+      exit 1
+    fi
+  done
+done
+
+for safety_doc in charts/mnemoshare/README.md charts/mnemoshare/templates/NOTES.txt; do
+  if ! grep -Fq 'helm upgrade --atomic' "$safety_doc"; then
+    echo "automatic rollback prohibition missing from ${safety_doc}" >&2
     exit 1
   fi
 done
