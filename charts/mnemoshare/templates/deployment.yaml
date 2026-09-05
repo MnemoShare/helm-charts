@@ -33,6 +33,7 @@ metadata:
   name: {{ include "mnemoshare.fullname" . }}
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
+    mnemoshare.io/database-writer: "true"
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
@@ -50,6 +51,7 @@ spec:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: api
+        mnemoshare.io/database-writer: "true"
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -62,7 +64,7 @@ spec:
       - name: {{ .Chart.Name }}
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        image: {{ include "mnemoshare.applicationImage" (dict "root" . "name" "api") | quote }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         ports:
         - name: http

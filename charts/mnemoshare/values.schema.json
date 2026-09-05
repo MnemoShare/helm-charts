@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "$defs": {
+    "applicationImage": {
+      "type": "object",
+      "properties": {
+        "digest": { "type": "string", "pattern": "^(|sha256:[a-f0-9]{64})$" }
+      }
+    },
+    "writer": {
+      "type": "object",
+      "properties": {
+        "image": { "$ref": "#/$defs/applicationImage" }
+      }
+    }
+  },
+  "properties": {
+    "image": { "$ref": "#/$defs/applicationImage" },
+    "workflowWorker": { "$ref": "#/$defs/writer" },
+    "ices": { "$ref": "#/$defs/writer" },
+    "sftpGateway": { "$ref": "#/$defs/writer" },
+    "mcp": { "$ref": "#/$defs/writer" },
+    "formatMigrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["automatic", "operator", "disabled"],
+          "default": "automatic"
+        },
+        "orchestratorImage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": { "type": "string", "minLength": 1 },
+            "digest": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "enum": ["Always", "IfNotPresent", "Never"]
+            }
+          },
+          "required": ["repository", "digest", "pullPolicy"]
+        },
+        "podTerminationTimeout": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(s|m|h)$"
+        },
+        "backoffLimit": { "type": "integer", "minimum": 0 },
+        "activeDeadlineSeconds": { "type": "integer", "minimum": 60 },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "databaseCIDRs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "databasePort": { "type": "integer", "minimum": 0, "maximum": 65535 },
+            "kubernetesApiTargets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "cidr": { "type": "string", "minLength": 1 },
+                  "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+                },
+                "required": ["cidr", "port"]
+              }
+            }
+          },
+          "required": ["databaseCIDRs", "databasePort", "kubernetesApiTargets"]
+        }
+      },
+      "required": ["mode", "orchestratorImage", "podTerminationTimeout", "backoffLimit", "activeDeadlineSeconds"]
+    }
+  }
+}

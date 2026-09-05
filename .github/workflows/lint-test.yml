@@ -48,6 +48,7 @@ jobs:
           # Note: Full install test skipped because the app requires real MongoDB/S3
           helm template mnemoshare charts/mnemoshare \
             --set customerId="ci-test" \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \
@@ -61,6 +62,10 @@ jobs:
             > /dev/null
           echo "✓ Default-path chart templates rendered successfully"
 
+      - name: Validate format migration orchestration
+        if: github.event_name == 'pull_request'
+        run: bash charts/mnemoshare/tests/format-migrations.sh
+
       - name: Validate chart templates (sftpGateway enabled)
         if: github.event_name == 'pull_request'
         run: |
@@ -71,6 +76,7 @@ jobs:
           # PR #12 review's testing recommendation.
           helm template mnemoshare charts/mnemoshare \
             --set customerId="ci-test" \
+            --set formatMigrations.mode=disabled \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \
@@ -96,6 +102,7 @@ jobs:
           # recommendation (MSC-372).
           helm template mnemoshare charts/mnemoshare \
             --set customerId="ci-test" \
+            --set formatMigrations.mode=disabled \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \
@@ -125,6 +132,7 @@ jobs:
           # has a separate keyguard injection point.
           WORKER_BASE=(
             --set customerId="ci-test"
+            --set formatMigrations.mode=disabled
             --set mongodb.external.enabled=true
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test"
             --set s3.bucket="test-bucket"
@@ -189,6 +197,7 @@ jobs:
           # lost the guard.
           BASE_VALUES=(
             --set customerId=ci-test
+            --set formatMigrations.mode=disabled
             --set mongodb.external.enabled=true
             --set mongodb.external.uri=mongodb://test:test@localhost:27017/test
             --set s3.bucket=test-bucket
@@ -241,6 +250,7 @@ jobs:
 
           BASE=(
             --set customerId=ci-test
+            --set formatMigrations.mode=disabled
             --set mongodb.external.enabled=true
             --set mongodb.external.uri=mongodb://test:test@localhost:27017/test
             --set s3.bucket=test-bucket
@@ -395,6 +405,7 @@ jobs:
           set +e
           OUT=$(helm template mnemoshare charts/mnemoshare \
             --set customerId="ci-test" \
+            --set formatMigrations.mode=disabled \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \

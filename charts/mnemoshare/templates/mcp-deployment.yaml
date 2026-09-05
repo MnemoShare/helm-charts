@@ -6,6 +6,7 @@ metadata:
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: mcp
+    mnemoshare.io/database-writer: "true"
 spec:
   replicas: 1
   selector:
@@ -17,6 +18,7 @@ spec:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: mcp
+        mnemoshare.io/database-writer: "true"
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -64,7 +66,7 @@ spec:
       - name: mcp
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: "{{ .Values.mcp.image.repository }}:{{ .Values.mcp.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+        image: {{ include "mnemoshare.applicationImage" (dict "root" . "component" .Values.mcp.image "name" "mcp") | quote }}
         imagePullPolicy: {{ .Values.mcp.image.pullPolicy }}
         # Run the MCP admin server binary. Path matches the canonical
         # Dockerfile install location (`COPY --from=go-builder /bin/mcp-admin

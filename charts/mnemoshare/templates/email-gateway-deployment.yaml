@@ -13,6 +13,7 @@ metadata:
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: email-gateway
+    mnemoshare.io/database-writer: "true"
 spec:
   replicas: {{ .Values.emailGateway.replicas }}
   selector:
@@ -24,6 +25,7 @@ spec:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: email-gateway
+        mnemoshare.io/database-writer: "true"
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -36,7 +38,7 @@ spec:
       - name: email-gateway
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        image: {{ include "mnemoshare.applicationImage" (dict "root" . "name" "emailGateway") | quote }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command: ["/usr/local/bin/email-gateway"]
         ports:

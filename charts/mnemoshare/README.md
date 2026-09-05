@@ -110,6 +110,114 @@ helm install mnemoshare mnemoshare/mnemoshare \
 
 ## Configuration
 
+### Format migrations during standalone upgrades
+
+`formatMigrations.mode` controls the standalone chart's pre-install/pre-upgrade format
+migration orchestration:
+
+- `automatic` (default) renders a pre-install/pre-upgrade hook using the target application
+  image. The plan runs before any disruption. An `ordinary` decision preserves
+  the running fleet; a `maintenance` decision removes the API HPA and enabled
+  workflow-worker/ICES KEDA controllers, scales only the seven application-plane
+  components to zero, waits for their pods to terminate, and then applies and
+  verifies the plan. Maintenance is one-way: old controllers are never restored;
+  Helm applies the target manifests and recreates their desired replicas and
+  autoscalers. Redis, ClamAV, Step-CA, and MinIO remain running.
+- `operator` renders no migration Job because the operator owns orchestration.
+- `disabled` renders no migration Job for externally coordinated maintenance.
+  Both modes retain only the stale-hook cleanup path.
+
+The target-image CLI contract is application-owned and provisional until the
+corresponding application release lands. The target image supplies the
+dedicated executable at this stable path (and `/bin/sh` for the decision-bound
+apply dispatch):
+
+```text
+/usr/local/bin/mnemoshare-migrate plan --contract embedded --result /migration/result.json --output /migration/plan.json
+/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-plan-digest DIGEST [--exclusive]
+/usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-plan-digest DIGEST
+```
+
+The result must be exactly a `decision` plus a 64-character lowercase hexadecimal
+`planDigest`; extra fields, malformed digests, and unknown decisions fail closed
+before any drain. An ordinary plan does not drain, but
+still applies without `--exclusive` so safe `initialize-current` ledger
+baselines persist. A maintenance plan drains first and applies with
+`--exclusive`; the application CLI rejects migration, adoption, and resume
+actions without that flag.
+After a maintenance drain, failures intentionally leave the application plane
+down so a retry can continue forward with the same target image. Failed hook
+Jobs are retained for diagnosis.
+
+Target identity, sticky decision, plan digest, and replica census are captured
+in an immutable, target-keyed ConfigMap before the first scale-down. Retries
+validate it; maintenance can never downgrade to ordinary and digest drift fails
+closed with the plane still down. Controller and autoscaler discovery uses the
+release instance/component labels rather than constructed names, so a
+`nameOverride` or `fullnameOverride` transition still drains and recovers the
+old owners selected by their actual names.
+
+Automatic mode requires `image.digest` in exact lowercase
+`sha256:<64 hex>` form. The API, workflow/background/cloud worker, email and
+inbound gateways, SFTP gateway, ICES, MCP, and all three migration commands are
+rendered from the same `image.repository@image.digest` reference. An enabled
+per-process repository, tag, or digest override must resolve to that exact
+reference or rendering fails because cross-image format compatibility has not
+been proven. Align the writer image values or use operator mode for a
+separately proven rollout. Operator and disabled modes deliberately preserve
+the historical repository/tag rendering behavior.
+
+The hook reads inline MongoDB/PostgreSQL settings from a pre-upgrade target
+snapshot Secret, so it never accidentally consumes the old release's generated
+Secret. A target `existingSecrets.mongodb` or `existingSecrets.postgres`
+reference is copied to a target-keyed immutable Secret before planning and must
+therefore exist before `helm upgrade`.
+Automatic mode rejects SQLite because the hook cannot share the API container's
+local filesystem, and currently rejects every driver other than MongoDB and
+PostgreSQL because no target connection environment is wired for them. Use
+operator/disabled mode to coordinate those migrations externally. The hook pod
+inherits the chart's global `dnsConfig`, `nodeSelector`, `affinity`, and
+`tolerations`, so it reaches the database from the same scheduled environment
+as the application workloads.
+
+The Kubernetes orchestrator runs from the shell-capable `alpine/k8s:1.31.0`
+toolbox at its multi-architecture digest (rather than the distroless upstream
+kubectl image). The default digest is pinned in `values.yaml`; changing it is an
+explicit supply-chain decision. Resource probes use
+`kubectl get --ignore-not-found -o name`: a genuine absence is skipped, while
+authorization, discovery, and transport failures still fail the hook.
+When chart-level NetworkPolicy is enabled, the hook pods participate in the
+same default-deny selector and receive dedicated hook-scoped egress policies.
+Set `formatMigrations.networkPolicy.databaseCIDRs` and
+`kubernetesApiTargets` to the exact destinations observed by your CNI; the
+database port defaults to 27017 for MongoDB or 5432 for PostgreSQL and can be
+overridden with `databasePort`. The migration policy permits only DNS, those
+database targets, and those API targets; cleanup has no database access.
+
+The pre-install hook requires a fresh database to plan ordinary, then applies and
+verifies its current-format baseline before any writer boots; a maintenance
+decision on a fresh install fails closed. If plan fails, no workloads were touched. If an
+ordinary apply/verify fails, the old fleet remains running. If maintenance
+apply/verify fails after drain, inspect the retained hook Job and retry the same
+target chart/image forward; do not roll back across a possibly applied format
+migration. The retry replaces hook support resources and resumes from the
+persisted ledger state.
+
+The narrowly scoped ServiceAccount, Role, RoleBinding, NetworkPolicy, and target snapshot use
+`before-hook-creation` cleanup and therefore persist until the next automatic
+upgrade attempt replaces them. This is intentional: Helm executes weighted
+hooks serially and considers these non-Job resources successful immediately;
+adding `hook-succeeded` would delete them before the later migration Job could
+use them. Instead, the orchestrator attaches the support resources to its own
+Job UID. The Job's `hook-succeeded` deletion then garbage-collects them; a
+failed Job, desired-replica ConfigMap, and prerequisites remain for diagnosis.
+A separate cleanup hook runs only after a successful automatic install/upgrade,
+or on uninstall. Failed active evidence is not removed merely by switching modes.
+The cleanup removes superseded state and credential snapshots, then deletes the narrowly scoped support objects; its own
+support is likewise Job-owned and garbage-collected. Because pre-delete hooks
+come from the installed chart, deployments predating this cleanup path should
+upgrade to this chart before uninstalling.
+
 ### Required Values
 
 | Parameter | Description | Example |
@@ -129,6 +237,7 @@ helm install mnemoshare mnemoshare/mnemoshare \
 |-----------|-------------|---------|
 | `replicaCount` | Number of replicas | `2` |
 | `image.tag` | Image tag | `latest` |
+| `image.digest` | Immutable application/writer digest required by automatic format migrations | Pinned for the chart `appVersion` |
 | `ingress.enabled` | Enable ingress | `true` |
 | `autoscaling.enabled` | Enable HPA | `false` |
 | `sendgrid.apiKey` | SendGrid API key for emails | `""` |
