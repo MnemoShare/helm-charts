@@ -3,6 +3,15 @@ MnemoShare {{ .Chart.AppVersion }} deployed successfully.
 
 Release: {{ .Release.Name }}
 Namespace: {{ .Release.Namespace }}
+{{- if eq .Values.formatMigrations.mode "automatic" }}
+
+FORMAT MIGRATION SAFETY
+-----------------------
+  NEVER use `helm upgrade --atomic` with formatMigrations.mode=automatic.
+  Helm does not expose the --atomic flag to chart templates, so this chart
+  cannot reject it automatically. A rollback after a maintenance migration
+  could restart the old writer image against the migrated database.
+{{- end }}
 
 {{- if .Values.ingress.enabled }}
 

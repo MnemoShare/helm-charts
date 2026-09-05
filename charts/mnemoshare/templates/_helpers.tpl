@@ -5,6 +5,17 @@ Expand the name of the chart.
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/* Full target contract digest. Names use a prefix; every persisted object also
+stores and validates the complete digest. Hashing all values deliberately makes
+credentials, database identity, scheduling and policy part of the attempt. */}}
+{{- define "mnemoshare.formatMigrationTargetDigest" -}}
+{{- printf "%s\n%s" (include "mnemoshare.applicationImage" (dict "root" . "name" "migration")) (toJson .Values) | sha256sum -}}
+{{- end -}}
+
+{{- define "mnemoshare.formatMigrationTargetSuffix" -}}
+{{- include "mnemoshare.formatMigrationTargetDigest" . | trunc 24 -}}
+{{- end -}}
+
 {{/*
 Create a default fully qualified app name.
 */}}
@@ -57,6 +68,36 @@ Selector labels land in spec.selector.matchLabels which is immutable.
 {{- define "mnemoshare.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "mnemoshare.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Resolve an application database-writer image. Automatic format migration mode
+closes every writer over one immutable global repository@digest; other modes
+retain the chart's historical repository:tag fallback behavior.
+Input: dict "root" . ["component" .Values.<component>.image] ["name" string]
+*/}}
+{{- define "mnemoshare.applicationImage" -}}
+{{- $root := .root -}}
+{{- $component := .component | default dict -}}
+{{- $name := .name | default "application" -}}
+{{- $globalRepo := required "image.repository is required" $root.Values.image.repository -}}
+{{- if eq $root.Values.formatMigrations.mode "automatic" -}}
+  {{- $globalDigest := required "formatMigrations.mode=automatic requires image.digest pinned as sha256:<64 lowercase hex>" $root.Values.image.digest -}}
+  {{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $globalDigest) -}}
+    {{- fail "formatMigrations.mode=automatic requires image.digest pinned as sha256:<64 lowercase hex>" -}}
+  {{- end -}}
+  {{- $repo := $component.repository | default $globalRepo -}}
+  {{- $digest := $component.digest | default $globalDigest -}}
+  {{- $tag := $component.tag | default "" -}}
+  {{- if or (ne $repo $globalRepo) (ne $digest $globalDigest) (ne $tag "") -}}
+    {{- fail (printf "formatMigrations.mode=automatic requires %s image to resolve exactly to %s@%s; per-process repository, digest, or tag override diverges" $name $globalRepo $globalDigest) -}}
+  {{- end -}}
+  {{- printf "%s@%s" $globalRepo $globalDigest -}}
+{{- else -}}
+  {{- $repo := $component.repository | default $globalRepo -}}
+  {{- $tag := $component.tag | default $root.Values.image.tag | default $root.Chart.AppVersion -}}
+  {{- printf "%s:%s" $repo $tag -}}
+{{- end -}}
 {{- end }}
 
 {{/*

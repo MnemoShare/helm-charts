@@ -1,0 +1,95 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $apiTargets := .Values.formatMigrations.networkPolicy.kubernetesApiTargets }}
+{{- if not $apiTargets }}
+{{- fail "networkPolicy.enabled requires formatMigrations.networkPolicy.kubernetesApiTargets so hook pods can reach the Kubernetes API without unrestricted egress" }}
+{{- end }}
+{{- $fullname := include "mnemoshare.fullname" . }}
+{{- $cleanupHooks := "pre-delete" }}
+{{- if eq .Values.formatMigrations.mode "automatic" }}
+{{- $cleanupHooks = "post-install,post-upgrade,pre-delete" }}
+{{- end }}
+{{- if eq .Values.formatMigrations.mode "automatic" }}
+{{- if not .Values.formatMigrations.networkPolicy.databaseCIDRs }}
+{{- fail "networkPolicy.enabled with formatMigrations.mode=automatic requires formatMigrations.networkPolicy.databaseCIDRs" }}
+{{- end }}
+{{- $databasePort := .Values.formatMigrations.networkPolicy.databasePort | int }}
+{{- if eq $databasePort 0 }}
+{{- $databasePort = ternary 27017 5432 (eq (.Values.database.driver | default "mongodb") "mongodb") }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-format-migration
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-46"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: format-migration
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        {{- range .Values.formatMigrations.networkPolicy.databaseCIDRs }}
+        - ipBlock: { cidr: {{ . | quote }} }
+        {{- end }}
+      ports:
+        - { protocol: TCP, port: {{ $databasePort }} }
+    {{- range $apiTargets }}
+    - to:
+        - ipBlock: { cidr: {{ .cidr | quote }} }
+      ports:
+        - { protocol: TCP, port: {{ .port }} }
+    {{- end }}
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-format-migration-cleanup
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration-cleanup
+  annotations:
+    "helm.sh/hook": {{ $cleanupHooks }}
+    "helm.sh/hook-weight": "-77"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: format-migration-cleanup
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    {{- range $apiTargets }}
+    - to:
+        - ipBlock: { cidr: {{ .cidr | quote }} }
+      ports:
+        - { protocol: TCP, port: {{ .port }} }
+    {{- end }}
+{{- end }}

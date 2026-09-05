@@ -1,0 +1,134 @@
+{{- $cleanupHooks := "pre-delete" }}
+{{- if eq .Values.formatMigrations.mode "automatic" }}
+{{- $cleanupHooks = "post-install,post-upgrade,pre-delete" }}
+{{- end }}
+{{- $fullname := include "mnemoshare.fullname" . }}
+{{- $cleanupName := printf "%s-format-migration-cleanup" $fullname }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $cleanupName }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration-cleanup
+  annotations:
+    "helm.sh/hook": {{ $cleanupHooks }}
+    "helm.sh/hook-weight": "-80"
+    "helm.sh/hook-delete-policy": before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $cleanupName }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration-cleanup
+  annotations:
+    "helm.sh/hook": {{ $cleanupHooks }}
+    "helm.sh/hook-weight": "-79"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "serviceaccounts", "configmaps"]
+    verbs: ["get", "list", "patch", "delete", "deletecollection"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "delete", "deletecollection"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "patch", "delete", "deletecollection"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "patch", "delete", "deletecollection"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $cleanupName }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration-cleanup
+  annotations:
+    "helm.sh/hook": {{ $cleanupHooks }}
+    "helm.sh/hook-weight": "-78"
+    "helm.sh/hook-delete-policy": before-hook-creation
+subjects:
+  - kind: ServiceAccount
+    name: {{ $cleanupName }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $cleanupName }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $cleanupName }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration-cleanup
+  annotations:
+    "helm.sh/hook": {{ $cleanupHooks }}
+    "helm.sh/hook-weight": "-70"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: {{ .Values.formatMigrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "mnemoshare.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: format-migration-cleanup
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ $cleanupName }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: cleanup
+          image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
+          imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              job_uid="$(kubectl get job "${JOB_NAME}" -o jsonpath='{.metadata.uid}')"
+              owner_patch='{"metadata":{"ownerReferences":[{"apiVersion":"batch/v1","kind":"Job","name":"'"${JOB_NAME}"'","uid":"'"${job_uid}"'"}]}}'
+              for resource in \
+                serviceaccount/{{ $cleanupName }} \
+                role.rbac.authorization.k8s.io/{{ $cleanupName }} \
+                rolebinding.rbac.authorization.k8s.io/{{ $cleanupName }} \
+                networkpolicy.networking.k8s.io/{{ $cleanupName }}; do
+                resource_name="$(kubectl get "${resource}" --ignore-not-found -o name)"
+                if [ -n "${resource_name}" ]; then
+                  kubectl patch "${resource_name}" --type=merge -p "${owner_patch}"
+                fi
+              done
+              kubectl delete secrets,configmaps,jobs,serviceaccounts,roles.rbac.authorization.k8s.io,rolebindings.rbac.authorization.k8s.io,networkpolicies.networking.k8s.io \
+                -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=format-migration' \
+                --ignore-not-found
+              kubectl delete configmaps \
+                -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=format-migration-state' \
+                --ignore-not-found
+          env:
+            - name: JOB_NAME
+              value: {{ $cleanupName }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

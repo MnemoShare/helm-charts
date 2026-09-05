@@ -24,6 +24,9 @@ replicaCount: 2
 image:
   repository: mnemoshare/mnemoshare
   pullPolicy: IfNotPresent
+  # Required in formatMigrations.mode=automatic. Every application writer and
+  # migration command then runs this exact repository@sha256 image.
+  digest: sha256:f017d0f3329ca3aa9e10bea212c2e6cac80553c225f8f261dfa3f9a3b9425695
   # Overrides the image tag whose default is the chart appVersion.
   # Leave empty to use appVersion from Chart.yaml (recommended)
   tag: ""
@@ -31,6 +34,31 @@ image:
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
+
+# Standalone format-migration orchestration. In automatic mode a pre-upgrade
+# hook validates the target image's embedded migration contract before it
+# drains the application plane, then applies and verifies the migration. The
+# operator owns this lifecycle in operator mode; disabled is an explicit
+# escape hatch for externally coordinated maintenance.
+formatMigrations:
+  mode: automatic
+  orchestratorImage:
+    # alpine/k8s is shell-capable; unlike registry.k8s.io/kubectl it includes
+    # /bin/sh and the cmp utility used by the fail-closed orchestration script.
+    repository: docker.io/alpine/k8s
+    digest: sha256:66dd3f7db6c4cf152b688d83aad11ceed9eb2da0c4e7de1034c7d4ccea1b55ef
+    pullPolicy: IfNotPresent
+  podTerminationTimeout: 10m
+  backoffLimit: 1
+  activeDeadlineSeconds: 1800
+  networkPolicy:
+    # Required when chart-level networkPolicy.enabled=true. CIDRs must match
+    # the CNI's observed destinations (service IP before DNAT or endpoint IP).
+    databaseCIDRs: []
+    databasePort: 0
+    kubernetesApiTargets: []
+    # - cidr: 10.96.0.1/32
+    #   port: 443
 
 # Extra labels merged into every rendered resource's metadata.labels.
 # NOT used in spec.selector — selector labels are deliberately frozen
@@ -1136,6 +1164,7 @@ workflowWorker:
     # image.repository + image.tag drives every app-entrypoint component.
     repository: ""
     tag: ""  # Defaults to chart appVersion
+    digest: ""  # Automatic mode defaults to and must equal image.digest.
     pullPolicy: IfNotPresent
 
   # Worker concurrency (tasks per worker)
@@ -1302,6 +1331,7 @@ ices:
     # image.repository + image.tag drives every app-entrypoint component.
     repository: ""
     tag: ""  # Defaults to chart appVersion
+    digest: ""  # Automatic mode defaults to and must equal image.digest.
     pullPolicy: IfNotPresent
 
   # Log level for the ICES pod.
@@ -1815,6 +1845,7 @@ mcp:
     # Uses same image as main app (mcp-admin is a separate entrypoint)
     repository: mnemoshare/mnemoshare
     tag: ""  # Defaults to chart appVersion
+    digest: ""  # Automatic mode defaults to and must equal image.digest.
     pullPolicy: IfNotPresent
 
   # Transport configuration
@@ -1947,6 +1978,7 @@ sftpGateway:
     pullPolicy: IfNotPresent
     # Defaults to chart appVersion when empty.
     tag: ""
+    digest: ""  # Automatic mode defaults to and must equal image.digest.
 
   # Entrypoint override. Required when image.repository points at the unified
   # ghcr.io/mnemoshare/mnemoshare image (whose default ENTRYPOINT runs the

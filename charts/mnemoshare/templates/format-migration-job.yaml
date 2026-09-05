@@ -1,0 +1,362 @@
+{{- define "mnemoshare.formatMigrationEnv" }}
+- name: DB_DRIVER
+  value: {{ .Values.database.driver | default "mongodb" | quote }}
+{{- if eq (.Values.database.driver | default "mongodb") "mongodb" }}
+- name: MONGODB_URI
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "mnemoshare.fullname" . }}-format-db-{{ include "mnemoshare.formatMigrationTargetSuffix" . }}
+      key: mongodb-uri
+- name: MONGODB_DATABASE
+  value: {{ .Values.mongodb.external.database | quote }}
+{{- else if eq .Values.database.driver "postgres" }}
+- name: POSTGRES_DSN
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "mnemoshare.fullname" . }}-format-db-{{ include "mnemoshare.formatMigrationTargetSuffix" . }}
+      key: postgres-dsn
+{{- else if eq .Values.database.driver "sqlite" }}
+- name: SQLITE_PATH
+  value: {{ .Values.database.sqlite.path | default "/var/lib/mnemoshare/mnemoshare.db" | quote }}
+{{- end }}
+{{- end }}
+{{- if eq .Values.formatMigrations.mode "automatic" }}
+{{- $driver := .Values.database.driver | default "mongodb" }}
+{{- if not (has $driver (list "mongodb" "postgres")) }}
+{{- fail (printf "formatMigrations.mode=automatic supports only database.driver=mongodb or postgres, but got %q: no target connection environment is wired for this driver. Use operator/disabled mode and coordinate the migration externally." $driver) }}
+{{- end }}
+{{- $fullname := include "mnemoshare.fullname" . }}
+{{- $migrationImage := include "mnemoshare.applicationImage" (dict "root" . "name" "migration") }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullname }}-format-migration
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-40"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.formatMigrations.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.formatMigrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "mnemoshare.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: format-migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ $fullname }}-format-migration
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: fence-active-migration-state
+          image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
+          imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              expected={{ printf "%s-format-state-%s" $fullname (include "mnemoshare.formatMigrationTargetSuffix" .) | quote }}
+              active="$(kubectl get configmaps \
+                -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=format-migration-state' \
+                -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
+              for state in ${active}; do
+                if [ "${state}" != "${expected}" ]; then
+                  echo "retained migration state ${state} fences target ${expected}; retry the frozen target or resolve it explicitly" >&2
+                  exit 1
+                fi
+              done
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+        {{- if or (and (eq $driver "mongodb") .Values.existingSecrets.mongodb) (and (eq $driver "postgres") .Values.existingSecrets.postgres) }}
+        - name: snapshot-target-credentials
+          image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
+          imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              source={{ if eq $driver "mongodb" }}{{ .Values.existingSecrets.mongodb | quote }}{{ else }}{{ .Values.existingSecrets.postgres | quote }}{{ end }}
+              key={{ if eq $driver "mongodb" }}mongodb-uri{{ else }}postgres-dsn{{ end }}
+              target={{ printf "%s-format-db-%s" $fullname (include "mnemoshare.formatMigrationTargetSuffix" .) | quote }}
+              target_digest={{ include "mnemoshare.formatMigrationTargetDigest" . | quote }}
+              source_identity="${source}/${key}"
+              if ! kubectl get secret "${target}" >/dev/null 2>&1; then
+                value="$(kubectl get secret "${source}" -o jsonpath="{.data.${key}}")"
+                [ -n "${value}" ] || { echo "source credential ${source}/${key} is empty" >&2; exit 1; }
+                content_hash="$(printf %s "${value}" | base64 -d | sha256sum | cut -d' ' -f1)"
+                kubectl create secret generic "${target}" --from-literal="${key}=placeholder" --dry-run=client -o json | \
+                  jq --arg key "${key}" --arg value "${value}" --arg target "${target_digest}" --arg source "${source_identity}" --arg hash "${content_hash}" '.immutable=true | .type="Opaque" | .data={($key):$value} | .metadata.labels={"app.kubernetes.io/instance":"{{ .Release.Name }}","app.kubernetes.io/component":"format-migration"} | .metadata.annotations={"mnemoshare.io/format-migration-target":$target,"mnemoshare.io/format-migration-owner":"{{ .Release.Namespace }}/{{ .Release.Name }}","mnemoshare.io/format-migration-credential-source":$source,"mnemoshare.io/format-migration-credential-sha256":$hash}' | \
+                  kubectl create -f -
+              fi
+              secret_json="$(kubectl get secret "${target}" -o json)"
+              printf %s "${secret_json}" | jq -e --arg key "${key}" --arg target "${target_digest}" --arg source "${source_identity}" '
+                .immutable == true and .type == "Opaque" and
+                .metadata.labels["app.kubernetes.io/instance"] == "{{ .Release.Name }}" and
+                .metadata.labels["app.kubernetes.io/component"] == "format-migration" and
+                .metadata.annotations["mnemoshare.io/format-migration-target"] == $target and
+                .metadata.annotations["mnemoshare.io/format-migration-owner"] == "{{ .Release.Namespace }}/{{ .Release.Name }}" and
+                .metadata.annotations["mnemoshare.io/format-migration-credential-source"] == $source and
+                (.data | keys) == [$key]' >/dev/null
+              claimed_hash="$(printf %s "${secret_json}" | jq -r '.metadata.annotations["mnemoshare.io/format-migration-credential-sha256"]')"
+              actual_hash="$(printf %s "${secret_json}" | jq -r --arg key "${key}" '.data[$key]' | base64 -d | sha256sum | cut -d' ' -f1)"
+              [ "${claimed_hash}" = "${actual_hash}" ] && printf %s "${claimed_hash}" | grep -Eq '^[a-f0-9]{64}$' || { echo 'credential snapshot identity mismatch' >&2; exit 1; }
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+        {{- end }}
+        # A failure here leaves every existing workload and autoscaler intact.
+        - name: plan-before-drain
+          image: {{ $migrationImage | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/mnemoshare-migrate"]
+          args: ["plan", "--contract", "embedded", "--result", "/migration/result.json", "--output", "/migration/plan.json"]
+          env:
+            {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: migration-plan
+              mountPath: /migration
+        # From this point onward failures deliberately leave the application
+        # plane down. A retry continues forward against the same target image.
+        - name: drain-application-plane
+          image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
+          imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              job_uid="$(kubectl get job "${JOB_NAME}" -o jsonpath='{.metadata.uid}')"
+              owner_patch='{"metadata":{"ownerReferences":[{"apiVersion":"batch/v1","kind":"Job","name":"'"${JOB_NAME}"'","uid":"'"${job_uid}"'"}]}}'
+              attach_owner_if_present() {
+                resource_name="$(kubectl get "$1" --ignore-not-found -o name)"
+                if [ -n "${resource_name}" ]; then
+                  kubectl patch "${resource_name}" --type=merge -p "${owner_patch}"
+                fi
+              }
+              attach_owner_if_present serviceaccount/{{ $fullname }}-format-migration
+              attach_owner_if_present role.rbac.authorization.k8s.io/{{ $fullname }}-format-migration
+              attach_owner_if_present rolebinding.rbac.authorization.k8s.io/{{ $fullname }}-format-migration
+              attach_owner_if_present networkpolicy.networking.k8s.io/{{ $fullname }}-format-migration
+
+              target_digest={{ include "mnemoshare.formatMigrationTargetDigest" . | quote }}
+              operation={{ if .Release.IsInstall }}install{{ else }}upgrade{{ end }}
+              state_name={{ printf "%s-format-state-%s" $fullname (include "mnemoshare.formatMigrationTargetSuffix" .) | quote }}
+              state_resource="configmap/${state_name}"
+              jq -e 'type == "object" and (keys | sort) == ["decision","planDigest"] and
+                (.decision == "ordinary" or .decision == "maintenance") and
+                (.planDigest | test("^[a-f0-9]{64}$"))' /migration/result.json >/dev/null
+              decision="$(jq -r .decision /migration/result.json)"
+              plan_digest="$(jq -r .planDigest /migration/result.json)"
+
+              if kubectl get "${state_resource}" >/dev/null 2>&1; then
+                state_json="$(kubectl get "${state_resource}" -o json)"
+                printf %s "${state_json}" | jq -e --arg target "${target_digest}" --arg operation "${operation}" --arg decision "${decision}" '
+                  .immutable == true and
+                  .metadata.labels["app.kubernetes.io/instance"] == "{{ .Release.Name }}" and
+                  .metadata.labels["app.kubernetes.io/component"] == "format-migration-state" and
+                  .metadata.annotations["mnemoshare.io/format-migration-target"] == $target and
+                  .metadata.annotations["mnemoshare.io/format-migration-owner"] == "{{ .Release.Namespace }}/{{ .Release.Name }}" and
+                  (.data | keys | sort) == ["decision","desired-replicas","operation","plan-digest","snapshot-sha256"] and
+                  (.data.operation == $operation or
+                    (.data.operation == "install" and $operation == "upgrade" and
+                     .data.decision == "ordinary" and $decision == "ordinary"))' >/dev/null
+                stored_target="$(kubectl get "${state_resource}" -o jsonpath='{.metadata.annotations.mnemoshare\.io/format-migration-target}')"
+                stored_decision="$(kubectl get "${state_resource}" -o jsonpath='{.data.decision}')"
+                stored_digest="$(kubectl get "${state_resource}" -o jsonpath='{.data.plan-digest}')"
+                [ "${stored_target}" = "${target_digest}" ] || { echo 'migration state target mismatch' >&2; exit 1; }
+                printf %s "${stored_digest}" | grep -Eq '^[a-f0-9]{64}$' || { echo 'invalid persisted plan digest' >&2; exit 1; }
+                if [ "${stored_digest}" != "${plan_digest}" ]; then
+                  echo 'replanned migration digest drifted from the durable target plan' >&2
+                  exit 1
+                fi
+                if [ "${stored_decision}" = maintenance ]; then
+                  decision=maintenance
+                elif [ "${stored_decision}" != ordinary ] || [ "${decision}" != ordinary ]; then
+                  echo 'persisted ordinary decision cannot be changed in place' >&2
+                  exit 1
+                fi
+                kubectl get "${state_resource}" -o jsonpath='{.data.desired-replicas}' > /migration/desired-replicas
+                snapshot_hash="$(sha256sum /migration/desired-replicas | cut -d' ' -f1)"
+                [ "${snapshot_hash}" = "$(printf %s "${state_json}" | jq -r '.data["snapshot-sha256"]')" ] || { echo 'writer snapshot content mismatch' >&2; exit 1; }
+              else
+                # The writer label is canonical from this chart onward. The
+                # component union is a bounded rollout bridge for controllers
+                # created by the immediately preceding chart, which cannot
+                # retroactively carry the new metadata label before this hook.
+                controllers="$({
+                  kubectl get deployments,statefulsets -l 'app.kubernetes.io/instance={{ .Release.Name }},mnemoshare.io/database-writer=true' -o name
+                  kubectl get deployments,statefulsets -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component in (api,workflow-worker,ices,inbound-gateway,email-gateway,sftp-gateway,mcp)' -o name
+                } | sort -u)"
+                : > /migration/desired-replicas
+                for resource in ${controllers}; do
+                  replicas="$(kubectl get "${resource}" -o jsonpath='{.spec.replicas}')"
+                  printf '%s=%s\n' "${resource}" "${replicas}" >> /migration/desired-replicas
+                done
+                if [ "${decision}" = maintenance ] && [ ! -s /migration/desired-replicas ]; then
+                  echo 'a fresh install cannot satisfy a maintenance plan safely' >&2
+                  exit 1
+                fi
+                snapshot_hash="$(sha256sum /migration/desired-replicas | cut -d' ' -f1)"
+                kubectl create configmap "${state_name}" \
+                  --from-literal=decision="${decision}" \
+                  --from-literal=plan-digest="${plan_digest}" \
+                  --from-literal=operation="${operation}" \
+                  --from-literal=snapshot-sha256="${snapshot_hash}" \
+                  --from-file=desired-replicas=/migration/desired-replicas \
+                  --dry-run=client -o json | jq --arg target "${target_digest}" \
+                    '.immutable=true | .metadata.labels={"app.kubernetes.io/instance":"{{ .Release.Name }}","app.kubernetes.io/component":"format-migration-state"} | .metadata.annotations={"mnemoshare.io/format-migration-target":$target,"mnemoshare.io/format-migration-owner":"{{ .Release.Namespace }}/{{ .Release.Name }}"}' | \
+                  kubectl create -f -
+              fi
+              if [ "${decision}" = maintenance ] && [ ! -s /migration/desired-replicas ]; then
+                echo 'maintenance requires a nonempty exact prior writer census' >&2
+                exit 1
+              fi
+              while IFS='=' read -r resource replicas; do
+                [ -n "${resource}" ] || continue
+                case "${resource}" in deployment/*|statefulset/*) ;; *) echo "invalid persisted writer ${resource}" >&2; exit 1;; esac
+                printf %s "${replicas}" | grep -Eq '^[0-9]+$' || { echo "invalid persisted replica count" >&2; exit 1; }
+                instance="$(kubectl get "${resource}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/instance}')"
+                component="$(kubectl get "${resource}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/component}')"
+                [ "${instance}" = "{{ .Release.Name }}" ] || { echo "persisted writer is not release-owned" >&2; exit 1; }
+                case "${component}" in api|workflow-worker|ices|inbound-gateway|email-gateway|sftp-gateway|mcp) ;; *) echo "persisted resource is not an application writer" >&2; exit 1;; esac
+              done < /migration/desired-replicas
+              printf %s "${decision}" > /migration/decision
+              printf %s "${plan_digest}" > /migration/plan-digest
+              case "${decision}" in
+                ordinary)
+                  echo "format migration plan is ordinary; leaving the application plane running"
+                  exit 0
+                  ;;
+                maintenance)
+                  echo "format migration plan requires maintenance; draining the application plane"
+                  ;;
+                *)
+                  echo "invalid or missing migration decision: expected ordinary or maintenance" >&2
+                  exit 1
+                  ;;
+              esac
+              writer_names="$(cut -d/ -f2 /migration/desired-replicas | cut -d= -f1)"
+              for hpa in $(kubectl get hpa -l 'app.kubernetes.io/instance={{ .Release.Name }}' -o name); do
+                target="$(kubectl get "${hpa}" -o jsonpath='{.spec.scaleTargetRef.name}')"
+                if printf '%s\n' "${writer_names}" | grep -Fxq "${target}"; then kubectl delete "${hpa}"; fi
+              done
+              keda_resources="$(kubectl api-resources --api-group=keda.sh -o name)"
+              case "${keda_resources}" in
+                *scaledobjects.keda.sh*)
+                  for scaled in $(kubectl get scaledobject.keda.sh -l 'app.kubernetes.io/instance={{ .Release.Name }}' -o name); do
+                    target="$(kubectl get "${scaled}" -o jsonpath='{.spec.scaleTargetRef.name}')"
+                    if printf '%s\n' "${writer_names}" | grep -Fxq "${target}"; then kubectl delete "${scaled}"; fi
+                  done
+                  ;;
+              esac
+              while IFS='=' read -r resource replicas; do
+                [ -n "${resource}" ] || continue
+                kubectl scale "${resource}" --replicas=0
+              done < /migration/desired-replicas
+              for component in api workflow-worker ices inbound-gateway email-gateway sftp-gateway mcp; do
+                selector='app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component='"${component}"
+                selected_pods="$(kubectl get pods -l "${selector}" -o name)"
+                if [ -n "${selected_pods}" ]; then
+                  kubectl wait --for=delete pod -l "${selector}" --timeout={{ .Values.formatMigrations.podTerminationTimeout }}
+                fi
+              done
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: JOB_NAME
+              value: {{ $fullname }}-format-migration
+          volumeMounts:
+            - name: migration-plan
+              mountPath: /migration
+        - name: apply
+          image: {{ $migrationImage | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              if printf %s ordinary | cmp -s - /migration/decision || \
+                 printf 'ordinary\n' | cmp -s - /migration/decision; then
+                decision=ordinary
+              elif printf %s maintenance | cmp -s - /migration/decision || \
+                   printf 'maintenance\n' | cmp -s - /migration/decision; then
+                decision=maintenance
+              else
+                echo "migration decision must be byte-exact ordinary or maintenance" >&2
+                exit 1
+              fi
+              case "${decision}" in
+                ordinary)
+                  exec /usr/local/bin/mnemoshare-migrate apply \
+                    --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)"
+                  ;;
+                maintenance)
+                  exec /usr/local/bin/mnemoshare-migrate apply \
+                    --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" --exclusive
+                  ;;
+                *)
+                  echo "invalid or missing migration decision: expected ordinary or maintenance" >&2
+                  exit 1
+                  ;;
+              esac
+          env:
+            {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: migration-plan
+              mountPath: /migration
+        - name: verify
+          image: {{ $migrationImage | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)"
+          env:
+            {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: migration-plan
+              mountPath: /migration
+      containers:
+        - name: migration-complete
+          image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
+          imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              echo 'migration verified; Helm must now apply the target writers while the old plane remains fenced'
+          env:
+            - name: JOB_NAME
+              value: {{ $fullname }}-format-migration
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: migration-plan
+              mountPath: /migration
+      volumes:
+        - name: migration-plan
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

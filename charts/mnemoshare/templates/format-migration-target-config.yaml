@@ -1,0 +1,34 @@
+{{- if and
+      (eq .Values.formatMigrations.mode "automatic")
+      (or
+        (and (eq (.Values.database.driver | default "mongodb") "mongodb") (not .Values.existingSecrets.mongodb))
+        (and (eq .Values.database.driver "postgres") (not .Values.existingSecrets.postgres))
+      )
+}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-format-db-{{ include "mnemoshare.formatMigrationTargetSuffix" . }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: format-migration
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-45"
+    # Helm executes weighted hooks serially and considers a Secret ready as
+    # soon as it is created. hook-succeeded would delete this before the later
+    # migration Job can read it, so the next attempt replaces it instead.
+    "helm.sh/hook-delete-policy": before-hook-creation
+    mnemoshare.io/format-migration-target: {{ include "mnemoshare.formatMigrationTargetDigest" . }}
+    mnemoshare.io/format-migration-owner: {{ printf "%s/%s" .Release.Namespace .Release.Name | quote }}
+    mnemoshare.io/format-migration-credential-source: inline
+    mnemoshare.io/format-migration-credential-sha256: {{ if eq (.Values.database.driver | default "mongodb") "mongodb" }}{{ .Values.mongodb.external.uri | sha256sum }}{{ else }}{{ .Values.postgres.dsn | sha256sum }}{{ end }}
+immutable: true
+type: Opaque
+stringData:
+  {{- if eq (.Values.database.driver | default "mongodb") "mongodb" }}
+  mongodb-uri: {{ .Values.mongodb.external.uri | quote }}
+  {{- else if eq .Values.database.driver "postgres" }}
+  postgres-dsn: {{ .Values.postgres.dsn | quote }}
+  {{- end }}
+{{- end }}
