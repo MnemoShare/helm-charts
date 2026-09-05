@@ -160,14 +160,16 @@ spec:
 
               if kubectl get "${state_resource}" >/dev/null 2>&1; then
                 state_json="$(kubectl get "${state_resource}" -o json)"
-                printf %s "${state_json}" | jq -e --arg target "${target_digest}" --arg operation "${operation}" '
+                printf %s "${state_json}" | jq -e --arg target "${target_digest}" --arg operation "${operation}" --arg decision "${decision}" '
                   .immutable == true and
                   .metadata.labels["app.kubernetes.io/instance"] == "{{ .Release.Name }}" and
                   .metadata.labels["app.kubernetes.io/component"] == "format-migration-state" and
                   .metadata.annotations["mnemoshare.io/format-migration-target"] == $target and
                   .metadata.annotations["mnemoshare.io/format-migration-owner"] == "{{ .Release.Namespace }}/{{ .Release.Name }}" and
                   (.data | keys | sort) == ["decision","desired-replicas","operation","plan-digest","snapshot-sha256"] and
-                  .data.operation == $operation' >/dev/null
+                  (.data.operation == $operation or
+                    (.data.operation == "install" and $operation == "upgrade" and
+                     .data.decision == "ordinary" and $decision == "ordinary"))' >/dev/null
                 stored_target="$(kubectl get "${state_resource}" -o jsonpath='{.metadata.annotations.mnemoshare\.io/format-migration-target}')"
                 stored_decision="$(kubectl get "${state_resource}" -o jsonpath='{.data.decision}')"
                 stored_digest="$(kubectl get "${state_resource}" -o jsonpath='{.data.plan-digest}')"

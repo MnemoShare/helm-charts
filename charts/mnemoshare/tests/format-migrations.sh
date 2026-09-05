@@ -106,7 +106,8 @@ for image_override in \
   workflowWorker.image.tag=old \
   ices.image.digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
   sftpGateway.image.digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
-  mcp.image.tag=old; do
+  mcp.image.tag=old \
+  mcp.image.digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; do
   if helm template test "$chart_dir" "${base[@]}" \
       --set workflowWorker.enabled=true --set redis.external.enabled=true --set redis.external.host=redis.example.com \
       --set ices.enabled=true \
@@ -254,7 +255,9 @@ assert_has 'if [ "${stored_decision}" = maintenance ]; then'
 assert_has '.immutable == true and'
 assert_has '(.data | keys | sort) == ["decision","desired-replicas","operation","plan-digest","snapshot-sha256"]'
 assert_has 'maintenance requires a nonempty exact prior writer census'
-assert_has '.data.operation == $operation'
+assert_has '.data.operation == $operation or'
+assert_has '.data.operation == "install" and $operation == "upgrade" and'
+assert_has '.data.decision == "ordinary" and $decision == "ordinary"'
 assert_has 'writer snapshot content mismatch'
 assert_has 'operation=install'
 assert_has 'name: fence-active-migration-state'

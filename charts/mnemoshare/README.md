@@ -211,6 +211,10 @@ apply/verify fails after drain, inspect the retained hook Job and retry the same
 target chart/image forward; do not roll back across a possibly applied format
 migration. The retry replaces hook support resources and resumes from the
 persisted ledger state.
+If the pre-install hook completed but Helm later failed while applying ordinary
+release resources, retrying the exact target with `helm upgrade --install`
+reuses that retained ordinary plan. An install-origin state is never reused for
+a maintenance decision.
 
 The narrowly scoped ServiceAccount, Role, RoleBinding, NetworkPolicy, and target snapshot use
 `before-hook-creation` cleanup and therefore persist until the next automatic
