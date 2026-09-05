@@ -74,6 +74,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   backoffLimit: 1
+  activeDeadlineSeconds: {{ .Values.formatMigrations.activeDeadlineSeconds }}
   template:
     metadata:
       labels:
@@ -83,6 +84,10 @@ spec:
     spec:
       restartPolicy: Never
       serviceAccountName: {{ $cleanupName }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:

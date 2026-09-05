@@ -47,6 +47,21 @@ if grep -Fq 'name: test-mnemoshare-format-migration-mode-fence' <<<"$render"; th
   exit 1
 fi
 assert_has 'image: "docker.io/alpine/k8s@sha256:66dd3f7db6c4cf152b688d83aad11ceed9eb2da0c4e7de1034c7d4ccea1b55ef"'
+private_pull_render=$(helm template test "$chart_dir" "${base[@]}" \
+  --set imagePullSecrets[0].name=private-registry)
+cleanup_job=$(awk '
+  /^# Source: mnemoshare\/templates\/format-migration-cleanup.yaml$/ { source=1; next }
+  source && /^kind: Job$/ { block=""; job=1 }
+  job { block=block $0 "\n" }
+  job && /^  name: test-mnemoshare-format-migration-cleanup$/ { cleanup=1 }
+  /^---$/ && cleanup { print block; exit }
+' <<<"$private_pull_render")
+for fragment in 'activeDeadlineSeconds: 1800' 'imagePullSecrets:' 'name: private-registry'; do
+  if ! grep -Fq "$fragment" <<<"$cleanup_job"; then
+    echo "cleanup Job missing bounded private-registry support: ${fragment}" >&2
+    exit 1
+  fi
+done
 application_ref='mnemoshare/mnemoshare@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 if [ "$(grep -Fc "image: \"${application_ref}\"" <<<"$render")" -lt 10 ]; then
   echo 'not every enabled writer plus plan/apply/verify uses the exact application digest' >&2
