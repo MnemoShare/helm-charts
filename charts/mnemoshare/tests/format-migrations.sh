@@ -96,6 +96,11 @@ for owned_support in \
   networkpolicy.networking.k8s.io/test-mnemoshare-format-migration; do
   assert_has "attach_owner_if_present ${owned_support}"
 done
+if grep -Fq 'attach_owner_if_present secret/' <<<"$render"; then
+  echo 'credential snapshot must not be owned by the asynchronously deleted migration Job' >&2
+  exit 1
+fi
+assert_has 'kubectl delete secrets,configmaps,jobs,serviceaccounts,roles.rbac.authorization.k8s.io,rolebindings.rbac.authorization.k8s.io,networkpolicies.networking.k8s.io \'
 
 for image_override in \
   workflowWorker.image.tag=old \

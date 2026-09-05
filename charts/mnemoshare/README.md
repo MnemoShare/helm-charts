@@ -217,9 +217,12 @@ The narrowly scoped ServiceAccount, Role, RoleBinding, NetworkPolicy, and target
 upgrade attempt replaces them. This is intentional: Helm executes weighted
 hooks serially and considers these non-Job resources successful immediately;
 adding `hook-succeeded` would delete them before the later migration Job could
-use them. Instead, the orchestrator attaches the support resources to its own
-Job UID. The Job's `hook-succeeded` deletion then garbage-collects them; a
-failed Job, desired-replica ConfigMap, and prerequisites remain for diagnosis.
+use them. The orchestrator attaches only replaceable RBAC and policy support to
+its own Job UID. The immutable target credential snapshot is deliberately not
+Job-owned: deleting a failed Job is asynchronous, and cascading that Secret
+could race the next retry after it validated the snapshot. It remains alongside
+the target-keyed state until successful post-upgrade cleanup. A failed Job,
+desired-replica ConfigMap, credential snapshot, and prerequisites remain for diagnosis.
 A separate cleanup hook runs only after a successful automatic install/upgrade,
 or on uninstall. Failed active evidence is not removed merely by switching modes.
 The cleanup removes superseded state and credential snapshots, then deletes the narrowly scoped support objects; its own
