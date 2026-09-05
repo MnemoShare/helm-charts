@@ -61,7 +61,25 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       initContainers:
-        {{- if or .Values.existingSecrets.mongodb .Values.existingSecrets.postgres }}
+        - name: fence-active-migration-state
+          image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
+          imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              expected={{ printf "%s-format-state-%s" $fullname (include "mnemoshare.formatMigrationTargetSuffix" .) | quote }}
+              active="$(kubectl get configmaps \
+                -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=format-migration-state' \
+                -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
+              for state in ${active}; do
+                if [ "${state}" != "${expected}" ]; then
+                  echo "retained migration state ${state} fences target ${expected}; retry the frozen target or resolve it explicitly" >&2
+                  exit 1
+                fi
+              done
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+        {{- if or (and (eq $driver "mongodb") .Values.existingSecrets.mongodb) (and (eq $driver "postgres") .Values.existingSecrets.postgres) }}
         - name: snapshot-target-credentials
           image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
           imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}

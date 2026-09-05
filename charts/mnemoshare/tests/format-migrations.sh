@@ -248,6 +248,9 @@ assert_has 'maintenance requires a nonempty exact prior writer census'
 assert_has '.data.operation == $operation'
 assert_has 'writer snapshot content mismatch'
 assert_has 'operation=install'
+assert_has 'name: fence-active-migration-state'
+assert_has 'retained migration state ${state} fences target ${expected}'
+assert_has 'app.kubernetes.io/component=format-migration-state'
 upgrade_render=$(helm template test "$chart_dir" "${base[@]}" --is-upgrade)
 if ! grep -Fq 'operation=upgrade' <<<"$upgrade_render"; then
   echo 'upgrade retry state is not distinguished from pre-install state' >&2
@@ -292,6 +295,31 @@ for snapshot_guard in \
     exit 1
   fi
 done
+
+# A stale existingSecret for the inactive driver must never trigger snapshot
+# creation or substitute an empty source. Driver selection is symmetric.
+mongo_stale_postgres=$(helm template test "$chart_dir" "${base[@]}" \
+  --set existingSecrets.postgres=stale-postgres)
+if grep -Fq 'name: snapshot-target-credentials' <<<"$mongo_stale_postgres"; then
+  echo 'MongoDB mode incorrectly activated the PostgreSQL credential snapshot' >&2
+  exit 1
+fi
+postgres_stale_mongo=$(helm template test "$chart_dir" "${base[@]}" \
+  --set database.driver=postgres \
+  --set postgres.dsn=postgres://target:test@postgres.example.com/mnemoshare \
+  --set existingSecrets.mongodb=stale-mongo)
+if grep -Fq 'name: snapshot-target-credentials' <<<"$postgres_stale_mongo"; then
+  echo 'PostgreSQL mode incorrectly activated the MongoDB credential snapshot' >&2
+  exit 1
+fi
+postgres_external=$(helm template test "$chart_dir" "${base[@]}" \
+  --set database.driver=postgres \
+  --set postgres.dsn=postgres://target:test@postgres.example.com/mnemoshare \
+  --set existingSecrets.postgres=target-postgres)
+if ! grep -Fq 'source="target-postgres"' <<<"$postgres_external"; then
+  echo 'PostgreSQL active external credential was not snapshotted' >&2
+  exit 1
+fi
 
 postgres_render=$(helm template test "$chart_dir" "${base[@]}" \
   --set database.driver=postgres \
