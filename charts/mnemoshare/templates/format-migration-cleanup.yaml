@@ -1,3 +1,4 @@
+{{- if ne .Values.formatMigrations.mode "operator" }}
 {{- $cleanupHooks := "pre-delete" }}
 {{- if eq .Values.formatMigrations.mode "automatic" }}
 {{- $cleanupHooks = "post-install,post-upgrade,pre-delete" }}
@@ -164,3 +165,4 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- end }}

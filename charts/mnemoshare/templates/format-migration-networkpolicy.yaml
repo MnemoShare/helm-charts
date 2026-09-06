@@ -1,4 +1,4 @@
-{{- if .Values.networkPolicy.enabled }}
+{{- if and .Values.networkPolicy.enabled (ne .Values.formatMigrations.mode "operator") }}
 {{- $apiTargets := .Values.formatMigrations.networkPolicy.kubernetesApiTargets }}
 {{- if not $apiTargets }}
 {{- fail "networkPolicy.enabled requires formatMigrations.networkPolicy.kubernetesApiTargets so hook pods can reach the Kubernetes API without unrestricted egress" }}

@@ -421,8 +421,46 @@ if grep -Eq '(kubectl scale|scale_if_present) .*-(redis|clamav|step-ca|minio)' <
   exit 1
 fi
 
-for mode in operator disabled; do
-  without_hook=$(helm template test "$chart_dir" "${base[@]}" --set formatMigrations.mode="$mode")
+disabled_render=$(helm template test "$chart_dir" "${base[@]}" \
+  --set formatMigrations.mode=disabled \
+  --set networkPolicy.enabled=true \
+  --set formatMigrations.networkPolicy.kubernetesApiTargets[0].cidr=10.96.0.1/32 \
+  --set formatMigrations.networkPolicy.kubernetesApiTargets[0].port=443)
+operator_render=$(helm template test "$chart_dir" "${base[@]}" \
+  --set formatMigrations.mode=operator \
+  --set networkPolicy.enabled=true)
+
+migration_sources() {
+  grep -E '^# Source: mnemoshare/templates/format-migration[^/]*\.yaml$' <<<"$1" | sort -u || true
+}
+
+automatic_sources=$(migration_sources "$np_render")
+disabled_sources=$(migration_sources "$disabled_render")
+operator_sources=$(migration_sources "$operator_render")
+expected_automatic_sources=$'# Source: mnemoshare/templates/format-migration-cleanup.yaml\n# Source: mnemoshare/templates/format-migration-job.yaml\n# Source: mnemoshare/templates/format-migration-networkpolicy.yaml\n# Source: mnemoshare/templates/format-migration-rbac.yaml\n# Source: mnemoshare/templates/format-migration-target-config.yaml'
+expected_disabled_sources=$'# Source: mnemoshare/templates/format-migration-cleanup.yaml\n# Source: mnemoshare/templates/format-migration-mode-fence.yaml\n# Source: mnemoshare/templates/format-migration-networkpolicy.yaml'
+if [ "$automatic_sources" != "$expected_automatic_sources" ]; then
+  echo "automatic migration source census drifted:" >&2
+  printf '%s\n' "$automatic_sources" >&2
+  exit 1
+fi
+if [ "$disabled_sources" != "$expected_disabled_sources" ]; then
+  echo "disabled migration source census drifted:" >&2
+  printf '%s\n' "$disabled_sources" >&2
+  exit 1
+fi
+if [ -n "$operator_sources" ]; then
+  echo "operator mode rendered chart-owned migration authority:" >&2
+  printf '%s\n' "$operator_sources" >&2
+  exit 1
+fi
+if ! grep -Fq '# Source: mnemoshare/templates/networkpolicy.yaml' <<<"$operator_render"; then
+  echo 'operator mode suppressed ordinary workload NetworkPolicies' >&2
+  exit 1
+fi
+
+for mode in disabled; do
+  without_hook=$disabled_render
   if grep -Eq '^  name: test-mnemoshare-format-migration$' <<<"$without_hook"; then
     echo "main format migration hook rendered in ${mode} mode" >&2
     exit 1
