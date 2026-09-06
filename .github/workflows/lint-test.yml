@@ -68,6 +68,12 @@ jobs:
       - name: Validate migration contract updater
         run: bash charts/mnemoshare/tests/update-migration-result-contract-test.sh
 
+      - name: Validate deployment contract v2 consumer
+        run: bash charts/mnemoshare/tests/deployment-contract.sh
+
+      - name: Validate deployment contract v2 updater
+        run: bash charts/mnemoshare/tests/update-deployment-contract-test.sh
+
       - name: Validate chart templates (sftpGateway enabled)
         if: github.event_name == 'pull_request'
         run: |
@@ -79,6 +85,10 @@ jobs:
           helm template mnemoshare charts/mnemoshare \
             --set customerId="ci-test" \
             --set formatMigrations.mode=disabled \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set deploymentContractV2.sourceCommit=aba43f7911586189a6e056bb1c9dcab7258b21d4 \
+            --set deploymentContractV2.contractFingerprint=e73dd2b91c7de17428fbfe1c4984758aa9a3894c6aadced0531f0ff591b67836 \
+            --set deploymentContractV2.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \
@@ -408,6 +418,10 @@ jobs:
           OUT=$(helm template mnemoshare charts/mnemoshare \
             --set customerId="ci-test" \
             --set formatMigrations.mode=disabled \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set deploymentContractV2.sourceCommit=aba43f7911586189a6e056bb1c9dcab7258b21d4 \
+            --set deploymentContractV2.contractFingerprint=e73dd2b91c7de17428fbfe1c4984758aa9a3894c6aadced0531f0ff591b67836 \
+            --set deploymentContractV2.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \

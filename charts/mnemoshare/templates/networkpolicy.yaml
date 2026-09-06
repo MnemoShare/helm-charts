@@ -255,7 +255,7 @@ spec:
     - Ingress
     - Egress
   ingress:
-    {{- if and (eq .Values.mcp.transport.type "http") .Values.mcp.ingress.enabled }}
+    {{- if .Values.mcp.ingress.enabled }}
     # Allow traffic from ingress controller (for external MCP access)
     - from:
         - namespaceSelector:
@@ -263,14 +263,14 @@ spec:
               kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | default "ingress-nginx" }}
       ports:
         - protocol: TCP
-          port: {{ .Values.mcp.transport.http.containerPort }}
+          port: 9222
     {{- end }}
     # Allow traffic from within the namespace (for kubectl port-forward, internal access)
     - from:
         - podSelector: {}
       ports:
         - protocol: TCP
-          port: {{ .Values.mcp.transport.http.containerPort | default 9222 }}
+          port: 9222
   egress:
     # DNS resolution
     - to:

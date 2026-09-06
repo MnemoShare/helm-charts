@@ -1,4 +1,6 @@
 {{- if .Values.mcp.enabled }}
+{{- include "mnemoshare.validateMCPContractV2" . }}
+{{- $process := include "mnemoshare.deploymentProcessV2" (dict "root" . "id" "mcp-admin") | fromJson }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,7 +8,6 @@ metadata:
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: mcp
-    mnemoshare.io/database-writer: "true"
 spec:
   replicas: 1
   selector:
@@ -18,7 +19,6 @@ spec:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: mcp
-        mnemoshare.io/database-writer: "true"
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -66,27 +66,20 @@ spec:
       - name: mcp
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: {{ include "mnemoshare.applicationImage" (dict "root" . "component" .Values.mcp.image "name" "mcp") | quote }}
+        image: {{ include "mnemoshare.contractApplicationImage" . | quote }}
         imagePullPolicy: {{ .Values.mcp.image.pullPolicy }}
         # Run the MCP admin server binary. Path matches the canonical
         # Dockerfile install location (`COPY --from=go-builder /bin/mcp-admin
         # /usr/local/bin/mcp-admin`). The previous `/app/mcp-admin` path does
         # not exist in any published mnemoshare image and crashlooped every
         # install with `mcp.enabled=true`.
-        command: ["/usr/local/bin/mcp-admin"]
+        command: [{{ $process.executable | quote }}]
         args:
-          - "--transport={{ .Values.mcp.transport.type }}"
-          {{- if eq .Values.mcp.transport.type "http" }}
-          - "--http-addr=:{{ .Values.mcp.transport.http.containerPort }}"
-          {{- end }}
-          - "--log-level={{ .Values.mcp.logging.level }}"
-          - "--log-format={{ .Values.mcp.logging.format }}"
-        {{- if eq .Values.mcp.transport.type "http" }}
+          {{- toYaml $process.args | nindent 10 }}
         ports:
         - name: http
-          containerPort: {{ .Values.mcp.transport.http.containerPort }}
+          containerPort: {{ $process.probe.port }}
           protocol: TCP
-        {{- end }}
         env:
         # MCP API Key - Required for authentication
         - name: MNEMOSHARE_MCP_KEY
@@ -125,10 +118,9 @@ spec:
         - name: MNEMOSHARE_APP_URL
           value: {{ .Values.appUrl | quote }}
         {{- end }}
-        {{- if eq .Values.mcp.transport.type "http" }}
         livenessProbe:
           httpGet:
-            path: /health
+            path: {{ $process.probe.path }}
             port: http
           initialDelaySeconds: 5
           periodSeconds: 10
@@ -136,13 +128,12 @@ spec:
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /health
+            path: {{ $process.probe.path }}
             port: http
           initialDelaySeconds: 3
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
-        {{- end }}
         resources:
           {{- toYaml .Values.mcp.resources | nindent 12 }}
         volumeMounts:

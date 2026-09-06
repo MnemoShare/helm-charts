@@ -3,6 +3,17 @@ MnemoShare {{ .Chart.AppVersion }} deployed successfully.
 
 Release: {{ .Release.Name }}
 Namespace: {{ .Release.Namespace }}
+{{- if or .Values.mcp.enabled .Values.sftpGateway.enabled }}
+
+DEPLOYMENT CONTRACT V2
+----------------------
+  MCP/SFTP runtime shape is sourced from application commit
+  aba43f7911586189a6e056bb1c9dcab7258b21d4. These persistence-none peers are
+  excluded from the migration writer census but remain in the pod termination
+  fence. The chart verified the declared source, contract, and immutable image
+  identities agree with its pin; proving source-to-image build provenance
+  requires an external attestation.
+{{- end }}
 {{- if eq .Values.formatMigrations.mode "automatic" }}
 
 FORMAT MIGRATION SAFETY

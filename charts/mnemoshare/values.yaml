@@ -32,6 +32,14 @@ image:
   tag: ""
 
 imagePullSecrets: []
+
+# Required immutable identity declaration when MCP or SFTP is enabled. The
+# chart verifies equality and digest addressing, not build provenance.
+deploymentContractV2:
+  sourceCommit: ""
+  contractFingerprint: ""
+  imageDigest: ""
+
 nameOverride: ""
 fullnameOverride: ""
 
@@ -1842,24 +1850,21 @@ mcp:
   enabled: false
 
   image:
-    # Uses same image as main app (mcp-admin is a separate entrypoint)
-    repository: mnemoshare/mnemoshare
+    # Empty inherits the unified global image.repository.
+    repository: ""
     tag: ""  # Defaults to chart appVersion
     digest: ""  # Automatic mode defaults to and must equal image.digest.
     pullPolicy: IfNotPresent
 
-  # Transport configuration
+  # Compatibility view of the now-fixed Kubernetes transport. Noncanonical
+  # retained values fail with an explicit migration error.
   transport:
-    # Transport type: "stdio" or "http"
-    # - stdio: For direct Claude Code integration via kubectl exec
-    # - http: For HTTP-based MCP clients
+    # Fixed by deployment contract v2.
     type: "http"
 
     # HTTP transport settings (when transport.type = "http")
     http:
-      # Port for HTTP transport
-      port: 9222
-      # Container port (internal)
+      # Fixed internal port.
       containerPort: 9222
 
   # MCP API key configuration
@@ -1891,11 +1896,11 @@ mcp:
   # Example: "https://mcp.example.com"
   externalUrl: ""
 
-  # Logging configuration
+  # Compatibility values fixed by deployment contract v2.
   logging:
-    # Log level: debug, info, warn, error
+    # Must remain info.
     level: "info"
-    # Log format: json or console
+    # Must remain json.
     format: "json"
 
   # Service configuration
@@ -1968,24 +1973,18 @@ sftpGateway:
   # different host keys (some SFTP clients pin them).
   replicas: 1
 
-  # Container image. The sftp-gateway binary now ships in the unified
-  # ghcr.io/mnemoshare/mnemoshare monorepo image (as /usr/local/bin/sftp-gateway).
-  # The standalone ghcr.io/mnemoshare/sftp-gateway image still exists as a
-  # transitional fallback but is being retired — point at the unified image
-  # going forward and set `command: ["/usr/local/bin/sftp-gateway"]` below.
+  # Compatibility image values. The workload always uses the unified global
+  # image; divergent legacy values fail rather than being ignored.
   image:
-    repository: ghcr.io/mnemoshare/sftp-gateway
+    repository: ""
     pullPolicy: IfNotPresent
     # Defaults to chart appVersion when empty.
     tag: ""
     digest: ""  # Automatic mode defaults to and must equal image.digest.
 
-  # Entrypoint override. Required when image.repository points at the unified
-  # ghcr.io/mnemoshare/mnemoshare image (whose default ENTRYPOINT runs the
-  # API server). Leave empty to inherit the image's own ENTRYPOINT — correct
-  # for the legacy standalone ghcr.io/mnemoshare/sftp-gateway image.
-  # Example: command: ["/usr/local/bin/sftp-gateway"]
-  command: []
+  # Compatibility value; empty or this exact command is accepted. Rendering
+  # always emits the contract-owned executable.
+  command: ["/usr/local/bin/sftp-gateway"]
 
   # The license-capability gate. The binary refuses to start unless
   # this is the literal string "true". Operators / provisioners flip
