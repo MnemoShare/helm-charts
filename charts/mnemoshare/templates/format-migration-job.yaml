@@ -299,11 +299,13 @@ spec:
               case "${decision}" in
                 ordinary)
                   exec /usr/local/bin/mnemoshare-migrate apply \
-                    --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)"
+                    --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" \
+                    --exclusive --bootstrap-policy provision-untracked
                   ;;
                 maintenance)
                   exec /usr/local/bin/mnemoshare-migrate apply \
-                    --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" --exclusive
+                    --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" \
+                    --exclusive --bootstrap-policy provision-untracked
                   ;;
                 *)
                   echo "invalid or missing migration decision: expected ordinary or maintenance" >&2

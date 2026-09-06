@@ -35,6 +35,43 @@ render=$(helm template test "$chart_dir" "${base[@]}" \
   --set mcp.enabled=true \
   --set mcp.apiKey.key=mcp_test)
 
+upgrade_render=$(helm template test "$chart_dir" "${base[@]}" --is-upgrade)
+
+apply_script() {
+  awk '
+    /^[[:space:]]*- name: apply$/ { active=1; next }
+    active && /^[[:space:]]*- name: verify$/ { exit }
+    active { print }
+  ' <<<"$1"
+}
+
+plan_and_verify_scripts() {
+  awk '
+    /^[[:space:]]*- name: plan$/ { active=1 }
+    /^[[:space:]]*- name: apply$/ { active=0 }
+    /^[[:space:]]*- name: verify$/ { active=1 }
+    active { print }
+  ' <<<"$1"
+}
+
+install_apply=$(apply_script "$render")
+upgrade_apply=$(apply_script "$upgrade_render")
+for release_apply in "$install_apply" "$upgrade_apply"; do
+  if [ "$(grep -Fc -- '--exclusive --bootstrap-policy provision-untracked' <<<"$release_apply")" -ne 2 ]; then
+    echo 'every apply decision path must be exclusive and provision only untracked populations' >&2
+    exit 1
+  fi
+  if [ "$(grep -Fc -- '--bootstrap-policy' <<<"$release_apply")" -ne 2 ]; then
+    echo 'apply rendered an unexpected bootstrap policy occurrence' >&2
+    exit 1
+  fi
+done
+if grep -Fq -- '--bootstrap-policy' <<<"$(plan_and_verify_scripts "$render")" ||
+   grep -Fq -- '--bootstrap-policy' <<<"$(plan_and_verify_scripts "$upgrade_render")"; then
+  echo 'plan and verify must remain read-only and receive no bootstrap policy' >&2
+  exit 1
+fi
+
 assert_has() {
   if ! grep -Fq -- "$1" <<<"$render"; then
     echo "missing expected format-migration rendering: $1" >&2
@@ -244,7 +281,8 @@ if decision_is_valid_value $'ordinary\nunterminated'; then
   exit 1
 fi
 assert_has 'exec /usr/local/bin/mnemoshare-migrate apply \'
-assert_has '--contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" --exclusive'
+assert_has '--contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" \'
+assert_has '--exclusive --bootstrap-policy provision-untracked'
 assert_has '"helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded'
 if [ "$(grep -Ec '^[[:space:]]+"helm.sh/hook-delete-policy": before-hook-creation$' <<<"$render")" -lt 7 ]; then
   echo 'support hooks do not all use deterministic next-attempt cleanup' >&2
