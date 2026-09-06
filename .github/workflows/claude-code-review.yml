@@ -109,10 +109,16 @@ jobs:
             Be specific: cite file paths and line numbers from the PR head. Skip nits unless
             they cluster into a real concern.
 
-            **Submit a formal review.** Use `gh pr review` — not a plain comment:
+            **Submit EXACTLY ONE formal review.** Use `gh pr review` — not a plain comment:
               - If clean with no blockers: `gh pr review --approve`
               - If blockers exist: `gh pr review --request-changes`
               - If only nits or unsure: `gh pr review --comment`
+            Write the complete body to a file first and submit it with
+            `--body-file` in a single `gh pr review` call. Never call
+            `gh pr review` twice in one run: a second call posts a duplicate
+            review the author has to read and dismiss. If the first call
+            returned an error, check `gh pr view --json reviews` for whether it
+            actually posted before retrying.
 
             **End your review body with one of these exact lines:**
               VERDICT: APPROVE
@@ -163,7 +169,7 @@ jobs:
           # the bot fails to surface as reviews — so the worst case
           # is "review is posted by GitHub Actions instead of the
           # bot" rather than "BLOCK silently disappears."
-          claude_args: '--model claude-sonnet-4-6 --allowed-tools "Read,Glob,Grep,Write,Bash"'
+          claude_args: '--model claude-sonnet-5 --allowed-tools "Read,Glob,Grep,Write,Bash"'
 
       # A model-chosen side effect is not a control-flow primitive: recover the
       # verdict from any durable artifact before deciding the PR is blocked.
@@ -212,7 +218,7 @@ jobs:
             colleague. Bugs, security gaps, broken contracts, and missing tests
             for new logic are BLOCK-worthy; typos and formatting preferences
             are not.
-          claude_args: '--model claude-sonnet-4-6 --allowed-tools "Read,Glob,Grep,Write,Bash"'
+          claude_args: '--model claude-sonnet-5 --allowed-tools "Read,Glob,Grep,Write,Bash"'
 
       - name: Resolve verdict (after retry)
         id: resolve2
