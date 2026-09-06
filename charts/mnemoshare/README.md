@@ -129,17 +129,20 @@ migration orchestration:
   verifies the plan. Maintenance is one-way: old controllers are never restored;
   Helm applies the target manifests and recreates their desired replicas and
   autoscalers. Redis, ClamAV, Step-CA, and MinIO remain running.
-- `operator` renders no migration Job because the operator owns orchestration.
+- `operator` renders no chart-owned migration authority because the operator owns
+  the complete lifecycle. The chart emits no migration Job, state or target
+  objects, cleanup or mode-fence hooks, RBAC, ServiceAccounts, or migration
+  NetworkPolicies, and does not require Kubernetes API targets for them.
 - `disabled` renders no migration Job for externally coordinated maintenance.
-  Both modes render a pre-upgrade fence that rejects any retained release-owned
-  automatic-migration state. Resolve it by retrying the exact frozen automatic
-  target, or perform an explicit operator-owned state handoff; changing mode can
-  never silently restart the writers.
+  Disabled mode retains the chart-owned pre-upgrade fence and pre-delete cleanup
+  path that reject unresolved release-owned automatic-migration state. Resolve it
+  by retrying the exact frozen automatic target or by an explicit external state
+  handoff. Operator mode assumes that state ownership and reconciliation itself.
 
-The target-image CLI contract is application-owned and provisional until the
-corresponding application release lands. The target image supplies the
-dedicated executable at this stable path (and `/bin/sh` for the decision-bound
-apply dispatch):
+In automatic mode, the target-image CLI contract is application-owned and
+provisional until the corresponding application release lands. The target image
+supplies the dedicated executable at this stable path (and `/bin/sh` for the
+decision-bound apply dispatch):
 
 ```text
 /usr/local/bin/mnemoshare-migrate plan --contract embedded --result /migration/result.json --output /migration/plan.json

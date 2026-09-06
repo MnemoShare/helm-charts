@@ -1,4 +1,4 @@
-{{- if ne .Values.formatMigrations.mode "automatic" }}
+{{- if eq .Values.formatMigrations.mode "disabled" }}
 {{- $fullname := include "mnemoshare.fullname" . }}
 {{- $name := printf "%s-format-migration-mode-fence" $fullname }}
 apiVersion: v1
