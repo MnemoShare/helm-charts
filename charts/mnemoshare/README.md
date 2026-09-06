@@ -169,12 +169,20 @@ old owners selected by their actual names.
 Automatic mode requires `image.digest` in exact lowercase
 `sha256:<64 hex>` form. The API, workflow/background/cloud worker, email and
 inbound gateways, SFTP gateway, ICES, MCP, and all three migration commands are
-rendered from the same `image.repository@image.digest` reference. An enabled
-per-process repository, tag, or digest override must resolve to that exact
-reference or rendering fails because cross-image format compatibility has not
-been proven. Align the writer image values or use operator mode for a
-separately proven rollout. Operator and disabled modes deliberately preserve
-the historical repository/tag rendering behavior.
+rendered from the same `image.repository@image.digest` reference. MCP and SFTP
+are application peers with `persistence=none`, so they are excluded from the
+writer replica census and scale-down set; they are still included in the
+post-drain pod-termination fence before migration begins. Divergent legacy MCP
+or SFTP image, command, transport, port, or logging values fail explicitly.
+
+The chart vendors deployment contract v2 from application commit
+`aba43f7911586189a6e056bb1c9dcab7258b21d4`. Because chart `appVersion` 0.18.11
+predates that commit, enabling MCP or SFTP requires the exact `sourceCommit`,
+vendored `contractFingerprint`, and an explicit `imageDigest` equal to global
+`image.digest`. MCP/SFTP always render that repository@digest, even outside
+automatic migration mode. This verifies the declared immutable identities and
+their equality; it cannot prove that an image was built from the declared
+source without an external signed build-provenance attestation.
 
 The hook reads inline MongoDB/PostgreSQL settings from a pre-upgrade target
 snapshot Secret, so it never accidentally consumes the old release's generated

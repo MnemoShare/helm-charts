@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mnemoshare.com/contracts/deployment/v2/schema.json",
+  "title": "MnemoShare deployment contract v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["provenance", "fingerprint", "processes", "adapters"],
+  "properties": {
+    "provenance": {"$ref": "#/$defs/provenance"},
+    "fingerprint": {"$ref": "#/$defs/digest", "$comment": "SHA-256 over RFC 8785 JCS of this contract with fingerprint set to the empty string"},
+    "processes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/process"}},
+    "adapters": {"type": "array", "items": {"$ref": "#/$defs/adapter"}}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nonempty": {"type": "string", "minLength": 1},
+	"strings": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/nonempty"}},
+    "provenance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "generator", "source_fingerprint"],
+      "properties": {
+        "schema": {"const": "mnemoshare.deployment-contract.v2"},
+        "generator": {"$ref": "#/$defs/nonempty"},
+        "source_fingerprint": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "probe": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["kind", "path", "port"], "properties": {"kind": {"const": "http"}, "path": {"type": "string", "pattern": "^/"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535}}},
+        {"type": "object", "additionalProperties": false, "required": ["kind", "command"], "properties": {"kind": {"const": "process"}, "command": {"$ref": "#/$defs/nonemptyStrings"}}}
+      ]
+    },
+    "optionalHTTPProbe": {"oneOf": [{"type": "object", "maxProperties": 0}, {"type": "object", "additionalProperties": false, "required": ["kind", "path", "port"], "properties": {"kind": {"const": "http"}, "path": {"type": "string", "pattern": "^/"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535}}}]},
+    "nonemptyStrings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nonempty"}},
+    "process": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "executable", "kind", "persistence", "probe", "liveness_probe", "coexistence"],
+      "properties": {
+        "id": {"$ref": "#/$defs/nonempty"}, "executable": {"$ref": "#/$defs/nonempty"},
+        "args": {"$ref": "#/$defs/nonemptyStrings"}, "kind": {"enum": ["api", "worker"]},
+        "persistence": {"enum": ["selected", "none"]}, "engines": {"$ref": "#/$defs/strings"},
+        "capabilities": {"$ref": "#/$defs/strings"}, "environment": {"$ref": "#/$defs/strings"},
+        "probe": {"$ref": "#/$defs/probe"}, "liveness_probe": {"$ref": "#/$defs/optionalHTTPProbe"},
+		"coexistence": {"const": "application-peers"}, "image_default": {"const": true}
+      }
+    },
+    "adapter": {
+      "type": "object", "additionalProperties": false,
+      "required": ["executable", "processes", "probe"],
+      "properties": {
+        "executable": {"$ref": "#/$defs/nonempty"}, "args": {"$ref": "#/$defs/nonemptyStrings"},
+        "processes": {"$ref": "#/$defs/nonemptyStrings"}, "probe": {"$ref": "#/$defs/probe"},
+		"image_default": {"const": true}, "image_entrypoint": {"$ref": "#/$defs/nonemptyStrings"},
+		"entrypoint_pass_through": {"const": true}, "entrypoint_profile": {"enum": ["pass-through", "fips-pass-through"]}
+      },
+      "allOf": [{"if": {"required": ["image_default"], "properties": {"image_default": {"const": true}}}, "then": {"required": ["image_entrypoint", "entrypoint_pass_through", "entrypoint_profile"], "properties": {"entrypoint_pass_through": {"const": true}}}, "else": {"not": {"anyOf": [{"required": ["image_entrypoint"]}, {"required": ["entrypoint_pass_through"]}, {"required": ["entrypoint_profile"]}]}}}]
+    }
+  }
+}

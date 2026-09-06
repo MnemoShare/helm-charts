@@ -197,10 +197,16 @@ spec:
                 # retroactively carry the new metadata label before this hook.
                 controllers="$({
                   kubectl get deployments,statefulsets -l 'app.kubernetes.io/instance={{ .Release.Name }},mnemoshare.io/database-writer=true' -o name
-                  kubectl get deployments,statefulsets -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component in (api,workflow-worker,ices,inbound-gateway,email-gateway,sftp-gateway,mcp)' -o name
+                  kubectl get deployments,statefulsets -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component in (api,workflow-worker,ices,inbound-gateway,email-gateway)' -o name
                 } | sort -u)"
                 : > /migration/desired-replicas
                 for resource in ${controllers}; do
+                  component="$(kubectl get "${resource}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/component}')"
+                  case "${component}" in
+                    sftp-gateway|mcp) continue ;;
+                    api|workflow-worker|ices|inbound-gateway|email-gateway) ;;
+                    *) echo "database-writer label found on unsupported component ${component}" >&2; exit 1 ;;
+                  esac
                   replicas="$(kubectl get "${resource}" -o jsonpath='{.spec.replicas}')"
                   printf '%s=%s\n' "${resource}" "${replicas}" >> /migration/desired-replicas
                 done
@@ -223,6 +229,7 @@ spec:
                 echo 'maintenance requires a nonempty exact prior writer census' >&2
                 exit 1
               fi
+              : > /migration/writer-replicas
               while IFS='=' read -r resource replicas; do
                 [ -n "${resource}" ] || continue
                 case "${resource}" in deployment/*|statefulset/*) ;; *) echo "invalid persisted writer ${resource}" >&2; exit 1;; esac
@@ -230,8 +237,17 @@ spec:
                 instance="$(kubectl get "${resource}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/instance}')"
                 component="$(kubectl get "${resource}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/component}')"
                 [ "${instance}" = "{{ .Release.Name }}" ] || { echo "persisted writer is not release-owned" >&2; exit 1; }
-                case "${component}" in api|workflow-worker|ices|inbound-gateway|email-gateway|sftp-gateway|mcp) ;; *) echo "persisted resource is not an application writer" >&2; exit 1;; esac
+                case "${component}" in
+                  api|workflow-worker|ices|inbound-gateway|email-gateway) printf '%s=%s\n' "${resource}" "${replicas}" >> /migration/writer-replicas ;;
+                  sftp-gateway|mcp) ;; # legacy v1.25.11 state: reclassify as a peer after hash verification
+                  *) echo "persisted resource is neither an application writer nor a known persistence-none peer" >&2; exit 1 ;;
+                esac
               done < /migration/desired-replicas
+              mv /migration/writer-replicas /migration/desired-replicas
+              if [ "${decision}" = maintenance ] && [ ! -s /migration/desired-replicas ]; then
+                echo 'maintenance requires a nonempty persistence-writer census after peer classification' >&2
+                exit 1
+              fi
               printf %s "${decision}" > /migration/decision
               printf %s "${plan_digest}" > /migration/plan-digest
               case "${decision}" in
@@ -265,6 +281,15 @@ spec:
                 [ -n "${resource}" ] || continue
                 kubectl scale "${resource}" --replicas=0
               done < /migration/desired-replicas
+              # Persistence-none application peers still have to leave the
+              # process universe before an exclusive migration. They are
+              # deliberately absent from the durable writer census: scaling
+              # is one-way on failure, and a successful Helm apply restores
+              # their contract-owned desired replicas.
+              peer_controllers="$(kubectl get deployments,statefulsets -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component in (sftp-gateway,mcp)' -o name)"
+              for resource in ${peer_controllers}; do
+                kubectl scale "${resource}" --replicas=0
+              done
               for component in api workflow-worker ices inbound-gateway email-gateway sftp-gateway mcp; do
                 selector='app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component='"${component}"
                 selected_pods="$(kubectl get pods -l "${selector}" -o name)"

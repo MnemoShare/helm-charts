@@ -17,6 +17,9 @@ base=(
   --set ingress.enabled=false
   --set autoscaling.enabled=true
   --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  --set deploymentContractV2.sourceCommit=aba43f7911586189a6e056bb1c9dcab7258b21d4
+  --set deploymentContractV2.contractFingerprint=e73dd2b91c7de17428fbfe1c4984758aa9a3894c6aadced0531f0ff591b67836
+  --set deploymentContractV2.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 )
 
 render=$(helm template test "$chart_dir" "${base[@]}" \
