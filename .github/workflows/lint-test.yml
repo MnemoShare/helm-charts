@@ -63,8 +63,10 @@ jobs:
           echo "✓ Default-path chart templates rendered successfully"
 
       - name: Validate format migration orchestration
-        if: github.event_name == 'pull_request'
         run: bash charts/mnemoshare/tests/format-migrations.sh
+
+      - name: Validate migration contract updater
+        run: bash charts/mnemoshare/tests/update-migration-result-contract-test.sh
 
       - name: Validate chart templates (sftpGateway enabled)
         if: github.event_name == 'pull_request'

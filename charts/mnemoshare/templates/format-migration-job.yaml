@@ -152,11 +152,13 @@ spec:
               operation={{ if .Release.IsInstall }}install{{ else }}upgrade{{ end }}
               state_name={{ printf "%s-format-state-%s" $fullname (include "mnemoshare.formatMigrationTargetSuffix" .) | quote }}
               state_resource="configmap/${state_name}"
-              jq -e 'type == "object" and (keys | sort) == ["decision","planDigest"] and
-                (.decision == "ordinary" or .decision == "maintenance") and
-                (.planDigest | test("^[a-f0-9]{64}$"))' /migration/result.json >/dev/null
-              decision="$(jq -r .decision /migration/result.json)"
-              plan_digest="$(jq -r .planDigest /migration/result.json)"
+              cat > /migration/migration-result-v1.jq <<'MNEMOSHARE_MIGRATION_RESULT_V1'
+{{ .Files.Get "files/migration-result-v1.jq" | trimSuffix "\n" | nindent 14 }}
+              MNEMOSHARE_MIGRATION_RESULT_V1
+              jq --stream -c . /migration/result.json > /migration/result-events.jsonl
+              jq --slurp -e -f /migration/migration-result-v1.jq /migration/result-events.jsonl > /migration/validated-result.json
+              decision="$(jq -r .decision /migration/validated-result.json)"
+              plan_digest="$(jq -r .planDigest /migration/validated-result.json)"
 
               if kubectl get "${state_resource}" >/dev/null 2>&1; then
                 state_json="$(kubectl get "${state_resource}" -o json)"

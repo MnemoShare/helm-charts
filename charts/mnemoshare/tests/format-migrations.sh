@@ -2,6 +2,7 @@
 set -euo pipefail
 
 chart_dir=${1:-charts/mnemoshare}
+"$(dirname "$0")/migration-result-contract.sh" "$chart_dir"
 base=(
   --set customerId=ci-test
   --set mongodb.external.enabled=true
@@ -224,7 +225,8 @@ for custom_fragment in 'port: 27018' 'port: 6443'; do
     exit 1
   fi
 done
-assert_has '(.planDigest | test("^[a-f0-9]{64}$"))'
+assert_has 'jq --stream -c . /migration/result.json > /migration/result-events.jsonl'
+assert_has 'jq --slurp -e -f /migration/migration-result-v1.jq /migration/result-events.jsonl'
 
 decision_is_valid_value() {
   local candidate=$1
