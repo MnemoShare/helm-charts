@@ -37,6 +37,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      {{- if .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml .Values.dnsConfig | nindent 8 }}
+      {{- end }}
       securityContext:
         fsGroup: 1000
         runAsNonRoot: true
