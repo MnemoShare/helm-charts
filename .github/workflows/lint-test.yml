@@ -32,6 +32,9 @@ jobs:
       - name: Set up chart-testing
         uses: helm/chart-testing-action@v2.6.1
 
+      - name: Install deployment contract schema validator
+        run: python -m pip install jsonschema==4.25.1
+
       - name: Add Helm repositories
         run: |
           helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -73,6 +76,12 @@ jobs:
 
       - name: Validate deployment contract v2 updater
         run: bash charts/mnemoshare/tests/update-deployment-contract-test.sh
+
+      - name: Validate deployment contract v3 emailgateway consumer
+        run: bash charts/mnemoshare/tests/deployment-contract-v3.sh
+
+      - name: Validate deployment contract v3 updater
+        run: bash charts/mnemoshare/tests/update-deployment-contract-v3-test.sh
 
       - name: Validate chart templates (sftpGateway enabled)
         if: github.event_name == 'pull_request'

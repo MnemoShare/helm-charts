@@ -27,7 +27,49 @@
     "ices": { "$ref": "#/$defs/writer" },
     "sftpGateway": { "$ref": "#/$defs/applicationProcess" },
     "mcp": { "$ref": "#/$defs/applicationProcess" },
+    "emailGateway": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["gateway", "relay", "inbound-relay"] },
+        "smtpAuthRequired": { "type": "boolean" },
+        "relay": {
+          "type": "object",
+          "properties": {
+            "spoolSharedKey": { "type": "string" },
+            "existingSpoolKeySecret": { "type": "string" },
+            "persistence": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "existingClaim": { "type": "string" }
+              }
+            },
+            "db": {
+              "type": "object",
+              "properties": {
+                "uri": { "type": "string" },
+                "name": { "type": "string", "minLength": 1 },
+                "existingSecret": { "type": "string" },
+                "networkPolicyCIDRs": { "type": "array", "items": { "type": "string" } },
+                "networkPolicyPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+              }
+            }
+          }
+        }
+      }
+    },
     "deploymentContractV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sourceCommit": { "type": "string" },
+        "contractFingerprint": { "type": "string" },
+        "imageDigest": { "type": "string", "pattern": "^(|sha256:[a-f0-9]{64})$" }
+      },
+      "required": ["sourceCommit", "contractFingerprint", "imageDigest"]
+    },
+    "deploymentContractV3": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

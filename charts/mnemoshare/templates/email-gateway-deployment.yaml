@@ -5,17 +5,56 @@
 {{- $tlsSecret = .Values.mtls.tls.existingSecret }}
 {{- end }}
 {{- $relayMode := or (eq .Values.emailGateway.mode "relay") (eq .Values.emailGateway.mode "inbound-relay") }}
+{{- $legacyRelayHosts := join "," .Values.emailGateway.relayHosts }}
+{{- $nestedRelayHosts := .Values.emailGateway.relay.hosts }}
+{{- if and $legacyRelayHosts $nestedRelayHosts }}{{- fail "emailGateway.relayHosts and emailGateway.relay.hosts are mutually exclusive; configure exactly one RELAY_HOSTS source" }}{{- end }}
+{{- $relayHosts := $nestedRelayHosts | default $legacyRelayHosts }}
+{{- $seenListenPorts := dict }}
+{{- $hasSMTPPort := false }}
+{{- range $listener := splitList "," .Values.emailGateway.listenPorts }}
+{{- if not (regexMatch "^[0-9]+:(plain|starttls|tls)$" $listener) }}{{- fail (printf "emailGateway.listenPorts contains invalid listener %q" $listener) }}{{- end }}
+{{- $portText := regexFind "^[0-9]+" $listener }}
+{{- $port := atoi $portText }}
+{{- if or (lt $port 1) (gt $port 65535) }}{{- fail (printf "emailGateway.listenPorts contains invalid port %s" $portText) }}{{- end }}
+{{- $canonicalPort := printf "%d" $port }}
+{{- if ne $portText $canonicalPort }}{{- fail (printf "emailGateway.listenPorts port %s is not canonically spelled as %s" $portText $canonicalPort) }}{{- end }}
+{{- if hasKey $seenListenPorts $canonicalPort }}{{- fail (printf "emailGateway.listenPorts contains duplicate port %s" $canonicalPort) }}{{- end }}
+{{- $_ := set $seenListenPorts $canonicalPort true }}
+{{- if eq $port 25 }}{{- $hasSMTPPort = true }}{{- end }}
+{{- end }}
+{{- if not $hasSMTPPort }}{{- fail "emailGateway.listenPorts must include port 25 while the Service targets the fixed smtp port" }}{{- end }}
+{{- include "mnemoshare.requireDeploymentContractV3Identity" . }}
+{{- $facts := include "mnemoshare.emailGatewayV3" . | fromJson }}
+{{- if hasKey $seenListenPorts (printf "%d" ($facts.profile.probe.port | int)) }}{{- fail (printf "emailGateway.listenPorts SMTP listener collides with deployment-contract v3 probe port %d" ($facts.profile.probe.port | int)) }}{{- end }}
+{{- if and ($facts.profile.liveness_probe.port | int) (hasKey $seenListenPorts (printf "%d" ($facts.profile.liveness_probe.port | int))) }}{{- fail (printf "emailGateway.listenPorts SMTP listener collides with deployment-contract v3 liveness port %d" ($facts.profile.liveness_probe.port | int)) }}{{- end }}
+{{- include "mnemoshare.validateEmailGatewayExtraEnvV3" . }}
+{{- $durables := $facts.profile.durable_resources | default list }}
+{{- $durableProfile := gt (len $durables) 0 }}
+{{- $durable := dict }}
+{{- if $durableProfile }}
+{{- if ne (.Values.emailGateway.replicas | int) 1 }}{{- fail (printf "emailgateway durable profile %s requires replicas exactly 1 for exclusive spool ownership" $facts.profile.id) }}{{- end }}
+{{- if ne (len $durables) 1 }}{{- fail (printf "emailgateway profile %s declares an unsupported durable-resource count" $facts.profile.id) }}{{- end }}
+{{- $durable = first $durables }}
+{{- if or (ne $durable.id "relay-spool") (ne $durable.kind "filesystem") (ne $durable.path_environment "RELAY_SPOOL_DIR") }}{{- fail (printf "emailgateway profile %s declares an unsupported durable resource" $facts.profile.id) }}{{- end }}
+{{- if ne .Values.emailGateway.relay.spoolDir $durable.path }}{{- fail (printf "emailGateway.relay.spoolDir must equal deployment-contract v3 durable path %s" $durable.path) }}{{- end }}
+{{- end }}
+{{- if and $durableProfile (not .Values.emailGateway.relay.persistence.enabled) (not .Values.emailGateway.relay.persistence.existingClaim) }}
+{{- fail "emailGateway relay profiles require relay.persistence.enabled=true or relay.persistence.existingClaim for the durable spool" }}
+{{- end }}
 {{- $relayClaim := .Values.emailGateway.relay.persistence.existingClaim | default (printf "%s-relay-spool" (include "mnemoshare.fullname" .)) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "mnemoshare.fullname" . }}-email-gateway
+  annotations:
+    mnemoshare.com/deployment-profile: {{ $facts.profile.id | quote }}
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: email-gateway
-    mnemoshare.io/database-writer: "true"
 spec:
   replicas: {{ .Values.emailGateway.replicas }}
+  strategy:
+    type: {{ ternary "Recreate" "RollingUpdate" $durableProfile }}
   selector:
     matchLabels:
       {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
@@ -25,7 +64,6 @@ spec:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: email-gateway
-        mnemoshare.io/database-writer: "true"
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -38,15 +76,15 @@ spec:
       - name: email-gateway
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: {{ include "mnemoshare.applicationImage" (dict "root" . "name" "emailGateway") | quote }}
+        image: {{ include "mnemoshare.contractV3ApplicationImage" . | quote }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
-        command: ["/usr/local/bin/email-gateway"]
+        command: [{{ $facts.executable.path | quote }}]
         ports:
         - name: smtp
           containerPort: 25
           protocol: TCP
         - name: health
-          containerPort: 8081
+          containerPort: {{ $facts.profile.probe.port }}
           protocol: TCP
         env:
         - name: GATEWAY_MODE
@@ -172,8 +210,13 @@ spec:
           value: {{ .Values.emailGateway.requireTlsDomains | quote }}
         {{- end }}
         # SMTP auth and sender validation
+        {{- if eq .Values.emailGateway.mode "gateway" }}
         - name: SMTP_AUTH_REQUIRED
           value: {{ .Values.emailGateway.smtpAuthRequired | quote }}
+        {{- else if eq .Values.emailGateway.mode "relay" }}
+        - name: RELAY_SMTP_AUTH_REQUIRED
+          value: {{ .Values.emailGateway.smtpAuthRequired | quote }}
+        {{- end }}
         {{- if .Values.emailGateway.smtpAllowedSenderDomains }}
         - name: SMTP_ALLOWED_SENDER_DOMAINS
           value: {{ .Values.emailGateway.smtpAllowedSenderDomains | quote }}
@@ -188,12 +231,8 @@ spec:
           value: {{ .Values.emailGateway.senderCacheTTL | quote }}
         {{- if or (eq .Values.emailGateway.mode "relay") (eq .Values.emailGateway.mode "inbound-relay") }}
         # Relay mode configuration
-        {{- if .Values.emailGateway.relay.hosts }}
-        - name: RELAY_HOSTS
-          value: {{ .Values.emailGateway.relay.hosts | quote }}
-        {{- end }}
         - name: RELAY_SPOOL_DIR
-          value: {{ .Values.emailGateway.relay.spoolDir | quote }}
+          value: {{ $durable.path | quote }}
         - name: RELAY_RATE_LIMIT
           value: {{ .Values.emailGateway.relay.rateLimit | quote }}
         - name: RELAY_RATE_BURST
@@ -202,6 +241,7 @@ spec:
         - name: DNS_SERVERS
           value: {{ .Values.emailGateway.relay.dnsServers | quote }}
         {{- end }}
+        {{- if eq .Values.emailGateway.mode "relay" }}
         - name: RELAY_DB_NAME
           value: {{ .Values.emailGateway.relay.db.name | quote }}
         {{- if .Values.emailGateway.relay.db.existingSecret }}
@@ -214,6 +254,7 @@ spec:
         - name: RELAY_DB_URI
           value: {{ .Values.emailGateway.relay.db.uri | quote }}
         {{- end }}
+        {{- end }}
         {{- if .Values.emailGateway.relay.existingAdminKeySecret }}
         - name: RELAY_ADMIN_KEY
           valueFrom:
@@ -224,10 +265,20 @@ spec:
         - name: RELAY_ADMIN_KEY
           value: {{ .Values.emailGateway.relay.adminKey | quote }}
         {{- end }}
+        {{- if .Values.emailGateway.relay.existingSpoolKeySecret }}
+        - name: RELAY_SPOOL_SHARED_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.relay.existingSpoolKeySecret }}
+              key: relay-spool-shared-key
+        {{- else if .Values.emailGateway.relay.spoolSharedKey }}
+        - name: RELAY_SPOOL_SHARED_KEY
+          value: {{ .Values.emailGateway.relay.spoolSharedKey | quote }}
+        {{- end }}
         {{- end }}
         # Health port
         - name: HEALTH_PORT
-          value: "8081"
+          value: {{ $facts.profile.probe.port | quote }}
         # Encryption key for internal API secret derivation
         - name: ENCRYPTION_KEY
           valueFrom:
@@ -235,16 +286,16 @@ spec:
               name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: encryption-key
         # Explicit relay-host allow-list (distinct from upstream next-hop).
-        {{- if .Values.emailGateway.relayHosts }}
+        {{- if $relayHosts }}
         - name: RELAY_HOSTS
-          value: {{ join "," .Values.emailGateway.relayHosts | quote }}
+          value: {{ $relayHosts | quote }}
         {{- end }}
         {{- with .Values.emailGateway.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         livenessProbe:
           httpGet:
-            path: /healthz
+            path: {{ $facts.profile.liveness_probe.path }}
             port: health
           initialDelaySeconds: 10
           periodSeconds: 30
@@ -252,7 +303,7 @@ spec:
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /readyz
+            path: {{ $facts.profile.probe.path }}
             port: health
           initialDelaySeconds: 5
           periodSeconds: 10
@@ -260,26 +311,26 @@ spec:
           failureThreshold: 3
         resources:
           {{- toYaml .Values.emailGateway.resources | nindent 12 }}
-        {{- if or $tlsSecret $relayMode }}
+        {{- if or $tlsSecret $durableProfile }}
         volumeMounts:
         {{- if $tlsSecret }}
         - name: tls-certs
           mountPath: /etc/tls
           readOnly: true
         {{- end }}
-        {{- if $relayMode }}
+        {{- if $durableProfile }}
         - name: relay-spool
-          mountPath: {{ .Values.emailGateway.relay.spoolDir }}
+          mountPath: {{ $durable.path }}
         {{- end }}
         {{- end }}
-      {{- if or $tlsSecret $relayMode }}
+      {{- if or $tlsSecret $durableProfile }}
       volumes:
       {{- if $tlsSecret }}
       - name: tls-certs
         secret:
           secretName: {{ $tlsSecret }}
       {{- end }}
-      {{- if $relayMode }}
+      {{- if $durableProfile }}
       - name: relay-spool
         persistentVolumeClaim:
           claimName: {{ $relayClaim }}

@@ -370,6 +370,10 @@ spec:
           port: {{ .Values.service.targetPort }}
 {{- end }}
 {{- if and .Values.emailGateway .Values.emailGateway.enabled }}
+{{- $emailFacts := include "mnemoshare.emailGatewayV3" . | fromJson }}
+{{- $emailRelayMongo := false }}
+{{- range $emailFacts.profile.external_universes }}{{- if eq .id "email-relay-mongo" }}{{- $emailRelayMongo = true }}{{- end }}{{- end }}
+{{- if and $emailRelayMongo (not .Values.emailGateway.relay.db.networkPolicyCIDRs) }}{{- fail "email-relay-mongo profile requires emailGateway.relay.db.networkPolicyCIDRs when networkPolicy.enabled=true" }}{{- end }}
 ---
 # Email gateway NetworkPolicy. The default-deny above selects on
 # mnemoshare.selectorLabels, which also matches the email-gateway pods —
@@ -391,7 +395,7 @@ spec:
     - Egress
   ingress:
     # Public SMTP entry on the pod's container ports. The deployment
-    # declares :25 (SMTP) and :8081 (mgmt/health). The :587/:465 entries
+    # declares :25 (SMTP) and :8080 (contract v3 health). The :587/:465 entries
     # cover STARTTLS/implicit-TLS variants when LISTEN_PORTS is overridden.
     # Permissive `from:` matches the public-MFT-endpoint expectation; the
     # SMTP auth + STARTTLS policy is the L7 boundary.
@@ -405,7 +409,7 @@ spec:
         - protocol: TCP
           port: 2525
         - protocol: TCP
-          port: 8081
+          port: 8080
     # Intra-namespace traffic from API for submission/control.
     - from:
         - podSelector:
@@ -432,6 +436,17 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
+    {{- if $emailRelayMongo }}
+    # Selected external relay persistence universe.
+    - to:
+        {{- range .Values.emailGateway.relay.db.networkPolicyCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.emailGateway.relay.db.networkPolicyPort }}
+    {{- end }}
     # ClamAV ICAP (embedded) for attachment scanning
     {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
     - to:
