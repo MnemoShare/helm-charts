@@ -4,6 +4,11 @@
 {{- fail "networkPolicy.enabled requires formatMigrations.networkPolicy.kubernetesApiTargets so hook pods can reach the Kubernetes API without unrestricted egress" }}
 {{- end }}
 {{- $fullname := include "mnemoshare.fullname" . }}
+{{- $externalRelayUniverse := false }}
+{{- if .Values.emailGateway.enabled }}
+{{- $gatewayFacts := include "mnemoshare.emailGatewayV3" . | fromJson }}
+{{- range $gatewayFacts.profile.external_universes }}{{- if eq .id "email-relay-mongo" }}{{- $externalRelayUniverse = true }}{{- end }}{{- end }}
+{{- end }}
 {{- $cleanupHooks := "pre-delete" }}
 {{- if eq .Values.formatMigrations.mode "automatic" }}
 {{- $cleanupHooks = "post-install,post-upgrade,pre-delete" }}
@@ -11,6 +16,9 @@
 {{- if eq .Values.formatMigrations.mode "automatic" }}
 {{- if not .Values.formatMigrations.networkPolicy.databaseCIDRs }}
 {{- fail "networkPolicy.enabled with formatMigrations.mode=automatic requires formatMigrations.networkPolicy.databaseCIDRs" }}
+{{- end }}
+{{- if and $externalRelayUniverse (not .Values.emailGateway.relay.db.networkPolicyCIDRs) }}
+{{- fail "email-relay-mongo automatic migration requires emailGateway.relay.db.networkPolicyCIDRs when networkPolicy.enabled=true" }}
 {{- end }}
 {{- $databasePort := .Values.formatMigrations.networkPolicy.databasePort | int }}
 {{- if eq $databasePort 0 }}
@@ -50,6 +58,14 @@ spec:
         {{- end }}
       ports:
         - { protocol: TCP, port: {{ $databasePort }} }
+    {{- if $externalRelayUniverse }}
+    - to:
+        {{- range .Values.emailGateway.relay.db.networkPolicyCIDRs }}
+        - ipBlock: { cidr: {{ . | quote }} }
+        {{- end }}
+      ports:
+        - { protocol: TCP, port: {{ .Values.emailGateway.relay.db.networkPolicyPort }} }
+    {{- end }}
     {{- range $apiTargets }}
     - to:
         - ipBlock: { cidr: {{ .cidr | quote }} }

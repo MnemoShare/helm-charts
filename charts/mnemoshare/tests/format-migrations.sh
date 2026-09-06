@@ -20,6 +20,9 @@ base=(
   --set deploymentContractV2.sourceCommit=aba43f7911586189a6e056bb1c9dcab7258b21d4
   --set deploymentContractV2.contractFingerprint=e73dd2b91c7de17428fbfe1c4984758aa9a3894c6aadced0531f0ff591b67836
   --set deploymentContractV2.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  --set deploymentContractV3.sourceCommit=0dd4f8eb13b9afb35a586f4ac7bc8618d25d7886
+  --set deploymentContractV3.contractFingerprint=23dc67fb882b463fbc1bd05d0732d2a5aadc86b3070b228dd5f62cb204319cc6
+  --set deploymentContractV3.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 )
 
 render=$(helm template test "$chart_dir" "${base[@]}" \
@@ -60,11 +63,11 @@ plan_and_verify_scripts() {
 install_apply=$(apply_script "$render")
 upgrade_apply=$(apply_script "$upgrade_render")
 for release_apply in "$install_apply" "$upgrade_apply"; do
-  if [ "$(grep -Fc -- '--exclusive --bootstrap-policy provision-untracked' <<<"$release_apply")" -ne 2 ]; then
+  if [ "$(grep -Fc -- '--exclusive --bootstrap-policy provision-untracked' <<<"$release_apply")" -ne 1 ]; then
     echo 'every apply decision path must be exclusive and provision only untracked populations' >&2
     exit 1
   fi
-  if [ "$(grep -Fc -- '--bootstrap-policy' <<<"$release_apply")" -ne 2 ]; then
+  if [ "$(grep -Fc -- '--bootstrap-policy' <<<"$release_apply")" -ne 1 ]; then
     echo 'apply rendered an unexpected bootstrap policy occurrence' >&2
     exit 1
   fi
@@ -152,6 +155,16 @@ for owned_support in \
   networkpolicy.networking.k8s.io/test-mnemoshare-format-migration; do
   assert_has "attach_owner_if_present ${owned_support}"
 done
+assert_has 'migration state cannot be released without target application controllers'
+assert_has 'has not applied the migration target image'
+assert_has 'has not applied the selected deployment profile'
+assert_has 'must contain exactly one ${container_name} application container'
+if grep -Fq 'containers[0].image' <<<"$render"; then
+  echo 'migration cleanup still selects the application image by container position' >&2
+  exit 1
+fi
+assert_has 'kubectl rollout status "${resource}"'
+assert_has 'has not reached its target replica count'
 if grep -Fq 'attach_owner_if_present secret/' <<<"$render"; then
   echo 'credential snapshot must not be owned by the asynchronously deleted migration Job' >&2
   exit 1
@@ -336,6 +349,10 @@ if ! grep -Fq 'mnemoshare.io/database-writer=true' <<<"$override_render"; then
 fi
 if grep -Fq 'kubectl scale deployment/renamed-mnemoshare' <<<"$override_render"; then
   echo 'fullname transition drain still relies on a constructed controller name' >&2
+  exit 1
+fi
+if ! grep -Fq 'api) container_name="mnemoshare"' <<<"$override_render"; then
+  echo 'nameOverride changed the stable API application container lookup' >&2
   exit 1
 fi
 assert_has 'mnemoshare.io/format-migration-target:'

@@ -712,3 +712,21 @@ curl http://localhost:8080/health
 ## License
 
 Commercial - License required to run. Get a license at https://mnemoshare.com/pricing
+
+### Email gateway deployment contract v3
+
+Enabling `emailGateway` requires `deploymentContractV3.sourceCommit`,
+`deploymentContractV3.contractFingerprint`, and an explicit
+`deploymentContractV3.imageDigest` equal to the global `image.digest`. The
+chart checks the declared source and vendored contract identities and renders
+the gateway from that immutable image. It cannot prove that an image was built
+from the declared source without an external build-provenance attestation.
+
+Relay and inbound-relay profiles require a persistent spool PVC, created by the
+chart or supplied through `emailGateway.relay.persistence.existingClaim`, and a
+spool rotation key supplied inline or through
+`emailGateway.relay.existingSpoolKeySecret`. Relay SMTP authentication uses
+`RELAY_SMTP_AUTH_REQUIRED`; with the default `smtpAuthRequired=true`, relay mode
+also requires its MongoDB configuration and selects the token-bearing profile.
+When that profile owns the `email-relay-mongo` universe, automatic migrations
+plan it before drain and apply it exclusively in the existing migration hook.

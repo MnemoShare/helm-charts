@@ -4,6 +4,9 @@
 {{- end }}
 {{- $fullname := include "mnemoshare.fullname" . }}
 {{- $cleanupName := printf "%s-format-migration-cleanup" $fullname }}
+{{- $targetImage := include "mnemoshare.applicationImage" (dict "root" . "name" "migration cleanup target") }}
+{{- $expectedEmailProfile := "" }}
+{{- if .Values.emailGateway.enabled }}{{- $facts := include "mnemoshare.emailGatewayV3" . | fromJson }}{{- $expectedEmailProfile = $facts.profile.id }}{{- end }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -40,6 +43,9 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["get", "list", "patch", "delete", "deletecollection"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -97,6 +103,32 @@ spec:
           command: ["/bin/sh", "-ec"]
           args:
             - |
+              states="$(kubectl get configmaps -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=format-migration-state' -o name)"
+              if [ -n "${states}" ]; then
+                controllers="$(kubectl get deployments,statefulsets -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component in (api,workflow-worker,ices,inbound-gateway,email-gateway,sftp-gateway,mcp)' -o name)"
+                [ -n "${controllers}" ] || { echo 'migration state cannot be released without target application controllers' >&2; exit 1; }
+                for resource in ${controllers}; do
+                  component="$(kubectl get "${resource}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/component}')"
+                  case "${component}" in
+                    api) container_name={{ .Chart.Name | quote }} ;;
+                    workflow-worker|ices|inbound-gateway|email-gateway|sftp-gateway|mcp) container_name="${component}" ;;
+                    *) echo "${resource} has an unsupported application component" >&2; exit 1 ;;
+                  esac
+                  images="$(kubectl get "${resource}" -o jsonpath='{.spec.template.spec.containers[?(@.name=="'"${container_name}"'")].image}')"
+                  set -- ${images}
+                  [ "$#" -eq 1 ] || { echo "${resource} must contain exactly one ${container_name} application container" >&2; exit 1; }
+                  image=$1
+                  [ "${image}" = {{ $targetImage | quote }} ] || { echo "${resource} has not applied the migration target image" >&2; exit 1; }
+                  if [ "${component}" = email-gateway ]; then
+                    profile="$(kubectl get "${resource}" -o jsonpath='{.metadata.annotations.mnemoshare\.com/deployment-profile}')"
+                    [ "${profile}" = {{ $expectedEmailProfile | quote }} ] || { echo "${resource} has not applied the selected deployment profile" >&2; exit 1; }
+                  fi
+                  kubectl rollout status "${resource}" --timeout={{ .Values.formatMigrations.podTerminationTimeout }}
+                  desired="$(kubectl get "${resource}" -o jsonpath='{.spec.replicas}')"
+                  ready="$(kubectl get "${resource}" -o jsonpath='{.status.readyReplicas}')"
+                  [ "${ready:-0}" = "${desired}" ] || { echo "${resource} has not reached its target replica count" >&2; exit 1; }
+                done
+              fi
               job_uid="$(kubectl get job "${JOB_NAME}" -o jsonpath='{.metadata.uid}')"
               owner_patch='{"metadata":{"ownerReferences":[{"apiVersion":"batch/v1","kind":"Job","name":"'"${JOB_NAME}"'","uid":"'"${job_uid}"'"}]}}'
               for resource in \

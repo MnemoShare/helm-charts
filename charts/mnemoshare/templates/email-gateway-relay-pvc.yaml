@@ -1,5 +1,6 @@
 {{- if .Values.emailGateway.enabled }}
-{{- if or (eq .Values.emailGateway.mode "relay") (eq .Values.emailGateway.mode "inbound-relay") }}
+{{- $facts := include "mnemoshare.emailGatewayV3" . | fromJson }}
+{{- if gt (len ($facts.profile.durable_resources | default list)) 0 }}
 {{- if and .Values.emailGateway.relay.persistence.enabled (not .Values.emailGateway.relay.persistence.existingClaim) }}
 apiVersion: v1
 kind: PersistentVolumeClaim

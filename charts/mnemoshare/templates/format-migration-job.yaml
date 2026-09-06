@@ -20,6 +20,15 @@
   value: {{ .Values.database.sqlite.path | default "/var/lib/mnemoshare/mnemoshare.db" | quote }}
 {{- end }}
 {{- end }}
+{{- define "mnemoshare.emailRelayMigrationEnv" }}
+- name: RELAY_DB_URI
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "mnemoshare.fullname" . }}-format-relay-db-{{ include "mnemoshare.formatMigrationTargetSuffix" . }}
+      key: relay-db-uri
+- name: RELAY_DB_NAME
+  value: {{ .Values.emailGateway.relay.db.name | quote }}
+{{- end }}
 {{- if eq .Values.formatMigrations.mode "automatic" }}
 {{- $driver := .Values.database.driver | default "mongodb" }}
 {{- if not (has $driver (list "mongodb" "postgres")) }}
@@ -27,6 +36,14 @@
 {{- end }}
 {{- $fullname := include "mnemoshare.fullname" . }}
 {{- $migrationImage := include "mnemoshare.applicationImage" (dict "root" . "name" "migration") }}
+{{- $externalRelayUniverse := false }}
+{{- if .Values.emailGateway.enabled }}
+{{- $gatewayFacts := include "mnemoshare.emailGatewayV3" . | fromJson }}
+{{- range $gatewayFacts.profile.external_universes }}
+{{- if ne .id "email-relay-mongo" }}{{- fail (printf "unsupported emailgateway external persistence universe %s" .id) }}{{- end }}
+{{- $externalRelayUniverse = true }}
+{{- end }}
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -114,6 +131,41 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
         {{- end }}
+        {{- if and $externalRelayUniverse .Values.emailGateway.relay.db.existingSecret }}
+        - name: snapshot-email-relay-mongo-credentials
+          image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
+          imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              source={{ .Values.emailGateway.relay.db.existingSecret | quote }}
+              key=relay-db-uri
+              target={{ printf "%s-format-relay-db-%s" $fullname (include "mnemoshare.formatMigrationTargetSuffix" .) | quote }}
+              target_digest={{ include "mnemoshare.formatMigrationTargetDigest" . | quote }}
+              source_identity="${source}/${key}"
+              if ! kubectl get secret "${target}" >/dev/null 2>&1; then
+                value="$(kubectl get secret "${source}" -o jsonpath="{.data.${key}}")"
+                [ -n "${value}" ] || { echo "source credential ${source}/${key} is empty" >&2; exit 1; }
+                content_hash="$(printf %s "${value}" | base64 -d | sha256sum | cut -d' ' -f1)"
+                kubectl create secret generic "${target}" --from-literal="${key}=placeholder" --dry-run=client -o json | \
+                  jq --arg key "${key}" --arg value "${value}" --arg target "${target_digest}" --arg source "${source_identity}" --arg hash "${content_hash}" '.immutable=true | .type="Opaque" | .data={($key):$value} | .metadata.labels={"app.kubernetes.io/instance":"{{ .Release.Name }}","app.kubernetes.io/component":"format-migration"} | .metadata.annotations={"mnemoshare.io/format-migration-target":$target,"mnemoshare.io/format-migration-owner":"{{ .Release.Namespace }}/{{ .Release.Name }}","mnemoshare.io/format-migration-credential-source":$source,"mnemoshare.io/format-migration-credential-sha256":$hash}' | \
+                  kubectl create -f -
+              fi
+              secret_json="$(kubectl get secret "${target}" -o json)"
+              printf %s "${secret_json}" | jq -e --arg key "${key}" --arg target "${target_digest}" --arg source "${source_identity}" '
+                .immutable == true and .type == "Opaque" and
+                .metadata.labels["app.kubernetes.io/instance"] == "{{ .Release.Name }}" and
+                .metadata.labels["app.kubernetes.io/component"] == "format-migration" and
+                .metadata.annotations["mnemoshare.io/format-migration-target"] == $target and
+                .metadata.annotations["mnemoshare.io/format-migration-owner"] == "{{ .Release.Namespace }}/{{ .Release.Name }}" and
+                .metadata.annotations["mnemoshare.io/format-migration-credential-source"] == $source and
+                (.data | keys) == [$key]' >/dev/null
+              claimed_hash="$(printf %s "${secret_json}" | jq -r '.metadata.annotations["mnemoshare.io/format-migration-credential-sha256"]')"
+              actual_hash="$(printf %s "${secret_json}" | jq -r --arg key "${key}" '.data[$key]' | base64 -d | sha256sum | cut -d' ' -f1)"
+              [ "${claimed_hash}" = "${actual_hash}" ] && printf %s "${claimed_hash}" | grep -Eq '^[a-f0-9]{64}$' || { echo 'email-relay-mongo credential snapshot identity mismatch' >&2; exit 1; }
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+        {{- end }}
         # A failure here leaves every existing workload and autoscaler intact.
         - name: plan-before-drain
           image: {{ $migrationImage | quote }}
@@ -127,6 +179,20 @@ spec:
           volumeMounts:
             - name: migration-plan
               mountPath: /migration
+        {{- if $externalRelayUniverse }}
+        - name: plan-email-relay-mongo-before-drain
+          image: {{ $migrationImage | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/mnemoshare-migrate"]
+          args: ["plan", "--contract", "embedded", "--universe", "email-relay-mongo", "--result", "/migration/email-relay-result.json", "--output", "/migration/email-relay-plan.json"]
+          env:
+            {{- include "mnemoshare.emailRelayMigrationEnv" . | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: migration-plan
+              mountPath: /migration
+        {{- end }}
         # From this point onward failures deliberately leave the application
         # plane down. A retry continues forward against the same target image.
         - name: drain-application-plane
@@ -158,20 +224,35 @@ spec:
               jq --stream -c . /migration/result.json > /migration/result-events.jsonl
               jq --slurp -e -f /migration/migration-result-v1.jq /migration/result-events.jsonl > /migration/validated-result.json
               decision="$(jq -r .decision /migration/validated-result.json)"
+              primary_decision="${decision}"
               plan_digest="$(jq -r .planDigest /migration/validated-result.json)"
+              external_universe={{ $externalRelayUniverse | quote }}
+              external_plan_digest=""
+              if [ "${external_universe}" = true ]; then
+                jq --stream -c . /migration/email-relay-result.json > /migration/email-relay-result-events.jsonl
+                jq --slurp -e -f /migration/migration-result-v1.jq /migration/email-relay-result-events.jsonl > /migration/email-relay-validated-result.json
+                external_plan_digest="$(jq -r .planDigest /migration/email-relay-validated-result.json)"
+                printf %s "${external_plan_digest}" | grep -Eq '^[a-f0-9]{64}$' || { echo 'invalid email-relay-mongo plan digest' >&2; exit 1; }
+                printf %s "${external_plan_digest}" > /migration/email-relay-plan-digest
+                # Named universes always require exclusive apply, including an
+                # otherwise ordinary plan.
+                decision=maintenance
+              fi
 
               if kubectl get "${state_resource}" >/dev/null 2>&1; then
                 state_json="$(kubectl get "${state_resource}" -o json)"
-                printf %s "${state_json}" | jq -e --arg target "${target_digest}" --arg operation "${operation}" --arg decision "${decision}" '
+                printf %s "${state_json}" | jq -e --arg target "${target_digest}" --arg operation "${operation}" --arg decision "${decision}" --arg external "${external_universe}" '
                   .immutable == true and
                   .metadata.labels["app.kubernetes.io/instance"] == "{{ .Release.Name }}" and
                   .metadata.labels["app.kubernetes.io/component"] == "format-migration-state" and
                   .metadata.annotations["mnemoshare.io/format-migration-target"] == $target and
                   .metadata.annotations["mnemoshare.io/format-migration-owner"] == "{{ .Release.Namespace }}/{{ .Release.Name }}" and
-                  (.data | keys | sort) == ["decision","desired-replicas","operation","plan-digest","snapshot-sha256"] and
+                  (($external == "true" and (.data | keys | sort) == ["decision","desired-replicas","external-plan-digest","external-universe","operation","plan-digest","snapshot-sha256"] and .data["external-universe"] == "email-relay-mongo") or
+                   ($external != "true" and (.data | keys | sort) == ["decision","desired-replicas","operation","plan-digest","snapshot-sha256"])) and
                   (.data.operation == $operation or
                     (.data.operation == "install" and $operation == "upgrade" and
-                     .data.decision == "ordinary" and $decision == "ordinary"))' >/dev/null
+                     ((.data.decision == "ordinary" and $decision == "ordinary") or
+                      ($external == "true" and .data.decision == "maintenance" and $decision == "maintenance"))))' >/dev/null
                 stored_target="$(kubectl get "${state_resource}" -o jsonpath='{.metadata.annotations.mnemoshare\.io/format-migration-target}')"
                 stored_decision="$(kubectl get "${state_resource}" -o jsonpath='{.data.decision}')"
                 stored_digest="$(kubectl get "${state_resource}" -o jsonpath='{.data.plan-digest}')"
@@ -180,6 +261,10 @@ spec:
                 if [ "${stored_digest}" != "${plan_digest}" ]; then
                   echo 'replanned migration digest drifted from the durable target plan' >&2
                   exit 1
+                fi
+                if [ "${external_universe}" = true ]; then
+                  stored_external_digest="$(kubectl get "${state_resource}" -o jsonpath='{.data.external-plan-digest}')"
+                  [ "${stored_external_digest}" = "${external_plan_digest}" ] || { echo 'replanned email-relay-mongo digest drifted from durable target plan' >&2; exit 1; }
                 fi
                 if [ "${stored_decision}" = maintenance ]; then
                   decision=maintenance
@@ -211,8 +296,13 @@ spec:
                   printf '%s=%s\n' "${resource}" "${replicas}" >> /migration/desired-replicas
                 done
                 if [ "${decision}" = maintenance ] && [ ! -s /migration/desired-replicas ]; then
-                  echo 'a fresh install cannot satisfy a maintenance plan safely' >&2
-                  exit 1
+                  if [ "${external_universe}" = true ] && [ "${operation}" = install ] && [ "${primary_decision}" = ordinary ]; then
+                    application_pods="$(kubectl get pods -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component in (api,workflow-worker,ices,inbound-gateway,email-gateway,sftp-gateway,mcp)' -o name)"
+                    [ -z "${application_pods}" ] || { echo 'fresh install with an empty writer census found existing application pods' >&2; exit 1; }
+                  else
+                    echo 'a fresh install cannot satisfy a maintenance plan safely' >&2
+                    exit 1
+                  fi
                 fi
                 snapshot_hash="$(sha256sum /migration/desired-replicas | cut -d' ' -f1)"
                 kubectl create configmap "${state_name}" \
@@ -220,16 +310,21 @@ spec:
                   --from-literal=plan-digest="${plan_digest}" \
                   --from-literal=operation="${operation}" \
                   --from-literal=snapshot-sha256="${snapshot_hash}" \
+                  {{- if $externalRelayUniverse }}
+                  --from-literal=external-universe=email-relay-mongo \
+                  --from-literal=external-plan-digest="${external_plan_digest}" \
+                  {{- end }}
                   --from-file=desired-replicas=/migration/desired-replicas \
                   --dry-run=client -o json | jq --arg target "${target_digest}" \
                     '.immutable=true | .metadata.labels={"app.kubernetes.io/instance":"{{ .Release.Name }}","app.kubernetes.io/component":"format-migration-state"} | .metadata.annotations={"mnemoshare.io/format-migration-target":$target,"mnemoshare.io/format-migration-owner":"{{ .Release.Namespace }}/{{ .Release.Name }}"}' | \
                   kubectl create -f -
               fi
-              if [ "${decision}" = maintenance ] && [ ! -s /migration/desired-replicas ]; then
+              if [ "${decision}" = maintenance ] && [ ! -s /migration/desired-replicas ] && { [ "${external_universe}" != true ] || [ "${operation}" != install ] || [ "${primary_decision}" != ordinary ]; }; then
                 echo 'maintenance requires a nonempty exact prior writer census' >&2
                 exit 1
               fi
               : > /migration/writer-replicas
+              : > /migration/peer-replicas
               while IFS='=' read -r resource replicas; do
                 [ -n "${resource}" ] || continue
                 case "${resource}" in deployment/*|statefulset/*) ;; *) echo "invalid persisted writer ${resource}" >&2; exit 1;; esac
@@ -238,13 +333,14 @@ spec:
                 component="$(kubectl get "${resource}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/component}')"
                 [ "${instance}" = "{{ .Release.Name }}" ] || { echo "persisted writer is not release-owned" >&2; exit 1; }
                 case "${component}" in
-                  api|workflow-worker|ices|inbound-gateway|email-gateway) printf '%s=%s\n' "${resource}" "${replicas}" >> /migration/writer-replicas ;;
+                  api|workflow-worker|ices|inbound-gateway) printf '%s=%s\n' "${resource}" "${replicas}" >> /migration/writer-replicas ;;
+                  email-gateway) printf '%s=%s\n' "${resource}" "${replicas}" >> /migration/peer-replicas ;;
                   sftp-gateway|mcp) ;; # legacy v1.25.11 state: reclassify as a peer after hash verification
                   *) echo "persisted resource is neither an application writer nor a known persistence-none peer" >&2; exit 1 ;;
                 esac
               done < /migration/desired-replicas
               mv /migration/writer-replicas /migration/desired-replicas
-              if [ "${decision}" = maintenance ] && [ ! -s /migration/desired-replicas ]; then
+              if [ "${decision}" = maintenance ] && [ ! -s /migration/desired-replicas ] && { [ "${external_universe}" != true ] || [ "${primary_decision}" = maintenance ]; }; then
                 echo 'maintenance requires a nonempty persistence-writer census after peer classification' >&2
                 exit 1
               fi
@@ -286,7 +382,7 @@ spec:
               # deliberately absent from the durable writer census: scaling
               # is one-way on failure, and a successful Helm apply restores
               # their contract-owned desired replicas.
-              peer_controllers="$(kubectl get deployments,statefulsets -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component in (sftp-gateway,mcp)' -o name)"
+              peer_controllers="$(kubectl get deployments,statefulsets -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component in (email-gateway,sftp-gateway,mcp)' -o name)"
               for resource in ${peer_controllers}; do
                 kubectl scale "${resource}" --replicas=0
               done
@@ -322,15 +418,19 @@ spec:
                 exit 1
               fi
               case "${decision}" in
-                ordinary)
+                ordinary|maintenance)
+                  {{- if $externalRelayUniverse }}
+                  /usr/local/bin/mnemoshare-migrate apply \
+                    --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" \
+                    --exclusive --bootstrap-policy provision-untracked
+                  exec /usr/local/bin/mnemoshare-migrate apply \
+                    --contract embedded --universe email-relay-mongo --expect-plan-digest "$(cat /migration/email-relay-plan-digest)" \
+                    --exclusive --bootstrap-policy provision-untracked
+                  {{- else }}
                   exec /usr/local/bin/mnemoshare-migrate apply \
                     --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" \
                     --exclusive --bootstrap-policy provision-untracked
-                  ;;
-                maintenance)
-                  exec /usr/local/bin/mnemoshare-migrate apply \
-                    --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" \
-                    --exclusive --bootstrap-policy provision-untracked
+                  {{- end }}
                   ;;
                 *)
                   echo "invalid or missing migration decision: expected ordinary or maintenance" >&2
@@ -339,6 +439,9 @@ spec:
               esac
           env:
             {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
+            {{- if $externalRelayUniverse }}
+            {{- include "mnemoshare.emailRelayMigrationEnv" . | nindent 12 }}
+            {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:
@@ -349,9 +452,16 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/bin/sh", "-ec"]
           args:
-            - exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)"
+            - |
+              /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)"
+              {{- if $externalRelayUniverse }}
+              exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --universe email-relay-mongo --expect-plan-digest "$(cat /migration/email-relay-plan-digest)"
+              {{- end }}
           env:
             {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
+            {{- if $externalRelayUniverse }}
+            {{- include "mnemoshare.emailRelayMigrationEnv" . | nindent 12 }}
+            {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:

@@ -40,6 +40,13 @@ deploymentContractV2:
   contractFingerprint: ""
   imageDigest: ""
 
+# Required immutable identity declaration when emailGateway is enabled. The
+# chart verifies equality and digest addressing, not build provenance.
+deploymentContractV3:
+  sourceCommit: ""
+  contractFingerprint: ""
+  imageDigest: ""
+
 nameOverride: ""
 fullnameOverride: ""
 
@@ -1567,6 +1574,15 @@ emailGateway:
       name: "relay"
       # Existing secret with key: relay-db-uri
       existingSecret: ""
+      # Egress destinations required by the migration hook when NetworkPolicy
+      # is enabled. These may differ from the primary database targets.
+      networkPolicyCIDRs: []
+      networkPolicyPort: 27017
+    # Shared authentication key for durable spool rotation. Prefer an existing
+    # Secret in production.
+    spoolSharedKey: ""
+    # Existing secret with key: relay-spool-shared-key
+    existingSpoolKeySecret: ""
     # Relay admin API key (inline — prefer existingAdminKeySecret for production)
     adminKey: ""
     # Existing secret with key: relay-admin-key

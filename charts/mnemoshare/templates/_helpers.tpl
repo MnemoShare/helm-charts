@@ -48,6 +48,40 @@ Create a default fully qualified app name.
 {{- printf "%s@%s" (required "image.repository is required" .Values.image.repository) .Values.deploymentContractV2.imageDigest -}}
 {{- end -}}
 
+{{/* Bind v3 contract-governed peers to a declared immutable application identity. */}}
+{{- define "mnemoshare.requireDeploymentContractV3Identity" -}}
+{{- $expectedCommit := "0dd4f8eb13b9afb35a586f4ac7bc8618d25d7886" -}}
+{{- if ne .Values.deploymentContractV3.sourceCommit $expectedCommit -}}{{- fail (printf "deploymentContractV3.sourceCommit must equal vendored application commit %s" $expectedCommit) -}}{{- end -}}
+{{- $raw := required "vendored deployment contract v3 is required" (.Files.Get "tests/contracts/deployment/v3/contract.json") -}}
+{{- $contract := fromJson $raw -}}
+{{- if ne .Values.deploymentContractV3.contractFingerprint $contract.fingerprint -}}{{- fail (printf "deploymentContractV3.contractFingerprint must equal vendored contract fingerprint %s" $contract.fingerprint) -}}{{- end -}}
+{{- $digest := required "deploymentContractV3.imageDigest is required for contract-governed emailgateway" .Values.deploymentContractV3.imageDigest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}{{- fail "deploymentContractV3.imageDigest must be sha256:<64 lowercase hex>" -}}{{- end -}}
+{{- if ne $digest .Values.image.digest -}}{{- fail "deploymentContractV3.imageDigest must equal the global image.digest actually selected for contract-governed peers" -}}{{- end -}}
+{{- end -}}
+
+{{- define "mnemoshare.contractV3ApplicationImage" -}}
+{{- printf "%s@%s" (required "image.repository is required" .Values.image.repository) .Values.deploymentContractV3.imageDigest -}}
+{{- end -}}
+
+{{- define "mnemoshare.deploymentExecutableV3" -}}
+{{- $raw := required "vendored tests/contracts/deployment/v3/contract.json is required" (.root.Files.Get "tests/contracts/deployment/v3/contract.json") -}}
+{{- $contract := fromJson $raw -}}
+{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v3" -}}{{- fail "vendored deployment contract is not v3" -}}{{- end -}}
+{{- $found := dict -}}
+{{- range $contract.executables -}}{{- if eq .id $.id -}}{{- $_ := set $found "executable" . -}}{{- end -}}{{- end -}}
+{{- if not (hasKey $found "executable") -}}{{- fail (printf "vendored deployment contract has no executable %s" .id) -}}{{- end -}}
+{{- toJson (get $found "executable") -}}
+{{- end -}}
+
+{{- define "mnemoshare.deploymentProfileV3" -}}
+{{- $executable := include "mnemoshare.deploymentExecutableV3" (dict "root" .root "id" .executable) | fromJson -}}
+{{- $found := dict -}}
+{{- range $executable.profiles -}}{{- if eq .id $.profile -}}{{- $_ := set $found "profile" . -}}{{- end -}}{{- end -}}
+{{- if not (hasKey $found "profile") -}}{{- fail (printf "vendored deployment executable %s has no profile %s" .executable .profile) -}}{{- end -}}
+{{- toJson (get $found "profile") -}}
+{{- end -}}
+
 {{- define "mnemoshare.deploymentProcessV2" -}}
 {{- $raw := required "vendored tests/contracts/deployment/v2/contract.json is required" (.root.Files.Get "tests/contracts/deployment/v2/contract.json") -}}
 {{- $contract := fromJson $raw -}}
