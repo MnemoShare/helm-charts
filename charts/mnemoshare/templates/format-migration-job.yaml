@@ -67,6 +67,10 @@ spec:
     spec:
       restartPolicy: Never
       serviceAccountName: {{ $fullname }}-format-migration
+      {{- if .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml .Values.dnsConfig | nindent 8 }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
