@@ -1171,6 +1171,12 @@ workflowWorker:
   # settings the typed knobs above don't cover).
   extraEnv: []
 
+  # Container entrypoint. Empty = /usr/local/bin/worker (the unified hosted
+  # binary). Application builds with the fixed worker process layout ship
+  # /usr/local/bin/run-workers instead (a supervisor over background-worker,
+  # cloud-worker and workflow-worker); set that here for such images.
+  command: []
+
   # Number of worker replicas (scale for more concurrent processing)
   replicas: 2
 
@@ -1337,6 +1343,12 @@ ices:
 
   # Extra env injected verbatim onto the ices pod (escape valve).
   extraEnv: []
+
+  # Container entrypoint. Empty = /usr/local/bin/ices. Application builds with
+  # the fixed worker process layout host mail monitoring in
+  # /usr/local/bin/cloud-worker and ship no ices binary; set that here for such
+  # images. The liveness/readiness probes follow this value.
+  command: []
 
   # Number of replicas (ignored when autoscaling.enabled=true).
   replicas: 1
