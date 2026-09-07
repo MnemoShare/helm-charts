@@ -46,7 +46,9 @@ spec:
         # Dedicated email-security binary (workerboot). Hosts mail-monitoring:
         # BEC poller + Pub/Sub subscriber + mail-security sweepers. It pins its
         # own FILTERED_PROCESS internally, so none is set on this pod.
-        command: ["/usr/local/bin/ices"]
+        {{- $icesCommand := .Values.ices.command | default (list "/usr/local/bin/ices") }}
+        command:
+          {{- toYaml $icesCommand | nindent 10 }}
         env:
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
@@ -258,7 +260,7 @@ spec:
             # own `/bin/sh -c ...` cmdline (contains "ices") → false-positive
             # even when the binary is dead. `-f` + ^...$ works on both procps
             # and busybox pgrep and cannot match the probe shell.
-            - "pgrep -f '^/usr/local/bin/ices$'"
+            - {{ printf "pgrep -f '^%s$'" (first $icesCommand) | quote }}
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
@@ -268,7 +270,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - "pgrep -f '^/usr/local/bin/ices$'"
+            - {{ printf "pgrep -f '^%s$'" (first $icesCommand) | quote }}
           initialDelaySeconds: 10
           periodSeconds: 15
           timeoutSeconds: 5

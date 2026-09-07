@@ -52,7 +52,8 @@ spec:
         # at compile time and activates the configured subset via FILTERED_PROCESS.
         # For this Deployment the active set is .Values.workflowWorker.filteredProcess
         # (default: "*"; "background,messaging" on db2) — see the FILTERED_PROCESS env below.
-        command: ["/usr/local/bin/worker"]
+        command:
+          {{- toYaml (.Values.workflowWorker.command | default (list "/usr/local/bin/worker")) | nindent 10 }}
         env:
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
