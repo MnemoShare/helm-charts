@@ -287,6 +287,13 @@ spec:
                 : > /migration/desired-replicas
                 for resource in ${controllers}; do
                   component="$(kubectl get "${resource}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/component}')"
+                  # Charts before 1.25.16 labelled the api Deployment as a writer
+                  # but carried its component only on the pod template; this
+                  # pre-upgrade hook sees that controller before the upgrade
+                  # can relabel it.
+                  if [ -z "${component}" ] && [ "${resource}" = "deployment.apps/{{ include "mnemoshare.fullname" . }}" ]; then
+                    component=api
+                  fi
                   case "${component}" in
                     sftp-gateway|mcp) continue ;;
                     api|workflow-worker|ices|inbound-gateway|email-gateway) ;;
