@@ -280,10 +280,13 @@ spec:
                 # component union is a bounded rollout bridge for controllers
                 # created by the immediately preceding chart, which cannot
                 # retroactively carry the new metadata label before this hook.
+                # `-o name` is group-qualified (deployment.apps/x) on current
+                # kubectl; the persisted census and every match below use the
+                # bare kind so the two spellings never diverge.
                 controllers="$({
                   kubectl get deployments,statefulsets -l 'app.kubernetes.io/instance={{ .Release.Name }},mnemoshare.io/database-writer=true' -o name
                   kubectl get deployments,statefulsets -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component in (api,workflow-worker,ices,inbound-gateway,email-gateway)' -o name
-                } | sort -u)"
+                } | sed -e 's#^deployment\.apps/#deployment/#' -e 's#^statefulset\.apps/#statefulset/#' | sort -u)"
                 : > /migration/desired-replicas
                 for resource in ${controllers}; do
                   component="$(kubectl get "${resource}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/component}')"
@@ -291,7 +294,7 @@ spec:
                   # but carried its component only on the pod template; this
                   # pre-upgrade hook sees that controller before the upgrade
                   # can relabel it.
-                  if [ -z "${component}" ] && [ "${resource}" = "deployment.apps/{{ include "mnemoshare.fullname" . }}" ]; then
+                  if [ -z "${component}" ] && [ "${resource}" = "deployment/{{ include "mnemoshare.fullname" . }}" ]; then
                     component=api
                   fi
                   case "${component}" in
@@ -334,7 +337,8 @@ spec:
               : > /migration/peer-replicas
               while IFS='=' read -r resource replicas; do
                 [ -n "${resource}" ] || continue
-                case "${resource}" in deployment/*|statefulset/*) ;; *) echo "invalid persisted writer ${resource}" >&2; exit 1;; esac
+                # 1.25.16 persisted group-qualified names; accept both spellings.
+                case "${resource}" in deployment/*|statefulset/*|deployment.apps/*|statefulset.apps/*) ;; *) echo "invalid persisted writer ${resource}" >&2; exit 1;; esac
                 printf %s "${replicas}" | grep -Eq '^[0-9]+$' || { echo "invalid persisted replica count" >&2; exit 1; }
                 instance="$(kubectl get "${resource}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/instance}')"
                 component="$(kubectl get "${resource}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/component}')"
