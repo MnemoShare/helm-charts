@@ -33,6 +33,7 @@ metadata:
   name: {{ include "mnemoshare.fullname" . }}
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
     mnemoshare.io/database-writer: "true"
 spec:
   {{- if not .Values.autoscaling.enabled }}
