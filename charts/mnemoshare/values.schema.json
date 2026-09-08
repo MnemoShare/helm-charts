@@ -79,6 +79,47 @@
       },
       "required": ["sourceCommit", "contractFingerprint", "imageDigest"]
     },
+    "migrationOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "phase": {
+          "type": "string",
+          "enum": ["", "plan", "down", "apply", "verify", "up"],
+          "default": ""
+        },
+        "operationId": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "default": "active"
+        },
+        "targetImage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": { "type": "string" },
+            "digest": { "type": "string", "pattern": "^(|sha256:[a-f0-9]{64})$" },
+            "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+          },
+          "required": ["repository", "digest", "pullPolicy"]
+        },
+        "transport": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "existingClaim": { "type": "string" }
+          },
+          "required": ["existingClaim"]
+        },
+        "universe": { "type": "string", "enum": ["primary", "email-relay-mongo"], "default": "primary" },
+        "planDigest": { "type": "string", "pattern": "^(|[a-f0-9]{64})$" },
+        "verifiedPlanDigest": { "type": "string", "pattern": "^(|[a-f0-9]{64})$" },
+        "backoffLimit": { "type": "integer", "minimum": 0 },
+        "activeDeadlineSeconds": { "type": "integer", "minimum": 60 }
+      },
+      "required": ["enabled", "phase", "operationId", "targetImage", "transport", "universe", "planDigest", "verifiedPlanDigest", "backoffLimit", "activeDeadlineSeconds"]
+    },
     "formatMigrations": {
       "type": "object",
       "additionalProperties": false,

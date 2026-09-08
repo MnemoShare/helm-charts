@@ -166,6 +166,27 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Migration-operation/v1 keeps the deployment adapter declarative. A controller
+sets one phase at a time; only the maintenance phases suppress governed
+writers and their autoscalers. `up` is intentionally not considered a
+maintenance phase because it is the verified release handoff.
+*/}}
+{{- define "mnemoshare.migrationOperationDown" -}}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled (has .Values.migrationOperation.phase (list "down" "apply" "verify")) }}true{{ else }}false{{ end }}
+{{- end }}
+
+{{/* Target image for the one-shot migration-operation Job. */}}
+{{- define "mnemoshare.migrationOperationTargetImage" -}}
+{{- $target := required "migrationOperation.targetImage is required when migrationOperation.enabled=true" .Values.migrationOperation.targetImage -}}
+{{- $repo := required "migrationOperation.targetImage.repository is required when migrationOperation.enabled=true" $target.repository -}}
+{{- $digest := required "migrationOperation.targetImage.digest is required when migrationOperation.enabled=true" $target.digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}
+{{- fail "migrationOperation.targetImage.digest must be sha256:<64 lowercase hex>" -}}
+{{- end -}}
+{{- printf "%s@%s" $repo $digest -}}
+{{- end }}
+
+{{/*
 Resolve an application database-writer image. Automatic format migration mode
 closes every writer over one immutable global repository@digest; other modes
 retain the chart's historical repository:tag fallback behavior.
@@ -176,7 +197,21 @@ Input: dict "root" . ["component" .Values.<component>.image] ["name" string]
 {{- $component := .component | default dict -}}
 {{- $name := .name | default "application" -}}
 {{- $globalRepo := required "image.repository is required" $root.Values.image.repository -}}
-{{- if eq $root.Values.formatMigrations.mode "automatic" -}}
+{{- if and $root.Values.migrationOperation $root.Values.migrationOperation.enabled (eq $root.Values.migrationOperation.phase "up") -}}
+  {{- $target := $root.Values.migrationOperation.targetImage -}}
+  {{- $targetRepo := required "migrationOperation.targetImage.repository is required when migrationOperation.phase=up" $target.repository -}}
+  {{- $targetDigest := required "migrationOperation.targetImage.digest is required when migrationOperation.phase=up" $target.digest -}}
+  {{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $targetDigest) -}}
+    {{- fail "migrationOperation.targetImage.digest must be sha256:<64 lowercase hex>" -}}
+  {{- end -}}
+  {{- $repo := $component.repository | default $targetRepo -}}
+  {{- $digest := $component.digest | default $targetDigest -}}
+  {{- $tag := $component.tag | default "" -}}
+  {{- if or (ne $repo $targetRepo) (ne $digest $targetDigest) (ne $tag "") -}}
+    {{- fail (printf "migrationOperation.phase=up requires %s image to resolve exactly to %s@%s; per-process repository, digest, or tag override diverges" $name $targetRepo $targetDigest) -}}
+  {{- end -}}
+  {{- printf "%s@%s" $targetRepo $targetDigest -}}
+{{- else if eq $root.Values.formatMigrations.mode "automatic" -}}
   {{- $globalDigest := required "formatMigrations.mode=automatic requires image.digest pinned as sha256:<64 lowercase hex>" $root.Values.image.digest -}}
   {{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $globalDigest) -}}
     {{- fail "formatMigrations.mode=automatic requires image.digest pinned as sha256:<64 lowercase hex>" -}}

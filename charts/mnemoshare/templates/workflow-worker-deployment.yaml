@@ -19,8 +19,8 @@ metadata:
     app.kubernetes.io/component: workflow-worker
     mnemoshare.io/database-writer: "true"
 spec:
-  {{- if not .Values.workflowWorker.autoscaling.enabled }}
-  replicas: {{ .Values.workflowWorker.replicas }}
+  {{- if or (not .Values.workflowWorker.autoscaling.enabled) (eq (include "mnemoshare.migrationOperationDown" .) "true") }}
+  replicas: {{ if eq (include "mnemoshare.migrationOperationDown" .) "true" }}0{{ else }}{{ .Values.workflowWorker.replicas }}{{ end }}
   {{- end }}
   selector:
     matchLabels:
