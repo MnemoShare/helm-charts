@@ -22,6 +22,11 @@ if grep -Fq 'app.kubernetes.io/component: migration-operation' <<<"$ordinary"; t
   echo 'disabled migration operation rendered a control resource' >&2
   exit 1
 fi
+grep -Fq 'replicas: 2' <<<"$ordinary"
+if grep -Fq 'replicas: 0' <<<"$ordinary"; then
+  echo 'ordinary mode unexpectedly scaled a workload down' >&2
+  exit 1
+fi
 
 plan=$(helm template test "$chart_dir" "${base[@]}" \
   --set migrationOperation.enabled=true \
@@ -30,8 +35,17 @@ plan=$(helm template test "$chart_dir" "${base[@]}" \
   --set migrationOperation.targetImage.digest="$target_digest" \
   --set migrationOperation.transport.existingClaim=migration-transport)
 grep -Fq 'kind: Job' <<<"$plan"
-grep -Fq 'command: ["/usr/local/bin/mnemoshare-migrate"]' <<<"$plan"
-grep -Fq -- '- "--output"' <<<"$plan"
+grep -Fq 'command: ["/bin/sh", "-ec"]' <<<"$plan"
+grep -Fq 'mnemoshare.io/migration-operation-contract-fingerprint: "e48308c8d8e8741fbe06d9ef4e104414c380340fcb49e33e699222ed0b94ab6c"' <<<"$plan"
+grep -Fq '/usr/local/bin/mnemoshare-migrate plan --contract embedded' <<<"$plan"
+grep -Fq 'cp "${result_file}" /dev/termination-log' <<<"$plan"
+grep -Fq 'result_bytes=' <<<"$plan"
+grep -Fq 'terminationMessagePath: /dev/termination-log' <<<"$plan"
+grep -Fq 'terminationMessagePolicy: File' <<<"$plan"
+grep -Fq 'mnemoshare.io/migration-operation-phase: "plan"' <<<"$plan"
+grep -Fq 'mnemoshare.io/migration-operation-universe: "primary"' <<<"$plan"
+grep -Fq 'mnemoshare.io/migration-operation-plan-digest: "pending"' <<<"$plan"
+grep -Fq 'mnemoshare.io/migration-operation-id: "active"' <<<"$plan"
 grep -Fq '/migration/primary-plan.json' <<<"$plan"
 grep -Fq '/migration/primary-result.json' <<<"$plan"
 if grep -Fq 'helm.sh/hook' <<<"$plan"; then
@@ -46,10 +60,14 @@ apply=$(helm template test "$chart_dir" "${base[@]}" \
   --set migrationOperation.targetImage.digest="$target_digest" \
   --set migrationOperation.transport.existingClaim=migration-transport \
   --set migrationOperation.planDigest=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc)
-grep -Fq -- '- "--plan"' <<<"$apply"
-grep -Fq -- '- "--exclusive"' <<<"$apply"
-grep -Fq -- '- "--expect-plan-digest"' <<<"$apply"
-grep -Fq -- '"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' <<<"$apply"
+grep -Fq '/usr/local/bin/mnemoshare-migrate apply --contract embedded' <<<"$apply"
+grep -Fq -- '--plan /migration/primary-plan.json --exclusive --expect-plan-digest cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' <<<"$apply"
+grep -Fq 'mnemoshare.io/migration-operation-phase: "apply"' <<<"$apply"
+grep -Fq 'mnemoshare.io/migration-operation-universe: "primary"' <<<"$apply"
+grep -Fq 'mnemoshare.io/migration-operation-plan-digest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' <<<"$apply"
+grep -Fq 'name: test-mnemoshare-migration-primary-apply-active' <<<"$apply"
+grep -Fq 'outcome=succeeded' <<<"$apply"
+grep -Fq 'planDigest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' <<<"$apply"
 grep -Fq 'backoffLimit: 0' <<<"$apply"
 
 verify=$(helm template test "$chart_dir" "${base[@]}" \
@@ -59,8 +77,14 @@ verify=$(helm template test "$chart_dir" "${base[@]}" \
   --set migrationOperation.targetImage.digest="$target_digest" \
   --set migrationOperation.transport.existingClaim=migration-transport \
   --set migrationOperation.planDigest=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc)
-grep -Fq -- '- "--plan"' <<<"$verify"
-grep -Fq -- '- "--expect-plan-digest"' <<<"$verify"
+grep -Fq '/usr/local/bin/mnemoshare-migrate verify --contract embedded' <<<"$verify"
+grep -Fq -- '--plan /migration/primary-plan.json --expect-plan-digest cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' <<<"$verify"
+if grep -Fq -- 'mnemoshare-migrate verify --contract embedded --plan /migration/primary-plan.json --exclusive' <<<"$verify"; then
+  echo 'verify phase must not receive apply-only --exclusive' >&2
+  exit 1
+fi
+grep -Fq 'mnemoshare.io/migration-operation-phase: "verify"' <<<"$verify"
+grep -Fq 'outcome=succeeded' <<<"$verify"
 
 down=$(helm template test "$chart_dir" "${base[@]}" \
   --set autoscaling.enabled=true \
@@ -76,6 +100,12 @@ down=$(helm template test "$chart_dir" "${base[@]}" \
   --set migrationOperation.targetImage.repository=mnemoshare/mnemoshare \
   --set migrationOperation.targetImage.digest="$target_digest")
 test "$(grep -Fc 'replicas: 0' <<<"$down")" -ge 4
+grep -Fq 'mnemoshare.io/process-id: "api"' <<<"$down"
+grep -Fq 'mnemoshare.io/process-profile: "default"' <<<"$down"
+grep -Fq 'mnemoshare.io/process-universe: "primary"' <<<"$down"
+grep -Fq 'mnemoshare.io/process-id: "workflow-worker"' <<<"$down"
+grep -Fq 'mnemoshare.io/process-id: "cloud-worker"' <<<"$down"
+grep -Fq 'mnemoshare.io/process-id: "inboundgateway"' <<<"$down"
 if grep -Eq '^kind: (HorizontalPodAutoscaler|ScaledObject|TriggerAuthentication)$' <<<"$down"; then
   echo 'maintenance phase left an autoscaler in the rendered writer universe' >&2
   exit 1
@@ -126,8 +156,16 @@ external_job=$(awk '
 ' <<<"$external")
 grep -Fq '/migration/email-relay-mongo-plan.json' <<<"$external_job"
 grep -Fq 'name: RELAY_DB_URI' <<<"$external_job"
+grep -Fq 'mnemoshare.io/migration-operation-universe: "email-relay-mongo"' <<<"$external_job"
+grep -Fq 'mnemoshare.io/process-id: "emailgateway"' <<<"$external"
+grep -Fq 'mnemoshare.io/process-profile: "relay-dkim-and-tokens"' <<<"$external"
+grep -Fq 'mnemoshare.io/process-universe: "email-relay-mongo"' <<<"$external"
 if grep -Fq 'name: MONGODB_URI' <<<"$external_job"; then
   echo 'external universe migration Job leaked primary database credentials' >&2
+  exit 1
+fi
+if grep -Eq 'MONGODB_DATABASE|mongodb-uri|encryption-key|license-key' <<<"$external_job"; then
+  echo 'external universe migration Job leaked primary or chart-secret settings' >&2
   exit 1
 fi
 

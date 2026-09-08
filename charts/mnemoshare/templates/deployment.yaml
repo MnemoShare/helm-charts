@@ -35,6 +35,7 @@ metadata:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
     mnemoshare.io/database-writer: "true"
+    {{- include "mnemoshare.migrationProcessIdentity" (dict "key" "api") | nindent 4 }}
 spec:
   {{- if or (not .Values.autoscaling.enabled) (eq (include "mnemoshare.migrationOperationDown" .) "true") }}
   replicas: {{ if eq (include "mnemoshare.migrationOperationDown" .) "true" }}0{{ else }}{{ .Values.replicaCount }}{{ end }}
@@ -53,6 +54,7 @@ spec:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: api
         mnemoshare.io/database-writer: "true"
+        {{- include "mnemoshare.migrationProcessIdentity" (dict "key" "api") | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

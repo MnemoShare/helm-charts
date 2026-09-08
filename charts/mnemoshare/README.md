@@ -166,6 +166,21 @@ phases. `universe=primary` uses the application database and
 database, with distinct plan/result filenames. The default disabled path
 renders no operation Job and retains ordinary rolling behavior.
 
+The chart also projects the controller handshake into Kubernetes metadata.
+Every governed workload and pod template carries the stable
+`mnemoshare.io/process-id`, `mnemoshare.io/process-profile`, and
+`mnemoshare.io/process-universe` labels. Each operation Job carries its
+`operationId`, phase, universe, and plan digest on both the Job and its pod,
+and repeats them as annotations together with the transport paths and target
+image digest and the immutable migration-operation contract fingerprint; the
+operation ID is included in the Job name so stale attempts remain
+distinguishable. The plan wrapper validates the bounded canonical
+`migration-result/v1` shape and copies the exact result file to
+`/dev/termination-log` on success or failure when valid, while retaining the
+PVC artifact. Apply and verify publish their exact phase, universe, digest,
+outcome, and exit code through the same termination channel and Job/Pod
+metadata. No credentials or secret values are included in this projection.
+
 In automatic mode, the target-image CLI contract is application-owned and
 provisional until the corresponding application release lands. The target image
 supplies the dedicated executable at this stable path (and `/bin/sh` for the

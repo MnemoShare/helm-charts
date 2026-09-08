@@ -17,6 +17,7 @@ metadata:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: workflow-worker
     mnemoshare.io/database-writer: "true"
+    {{- include "mnemoshare.migrationProcessIdentity" (dict "key" "workflow-worker") | nindent 4 }}
 spec:
   serviceName: {{ include "mnemoshare.fullname" . }}-worker
   {{- if or (not .Values.workflowWorker.autoscaling.enabled) (eq (include "mnemoshare.migrationOperationDown" .) "true") }}
@@ -32,6 +33,7 @@ spec:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: workflow-worker
         mnemoshare.io/database-writer: "true"
+        {{- include "mnemoshare.migrationProcessIdentity" (dict "key" "workflow-worker") | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

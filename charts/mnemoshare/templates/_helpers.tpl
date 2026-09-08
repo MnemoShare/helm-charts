@@ -175,6 +175,38 @@ maintenance phase because it is the verified release handoff.
 {{- if and .Values.migrationOperation .Values.migrationOperation.enabled (has .Values.migrationOperation.phase (list "down" "apply" "verify")) }}true{{ else }}false{{ end }}
 {{- end }}
 
+{{/*
+The executable/profile/universe tuple is the observer-facing projection of
+migration-operation/v1's governedProcesses table. Keep this table in one
+place: workload templates may choose their process key, but never invent a
+second spelling for the contract identity.
+Input: dict "key" (api|background-worker|workflow-worker|cloud-worker|emailgateway|inboundgateway)
+and, for emailgateway, "profile" from the selected deployment contract.
+*/}}
+{{- define "mnemoshare.migrationProcessIdentity" -}}
+{{- $key := .key -}}
+{{- $table := dict
+  "api" (dict "executableId" "api" "profileId" "default" "universeId" "primary")
+  "background-worker" (dict "executableId" "background-worker" "profileId" "default" "universeId" "primary")
+  "workflow-worker" (dict "executableId" "workflow-worker" "profileId" "default" "universeId" "primary")
+  "cloud-worker" (dict "executableId" "cloud-worker" "profileId" "default" "universeId" "primary")
+  "emailgateway" (dict "executableId" "emailgateway" "profileId" "" "universeId" "email-relay-mongo")
+  "inboundgateway" (dict "executableId" "inboundgateway" "profileId" "default" "universeId" "primary")
+-}}
+{{- $identity := get $table $key -}}
+{{- if not $identity -}}{{- fail (printf "unknown migration-operation governed process key %q" $key) -}}{{- end -}}
+{{- $profile := get $identity "profileId" -}}
+{{- if eq $key "emailgateway" -}}{{- $profile = required "emailgateway migration profile is required" .profile -}}{{- end -}}
+mnemoshare.io/process-id: {{ get $identity "executableId" | quote }}
+mnemoshare.io/process-profile: {{ $profile | quote }}
+mnemoshare.io/process-universe: {{ get $identity "universeId" | quote }}
+{{- end }}
+
+{{/* The immutable fingerprint of the embedded migration-operation/v1 contract. */}}
+{{- define "mnemoshare.migrationOperationContractFingerprint" -}}
+e48308c8d8e8741fbe06d9ef4e104414c380340fcb49e33e699222ed0b94ab6c
+{{- end }}
+
 {{/* Target image for the one-shot migration-operation Job. */}}
 {{- define "mnemoshare.migrationOperationTargetImage" -}}
 {{- $target := required "migrationOperation.targetImage is required when migrationOperation.enabled=true" .Values.migrationOperation.targetImage -}}

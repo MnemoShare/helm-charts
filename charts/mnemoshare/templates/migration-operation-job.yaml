@@ -2,9 +2,12 @@
 {{- $fullname := include "mnemoshare.fullname" . }}
 {{- $phase := .Values.migrationOperation.phase }}
 {{- $universe := .Values.migrationOperation.universe }}
+{{- $operationID := .Values.migrationOperation.operationId }}
+{{- $planDigest := .Values.migrationOperation.planDigest | default "" }}
+{{- $planDigestLabel := $planDigest | default "pending" }}
 {{- $planFile := printf "/migration/%s-plan.json" $universe }}
 {{- $resultFile := printf "/migration/%s-result.json" $universe }}
-{{- $jobName := printf "%s-migration-%s-%s" $fullname $phase .Values.migrationOperation.operationId | trunc 63 | trimSuffix "-" }}
+{{- $jobName := printf "%s-migration-%s-%s-%s" $fullname $universe $phase $operationID | trunc 63 | trimSuffix "-" }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -13,13 +16,22 @@ metadata:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: migration-operation
     mnemoshare.io/migration-operation-contract: v1
+    mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
+    mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
     mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
     mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
+    mnemoshare.io/migration-operation-plan-digest: {{ $planDigestLabel | quote }}
   annotations:
     # This is intentionally not a Helm hook. The external controller owns
     # ordering, observes Job status, and retains failures for forward repair.
     mnemoshare.io/migration-operation-plan-file: {{ $planFile | quote }}
     mnemoshare.io/migration-operation-result-file: {{ $resultFile | quote }}
+    mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
+    mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
+    mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
+    mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
+    mnemoshare.io/migration-operation-plan-digest: {{ $planDigest | quote }}
+    mnemoshare.io/migration-operation-target-image-digest: {{ .Values.migrationOperation.targetImage.digest | quote }}
 spec:
   backoffLimit: {{ .Values.migrationOperation.backoffLimit }}
   activeDeadlineSeconds: {{ .Values.migrationOperation.activeDeadlineSeconds }}
@@ -29,6 +41,11 @@ spec:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migration-operation
         mnemoshare.io/migration-operation-contract: v1
+        mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
+        mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
+        mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
+        mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
+        mnemoshare.io/migration-operation-plan-digest: {{ $planDigestLabel | quote }}
     spec:
       restartPolicy: Never
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
@@ -46,31 +63,47 @@ spec:
         - name: migration-operation
           image: {{ include "mnemoshare.migrationOperationTargetImage" . | quote }}
           imagePullPolicy: {{ .Values.migrationOperation.targetImage.pullPolicy }}
-          command: ["/usr/local/bin/mnemoshare-migrate"]
+          command: ["/bin/sh", "-ec"]
           args:
-            - {{ $phase | quote }}
-            - "--contract"
-            - "embedded"
-            {{- if ne $universe "primary" }}
-            - "--universe"
-            - {{ $universe | quote }}
-            {{- end }}
             {{- if eq $phase "plan" }}
-            - "--output"
-            - {{ $planFile | quote }}
-            - "--result"
-            - {{ $resultFile | quote }}
+            - |
+              result_file={{ $resultFile | quote }}
+              set +e
+              /usr/local/bin/mnemoshare-migrate plan --contract embedded {{ if ne $universe "primary" }}--universe {{ $universe }} {{ end }}--output {{ $planFile }} --result {{ $resultFile }}
+              status=$?
+              set -e
+              publish_status=${status}
+              if [ -f "${result_file}" ]; then
+                result_bytes="$(wc -c < "${result_file}")"
+                compact="$(tr -d '[:space:]' < "${result_file}")"
+                if [ "${result_bytes}" -le 4096 ] && printf %s "${compact}" | grep -Eq '^(\{"decision":"(ordinary|maintenance)","planDigest":"[0-9a-f]{64}"\}|\{"planDigest":"[0-9a-f]{64}","decision":"(ordinary|maintenance)"\})$'; then
+                  cp "${result_file}" /dev/termination-log
+                else
+                  printf '%s\n' 'migration-result/v1 artifact failed the bounded canonical-shape check' > /dev/termination-log
+                  [ "${publish_status}" -ne 0 ] || publish_status=1
+                fi
+              else
+                printf '%s\n' 'migration plan failed before producing migration-result/v1' > /dev/termination-log
+                [ "${publish_status}" -ne 0 ] || publish_status=1
+              fi
+              exit "${publish_status}"
             {{- else }}
-            - "--plan"
-            - {{ $planFile | quote }}
-            - "--exclusive"
-            - "--expect-plan-digest"
-            - {{ .Values.migrationOperation.planDigest | quote }}
+            - |
+              set +e
+              /usr/local/bin/mnemoshare-migrate {{ $phase }} --contract embedded {{ if ne $universe "primary" }}--universe {{ $universe }} {{ end }}--plan {{ $planFile }} {{ if eq $phase "apply" }}--exclusive {{ end }}--expect-plan-digest {{ $planDigest }}
+              status=$?
+              set -e
+              outcome=succeeded
+              [ "${status}" -eq 0 ] || outcome=failed
+              printf '{"phase":"{{ $phase }}","universe":"{{ $universe }}","planDigest":"{{ $planDigest }}","outcome":"%s","exitCode":%s}\n' "${outcome}" "${status}" > /dev/termination-log
+              exit "${status}"
             {{- end }}
           env:
             {{- include "mnemoshare.migrationOperationEnv" . | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
           volumeMounts:
             - name: migration-transport
               mountPath: /migration
