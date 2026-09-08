@@ -169,4 +169,32 @@ if grep -Eq 'MONGODB_DATABASE|mongodb-uri|encryption-key|license-key' <<<"$exter
   exit 1
 fi
 
+external_up=$(helm template test "$chart_dir" "${base[@]}" \
+  --set emailGateway.enabled=true --set emailGateway.mode=relay \
+  --set emailGateway.relay.db.uri=mongodb://relay:test@relay:27017/test \
+  --set emailGateway.relay.db.name=relay --set emailGateway.relay.adminKey=admin \
+  --set emailGateway.relay.spoolSharedKey=spool \
+  --set emailGateway.relay.persistence.enabled=true \
+  --set emailGateway.relay.spoolDir=/var/spool/mnemo-relay --set emailGateway.replicas=1 \
+  --set deploymentContractV3.sourceCommit=0dd4f8eb13b9afb35a586f4ac7bc8618d25d7886 \
+  --set deploymentContractV3.contractFingerprint=23dc67fb882b463fbc1bd05d0732d2a5aadc86b3070b228dd5f62cb204319cc6 \
+  --set deploymentContractV3.imageDigest="$digest" \
+  --set migrationOperation.enabled=true --set migrationOperation.phase=up \
+  --set migrationOperation.universe=email-relay-mongo \
+  --set migrationOperation.targetImage.repository=mnemoshare/mnemoshare \
+  --set migrationOperation.targetImage.digest="$target_digest" \
+  --set migrationOperation.planDigest=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc \
+  --set migrationOperation.verifiedPlanDigest=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc)
+external_up_gateway=$(awk '
+  /# Source: mnemoshare\/templates\/email-gateway-deployment.yaml/ { active=1 }
+  active { print }
+  active && /# Source:/ && ! /email-gateway-deployment.yaml/ { exit }
+' <<<"$external_up")
+grep -Fq 'replicas: 1' <<<"$external_up_gateway"
+grep -Fq "image: \"mnemoshare/mnemoshare@$target_digest\"" <<<"$external_up_gateway"
+if grep -Fq "image: \"mnemoshare/mnemoshare@$digest\"" <<<"$external_up_gateway"; then
+  echo 'external universe phase=up restored email-gateway on the old image digest' >&2
+  exit 1
+fi
+
 echo 'migration-operation/v1 chart checks passed'

@@ -61,7 +61,11 @@ Create a default fully qualified app name.
 {{- end -}}
 
 {{- define "mnemoshare.contractV3ApplicationImage" -}}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled (eq .Values.migrationOperation.phase "up") -}}
+{{- include "mnemoshare.migrationOperationTargetImage" . -}}
+{{- else -}}
 {{- printf "%s@%s" (required "image.repository is required" .Values.image.repository) .Values.deploymentContractV3.imageDigest -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "mnemoshare.deploymentExecutableV3" -}}
