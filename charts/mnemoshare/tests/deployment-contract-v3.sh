@@ -100,6 +100,7 @@ render_profile() {
   grep -Fq 'containerPort: 8080' <<<"$deployment"
   grep -Fq 'value: "8080"' <<<"$deployment"
   grep -Fq 'path: /readyz' <<<"$deployment"
+  grep -Fq 'name: net.ipv4.ip_unprivileged_port_start' <<<"$deployment"
   grep -Fq 'path: /healthz' <<<"$deployment"
   ! grep -Fq 'mnemoshare.io/database-writer' <<<"$deployment"
   printf '%s' "$render"
