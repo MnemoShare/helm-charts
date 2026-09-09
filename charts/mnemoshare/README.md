@@ -139,12 +139,17 @@ migration orchestration:
   by retrying the exact frozen automatic target or by an explicit external state
   handoff. Operator mode assumes that state ownership and reconciliation itself.
 
-### External migration-operation/v1 lifecycle
+### External migration-operation/v2 lifecycle
 
 For deployments that use an external controller, set
 `formatMigrations.mode=operator` and opt into `migrationOperation.enabled=true`.
 This path has no Helm hooks and never performs an implicit rollback. The
 controller reconciles one immutable phase at a time:
+
+Set `migrationOperation.contractFingerprint` to the fingerprint embedded in
+the target image. The chart requires it to match its vendored v2 contract and
+every CLI invocation independently attests it with
+`--expect-contract-fingerprint` before opening persistence.
 
 1. `phase=plan` runs the target image's embedded `plan --contract embedded`
    command and writes the universe-specific plan and strict result files to

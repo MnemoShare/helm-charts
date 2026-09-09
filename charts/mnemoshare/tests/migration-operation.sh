@@ -4,6 +4,9 @@ set -euo pipefail
 chart_dir=${1:-charts/mnemoshare}
 digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 target_digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+contract_fingerprint=d764eaa547817389469713014884c3902d97d043644d80910ec981854b311750
+source_fingerprint=657c1378131ff685278f21f3cef26bc8300b8dcc7f3bb40696fe4da27d9f010b
+contract_dir="$chart_dir/tests/contracts/migration-operation/v2"
 base=(
   --set customerId=ci-test
   --set formatMigrations.mode=operator
@@ -17,6 +20,13 @@ base=(
   --set ingress.enabled=false
 )
 
+(cd "$contract_dir" && sha256sum -c SHA256SUMS)
+grep -Fq "\"fingerprint\":\"$contract_fingerprint\"" "$contract_dir/contract.json"
+grep -Fq "\"sourceFingerprint\":\"$source_fingerprint\"" "$contract_dir/contract.json"
+test "$(sed -n 's/^sha256sums=//p' "$contract_dir/UPSTREAM")" = "$(sha256sum "$contract_dir/SHA256SUMS" | cut -d' ' -f1)"
+grep -Fxq "contractFingerprint=$contract_fingerprint" "$contract_dir/UPSTREAM"
+grep -Fxq "sourceFingerprint=$source_fingerprint" "$contract_dir/UPSTREAM"
+
 ordinary=$(helm template test "$chart_dir" "${base[@]}" --set migrationOperation.enabled=false)
 if grep -Fq 'app.kubernetes.io/component: migration-operation' <<<"$ordinary"; then
   echo 'disabled migration operation rendered a control resource' >&2
@@ -29,6 +39,7 @@ if grep -Fq 'replicas: 0' <<<"$ordinary"; then
 fi
 
 plan=$(helm template test "$chart_dir" "${base[@]}" \
+  --set migrationOperation.contractFingerprint="$contract_fingerprint" \
   --set migrationOperation.enabled=true \
   --set migrationOperation.phase=plan \
   --set migrationOperation.targetImage.repository=mnemoshare/mnemoshare \
@@ -36,8 +47,10 @@ plan=$(helm template test "$chart_dir" "${base[@]}" \
   --set migrationOperation.transport.existingClaim=migration-transport)
 grep -Fq 'kind: Job' <<<"$plan"
 grep -Fq 'command: ["/bin/sh", "-ec"]' <<<"$plan"
-grep -Fq 'mnemoshare.io/migration-operation-contract-fingerprint: "e48308c8d8e8741fbe06d9ef4e104414c380340fcb49e33e699222ed0b94ab6c"' <<<"$plan"
-grep -Fq '/usr/local/bin/mnemoshare-migrate plan --contract embedded' <<<"$plan"
+grep -Fq 'mnemoshare.io/migration-operation-contract: v2' <<<"$plan"
+grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$contract_fingerprint\"" <<<"$plan"
+test "$(grep -Fc "mnemoshare.io/migration-operation-contract-fingerprint: \"$contract_fingerprint\"" <<<"$plan")" -eq 3
+grep -Fq "/usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint $contract_fingerprint --output /migration/primary-plan.json --result /migration/primary-result.json" <<<"$plan"
 grep -Fq 'cp "${result_file}" /dev/termination-log' <<<"$plan"
 grep -Fq 'result_bytes=' <<<"$plan"
 grep -Fq 'terminationMessagePath: /dev/termination-log' <<<"$plan"
@@ -54,14 +67,15 @@ if grep -Fq 'helm.sh/hook' <<<"$plan"; then
 fi
 
 apply=$(helm template test "$chart_dir" "${base[@]}" \
+  --set migrationOperation.contractFingerprint="$contract_fingerprint" \
   --set migrationOperation.enabled=true \
   --set migrationOperation.phase=apply \
   --set migrationOperation.targetImage.repository=mnemoshare/mnemoshare \
   --set migrationOperation.targetImage.digest="$target_digest" \
   --set migrationOperation.transport.existingClaim=migration-transport \
   --set migrationOperation.planDigest=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc)
-grep -Fq '/usr/local/bin/mnemoshare-migrate apply --contract embedded' <<<"$apply"
-grep -Fq -- '--plan /migration/primary-plan.json --exclusive --expect-plan-digest cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' <<<"$apply"
+grep -Fq "/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-contract-fingerprint $contract_fingerprint" <<<"$apply"
+grep -Fq "/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-contract-fingerprint $contract_fingerprint --plan /migration/primary-plan.json --expect-plan-digest cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc --exclusive" <<<"$apply"
 grep -Fq 'mnemoshare.io/migration-operation-phase: "apply"' <<<"$apply"
 grep -Fq 'mnemoshare.io/migration-operation-universe: "primary"' <<<"$apply"
 grep -Fq 'mnemoshare.io/migration-operation-plan-digest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' <<<"$apply"
@@ -71,15 +85,16 @@ grep -Fq 'planDigest":"ccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 grep -Fq 'backoffLimit: 0' <<<"$apply"
 
 verify=$(helm template test "$chart_dir" "${base[@]}" \
+  --set migrationOperation.contractFingerprint="$contract_fingerprint" \
   --set migrationOperation.enabled=true \
   --set migrationOperation.phase=verify \
   --set migrationOperation.targetImage.repository=mnemoshare/mnemoshare \
   --set migrationOperation.targetImage.digest="$target_digest" \
   --set migrationOperation.transport.existingClaim=migration-transport \
   --set migrationOperation.planDigest=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc)
-grep -Fq '/usr/local/bin/mnemoshare-migrate verify --contract embedded' <<<"$verify"
-grep -Fq -- '--plan /migration/primary-plan.json --expect-plan-digest cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' <<<"$verify"
-if grep -Fq -- 'mnemoshare-migrate verify --contract embedded --plan /migration/primary-plan.json --exclusive' <<<"$verify"; then
+grep -Fq "/usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint $contract_fingerprint" <<<"$verify"
+grep -Fq "/usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint $contract_fingerprint --plan /migration/primary-plan.json --expect-plan-digest cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" <<<"$verify"
+if grep -Eq -- 'mnemoshare-migrate verify .*--exclusive' <<<"$verify"; then
   echo 'verify phase must not receive apply-only --exclusive' >&2
   exit 1
 fi
@@ -87,6 +102,7 @@ grep -Fq 'mnemoshare.io/migration-operation-phase: "verify"' <<<"$verify"
 grep -Fq 'outcome=succeeded' <<<"$verify"
 
 down=$(helm template test "$chart_dir" "${base[@]}" \
+  --set migrationOperation.contractFingerprint="$contract_fingerprint" \
   --set autoscaling.enabled=true \
   --set workflowWorker.enabled=true \
   --set workflowWorker.autoscaling.enabled=true \
@@ -112,6 +128,7 @@ if grep -Eq '^kind: (HorizontalPodAutoscaler|ScaledObject|TriggerAuthentication)
 fi
 
 up=$(helm template test "$chart_dir" "${base[@]}" \
+  --set migrationOperation.contractFingerprint="$contract_fingerprint" \
   --set migrationOperation.enabled=true --set migrationOperation.phase=up \
   --set migrationOperation.targetImage.repository=mnemoshare/mnemoshare \
   --set migrationOperation.targetImage.digest="$target_digest" \
@@ -124,6 +141,7 @@ if grep -Fq 'app.kubernetes.io/component: migration-operation' <<<"$up"; then
 fi
 
 if helm template test "$chart_dir" "${base[@]}" \
+    --set migrationOperation.contractFingerprint="$contract_fingerprint" \
     --set migrationOperation.enabled=true --set migrationOperation.phase=up \
     --set migrationOperation.targetImage.repository=mnemoshare/mnemoshare \
     --set migrationOperation.targetImage.digest="$target_digest" \
@@ -134,6 +152,7 @@ if helm template test "$chart_dir" "${base[@]}" \
 fi
 
 external=$(helm template test "$chart_dir" "${base[@]}" \
+  --set migrationOperation.contractFingerprint="$contract_fingerprint" \
   --set emailGateway.enabled=true --set emailGateway.mode=relay \
   --set emailGateway.relay.db.uri=mongodb://relay:test@relay:27017/test \
   --set emailGateway.relay.db.name=relay --set emailGateway.relay.adminKey=admin \
@@ -170,6 +189,7 @@ if grep -Eq 'MONGODB_DATABASE|mongodb-uri|encryption-key|license-key' <<<"$exter
 fi
 
 external_up=$(helm template test "$chart_dir" "${base[@]}" \
+  --set migrationOperation.contractFingerprint="$contract_fingerprint" \
   --set emailGateway.enabled=true --set emailGateway.mode=relay \
   --set emailGateway.relay.db.uri=mongodb://relay:test@relay:27017/test \
   --set emailGateway.relay.db.name=relay --set emailGateway.relay.adminKey=admin \
@@ -197,4 +217,33 @@ if grep -Fq "image: \"mnemoshare/mnemoshare@$digest\"" <<<"$external_up_gateway"
   exit 1
 fi
 
-echo 'migration-operation/v1 chart checks passed'
+for invalid_case in missing malformed mismatch; do
+  invalid_args=()
+  expected_error=
+  case "$invalid_case" in
+    missing)
+      expected_error='migrationOperation.contractFingerprint is required when migrationOperation.enabled=true'
+      ;;
+    malformed)
+      invalid_args=(--set migrationOperation.contractFingerprint=NOT-A-DIGEST)
+      expected_error='migrationOperation.contractFingerprint must be a 64-character lowercase hex digest'
+      ;;
+    mismatch)
+      invalid_args=(--set migrationOperation.contractFingerprint=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee)
+      expected_error="does not match the chart's vendored migration-operation/v2 contract $contract_fingerprint"
+      ;;
+  esac
+  if invalid_output=$(helm template test "$chart_dir" "${base[@]}" \
+      --set migrationOperation.enabled=true \
+      --set migrationOperation.phase=plan \
+      --set migrationOperation.targetImage.repository=mnemoshare/mnemoshare \
+      --set migrationOperation.targetImage.digest="$target_digest" \
+      --set migrationOperation.transport.existingClaim=migration-transport \
+      "${invalid_args[@]}" 2>&1); then
+    echo "$invalid_case contract fingerprint unexpectedly rendered" >&2
+    exit 1
+  fi
+  grep -Fq "$expected_error" <<<"$invalid_output"
+done
+
+echo 'migration-operation/v2 chart checks passed'

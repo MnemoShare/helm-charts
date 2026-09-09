@@ -84,6 +84,7 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean", "default": false },
+        "contractFingerprint": { "type": "string" },
         "phase": {
           "type": "string",
           "enum": ["", "plan", "down", "apply", "verify", "up"],
@@ -118,7 +119,7 @@
         "backoffLimit": { "type": "integer", "minimum": 0 },
         "activeDeadlineSeconds": { "type": "integer", "minimum": 60 }
       },
-      "required": ["enabled", "phase", "operationId", "targetImage", "transport", "universe", "planDigest", "verifiedPlanDigest", "backoffLimit", "activeDeadlineSeconds"]
+      "required": ["enabled", "contractFingerprint", "phase", "operationId", "targetImage", "transport", "universe", "planDigest", "verifiedPlanDigest", "backoffLimit", "activeDeadlineSeconds"]
     },
     "formatMigrations": {
       "type": "object",

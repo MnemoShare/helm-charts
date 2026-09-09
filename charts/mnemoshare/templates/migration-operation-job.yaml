@@ -4,6 +4,7 @@
 {{- $universe := .Values.migrationOperation.universe }}
 {{- $operationID := .Values.migrationOperation.operationId }}
 {{- $planDigest := .Values.migrationOperation.planDigest | default "" }}
+{{- $contractFingerprint := include "mnemoshare.migrationOperationContractFingerprint" . }}
 {{- $planDigestLabel := $planDigest | default "pending" }}
 {{- $planFile := printf "/migration/%s-plan.json" $universe }}
 {{- $resultFile := printf "/migration/%s-result.json" $universe }}
@@ -15,7 +16,7 @@ metadata:
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: migration-operation
-    mnemoshare.io/migration-operation-contract: v1
+    mnemoshare.io/migration-operation-contract: v2
     mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
     mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
     mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
@@ -40,7 +41,7 @@ spec:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migration-operation
-        mnemoshare.io/migration-operation-contract: v1
+        mnemoshare.io/migration-operation-contract: v2
         mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
         mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
         mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
@@ -69,7 +70,7 @@ spec:
             - |
               result_file={{ $resultFile | quote }}
               set +e
-              /usr/local/bin/mnemoshare-migrate plan --contract embedded {{ if ne $universe "primary" }}--universe {{ $universe }} {{ end }}--output {{ $planFile }} --result {{ $resultFile }}
+              /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint {{ $contractFingerprint }} {{ if ne $universe "primary" }}--universe {{ $universe }} {{ end }}--output {{ $planFile }} --result {{ $resultFile }}
               status=$?
               set -e
               publish_status=${status}
@@ -90,7 +91,7 @@ spec:
             {{- else }}
             - |
               set +e
-              /usr/local/bin/mnemoshare-migrate {{ $phase }} --contract embedded {{ if ne $universe "primary" }}--universe {{ $universe }} {{ end }}--plan {{ $planFile }} {{ if eq $phase "apply" }}--exclusive {{ end }}--expect-plan-digest {{ $planDigest }}
+              /usr/local/bin/mnemoshare-migrate {{ $phase }} --contract embedded --expect-contract-fingerprint {{ $contractFingerprint }} {{ if ne $universe "primary" }}--universe {{ $universe }} {{ end }}--plan {{ $planFile }} --expect-plan-digest {{ $planDigest }} {{ if eq $phase "apply" }}--exclusive{{ end }}
               status=$?
               set -e
               outcome=succeeded
