@@ -11,6 +11,7 @@
 {{- $relayHosts := $nestedRelayHosts | default $legacyRelayHosts }}
 {{- $seenListenPorts := dict }}
 {{- $hasSMTPPort := false }}
+{{- $hasLowPort := false }}
 {{- range $listener := splitList "," .Values.emailGateway.listenPorts }}
 {{- if not (regexMatch "^[0-9]+:(plain|starttls|tls)$" $listener) }}{{- fail (printf "emailGateway.listenPorts contains invalid listener %q" $listener) }}{{- end }}
 {{- $portText := regexFind "^[0-9]+" $listener }}
@@ -19,6 +20,7 @@
 {{- $canonicalPort := printf "%d" $port }}
 {{- if ne $portText $canonicalPort }}{{- fail (printf "emailGateway.listenPorts port %s is not canonically spelled as %s" $portText $canonicalPort) }}{{- end }}
 {{- if hasKey $seenListenPorts $canonicalPort }}{{- fail (printf "emailGateway.listenPorts contains duplicate port %s" $canonicalPort) }}{{- end }}
+{{- if lt $port 1024 }}{{- $hasLowPort = true }}{{- end }}
 {{- $_ := set $seenListenPorts $canonicalPort true }}
 {{- if eq $port 25 }}{{- $hasSMTPPort = true }}{{- end }}
 {{- end }}
@@ -72,6 +74,15 @@ spec:
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- if $hasLowPort }}
+        # The SMTP listener sits below 1024 while the container runs as a
+        # non-root user with every capability dropped; this safe sysctl is what
+        # lets it bind. Adding NET_BIND_SERVICE does not help a non-root
+        # process without file capabilities on the binary.
+        sysctls:
+          - name: net.ipv4.ip_unprivileged_port_start
+            value: "0"
+        {{- end }}
       containers:
       - name: email-gateway
         securityContext:
