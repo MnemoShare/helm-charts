@@ -2,7 +2,7 @@
 {{- $phase := .Values.migrationOperation.phase | default "" }}
 {{- $_ := include "mnemoshare.migrationOperationTargetImage" . }}
 {{- if ne .Values.formatMigrations.mode "operator" }}
-{{- fail "migrationOperation.enabled requires formatMigrations.mode=operator: the legacy automatic pre-upgrade hook must not run alongside migration-operation/v2" }}
+{{- fail "migrationOperation.enabled requires formatMigrations.mode=operator: the legacy automatic pre-upgrade hook must not run alongside migration-operation/v3" }}
 {{- end }}
 {{- $contractFingerprint := .Values.migrationOperation.contractFingerprint | default "" }}
 {{- if eq $contractFingerprint "" }}
@@ -13,7 +13,7 @@
 {{- end }}
 {{- $expectedContractFingerprint := include "mnemoshare.migrationOperationExpectedContractFingerprint" . }}
 {{- if ne $contractFingerprint $expectedContractFingerprint }}
-{{- fail (printf "migrationOperation.contractFingerprint %s does not match the chart's vendored migration-operation/v2 contract %s" $contractFingerprint $expectedContractFingerprint) }}
+{{- fail (printf "migrationOperation.contractFingerprint %s does not match the chart's vendored migration-operation/v3 contract %s" $contractFingerprint $expectedContractFingerprint) }}
 {{- end }}
 {{- if not (has $phase (list "plan" "down" "apply" "verify" "up")) }}
 {{- fail "migrationOperation.phase must be one of plan, down, apply, verify, or up when migrationOperation.enabled=true" }}

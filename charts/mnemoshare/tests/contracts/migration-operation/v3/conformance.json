@@ -1,0 +1,34 @@
+{
+  "contract": "mnemoshare.migration-operation.v3",
+  "fingerprintAlgorithm": "SHA-256 over RFC 8785 JCS of the contract with fingerprint set to the empty string",
+  "commands": [
+    "plan --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --output \u003cplan-file\u003e --result \u003cresult-file\u003e",
+    "apply --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e --exclusive --bootstrap-policy provision-untracked",
+    "verify --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e"
+  ],
+  "schemaOwnership": "exclusive-operation",
+  "bootstrapPolicy": "provision-untracked",
+  "governedProcessCount": 7,
+  "universeIds": [
+    "email-relay-mongo",
+    "primary"
+  ],
+  "deploymentContractBytes": {
+    "v2/README.md": "787169fe49d505fd86f92374202e543d68fa38baaf633cc00a919325eef481b8",
+    "v2/SHA256SUMS": "2553ab7c6681124d962b9b7dc776da1ad3b4f276b2c69470fd11c7ddde28ebfc",
+    "v2/conformance.json": "f175a51f0851462d97488b0246c35e96d5cbfb6c6a9691cb3414a8c910af961a",
+    "v2/contract.json": "f174eb916043457b677fb06dfec7bf11f669a7d0a9d76e9594e55c7f0df35723",
+    "v2/schema.json": "7405cfa684ffad277449e25900de4dd31dc558062107181da3cbfeda8789e835",
+    "v3/README.md": "dff4cad9dc8b075d1bb45d148819c3938220272a5dd2c2b02d52cfba03e640e9",
+    "v3/SHA256SUMS": "5b009284e93c10764b7ddbb60808ee6531972418d77d25b462a7702bdcc80aed",
+    "v3/conformance.json": "9c6ca2d750df5ef60d234150637502144565a7dca2bd4310efef1187164afaf1",
+    "v3/contract.json": "c076928f93ca4f4604efb64f2f9cc9a5250b4d86faf9bbeab7f00f8faa7bec6e",
+    "v3/schema.json": "3cfe1154a91c30bb7d7b8b37c64366b26d5c04b756f2c9405bd6c943944fcce8"
+  },
+  "lifecycle": [
+    "down",
+    "apply-exclusive",
+    "verify",
+    "up"
+  ]
+}

@@ -181,7 +181,7 @@ maintenance phase because it is the verified release handoff.
 
 {{/*
 The executable/profile/universe tuple is the observer-facing projection of
-migration-operation/v2's governedProcesses table. Keep this table in one
+migration-operation/v3's governedProcesses table. Keep this table in one
 place: workload templates may choose their process key, but never invent a
 second spelling for the contract identity.
 Input: dict "key" (api|background-worker|workflow-worker|cloud-worker|emailgateway|inboundgateway)
@@ -206,15 +206,15 @@ mnemoshare.io/process-profile: {{ $profile | quote }}
 mnemoshare.io/process-universe: {{ get $identity "universeId" | quote }}
 {{- end }}
 
-{{/* The immutable fingerprint of the vendored migration-operation/v2 contract. */}}
+{{/* The immutable fingerprint of the vendored migration-operation/v3 contract. */}}
 {{- define "mnemoshare.migrationOperationExpectedContractFingerprint" -}}
-{{- $raw := required "vendored tests/contracts/migration-operation/v2/contract.json is required" (.Files.Get "tests/contracts/migration-operation/v2/contract.json") -}}
+{{- $raw := required "vendored tests/contracts/migration-operation/v3/contract.json is required" (.Files.Get "tests/contracts/migration-operation/v3/contract.json") -}}
 {{- $contract := fromJson $raw -}}
-{{- if ne $contract.provenance.schema "mnemoshare.migration-operation.v2" -}}{{- fail "vendored migration operation contract is not v2" -}}{{- end -}}
+{{- if ne $contract.provenance.schema "mnemoshare.migration-operation.v3" -}}{{- fail "vendored migration operation contract is not v3" -}}{{- end -}}
 {{- $contract.fingerprint -}}
 {{- end }}
 
-{{/* The target image's explicitly attested migration-operation/v2 contract. */}}
+{{/* The target image's explicitly attested migration-operation/v3 contract. */}}
 {{- define "mnemoshare.migrationOperationContractFingerprint" -}}
 {{- .Values.migrationOperation.contractFingerprint -}}
 {{- end }}

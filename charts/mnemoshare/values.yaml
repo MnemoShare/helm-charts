@@ -76,14 +76,14 @@ formatMigrations:
     # - cidr: 10.96.0.1/32
     #   port: 443
 
-# Explicit migration-operation/v2 adapter for an external deployment
+# Explicit migration-operation/v3 adapter for an external deployment
 # controller. This is deliberately separate from the legacy automatic hook
 # above: the controller owns down -> plan/apply -> verify -> up, and a failed
 # operation remains observable instead of being hidden by Helm hook cleanup.
 # Leave disabled to retain the chart's ordinary rolling behavior.
 migrationOperation:
   enabled: false
-  # Fingerprint of the migration-operation/v2 contract embedded in targetImage.
+  # Fingerprint of the migration-operation/v3 contract embedded in targetImage.
   # Required when enabled and must match the immutable contract vendored by
   # this chart, preventing a controller from invoking a different CLI grammar.
   contractFingerprint: ""

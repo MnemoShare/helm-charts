@@ -16,7 +16,7 @@ metadata:
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: migration-operation
-    mnemoshare.io/migration-operation-contract: v2
+    mnemoshare.io/migration-operation-contract: v3
     mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
     mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
     mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
@@ -41,7 +41,7 @@ spec:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migration-operation
-        mnemoshare.io/migration-operation-contract: v2
+        mnemoshare.io/migration-operation-contract: v3
         mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
         mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
         mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
@@ -91,7 +91,7 @@ spec:
             {{- else }}
             - |
               set +e
-              /usr/local/bin/mnemoshare-migrate {{ $phase }} --contract embedded --expect-contract-fingerprint {{ $contractFingerprint }} {{ if ne $universe "primary" }}--universe {{ $universe }} {{ end }}--plan {{ $planFile }} --expect-plan-digest {{ $planDigest }} {{ if eq $phase "apply" }}--exclusive{{ end }}
+              /usr/local/bin/mnemoshare-migrate {{ $phase }} --contract embedded --expect-contract-fingerprint {{ $contractFingerprint }} {{ if ne $universe "primary" }}--universe {{ $universe }} {{ end }}--plan {{ $planFile }} --expect-plan-digest {{ $planDigest }} {{ if eq $phase "apply" }}--exclusive --bootstrap-policy provision-untracked{{ end }}
               status=$?
               set -e
               outcome=succeeded

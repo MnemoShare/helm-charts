@@ -4,9 +4,9 @@ set -euo pipefail
 chart_dir=${1:-charts/mnemoshare}
 digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 target_digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-contract_fingerprint=d764eaa547817389469713014884c3902d97d043644d80910ec981854b311750
-source_fingerprint=657c1378131ff685278f21f3cef26bc8300b8dcc7f3bb40696fe4da27d9f010b
-contract_dir="$chart_dir/tests/contracts/migration-operation/v2"
+contract_fingerprint=a9199c4063b23be0f05db926fb9ecfcb032bcaba1bbe7278dd1900c6de794530
+source_fingerprint=a88b82b7508f5c69e52c27ddfb5b6bb1fe9652b19154e3840abddc177f8082ef
+contract_dir="$chart_dir/tests/contracts/migration-operation/v3"
 base=(
   --set customerId=ci-test
   --set formatMigrations.mode=operator
@@ -47,10 +47,14 @@ plan=$(helm template test "$chart_dir" "${base[@]}" \
   --set migrationOperation.transport.existingClaim=migration-transport)
 grep -Fq 'kind: Job' <<<"$plan"
 grep -Fq 'command: ["/bin/sh", "-ec"]' <<<"$plan"
-grep -Fq 'mnemoshare.io/migration-operation-contract: v2' <<<"$plan"
+grep -Fq 'mnemoshare.io/migration-operation-contract: v3' <<<"$plan"
 grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$contract_fingerprint\"" <<<"$plan"
 test "$(grep -Fc "mnemoshare.io/migration-operation-contract-fingerprint: \"$contract_fingerprint\"" <<<"$plan")" -eq 3
 grep -Fq "/usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint $contract_fingerprint --output /migration/primary-plan.json --result /migration/primary-result.json" <<<"$plan"
+if grep -Eq -- 'mnemoshare-migrate plan .*--(exclusive|bootstrap-policy)' <<<"$plan"; then
+  echo 'plan phase must not receive apply-only exclusivity or bootstrap policy flags' >&2
+  exit 1
+fi
 grep -Fq 'cp "${result_file}" /dev/termination-log' <<<"$plan"
 grep -Fq 'result_bytes=' <<<"$plan"
 grep -Fq 'terminationMessagePath: /dev/termination-log' <<<"$plan"
@@ -75,7 +79,9 @@ apply=$(helm template test "$chart_dir" "${base[@]}" \
   --set migrationOperation.transport.existingClaim=migration-transport \
   --set migrationOperation.planDigest=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc)
 grep -Fq "/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-contract-fingerprint $contract_fingerprint" <<<"$apply"
-grep -Fq "/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-contract-fingerprint $contract_fingerprint --plan /migration/primary-plan.json --expect-plan-digest cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc --exclusive" <<<"$apply"
+grep -Fq "/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-contract-fingerprint $contract_fingerprint --plan /migration/primary-plan.json --expect-plan-digest cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc --exclusive --bootstrap-policy provision-untracked" <<<"$apply"
+test "$(grep -Ec -- 'mnemoshare-migrate apply .*--exclusive --bootstrap-policy provision-untracked' <<<"$apply")" -eq 1
+test "$(grep -Ec -- 'mnemoshare-migrate apply .*--bootstrap-policy' <<<"$apply")" -eq 1
 grep -Fq 'mnemoshare.io/migration-operation-phase: "apply"' <<<"$apply"
 grep -Fq 'mnemoshare.io/migration-operation-universe: "primary"' <<<"$apply"
 grep -Fq 'mnemoshare.io/migration-operation-plan-digest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' <<<"$apply"
@@ -94,8 +100,8 @@ verify=$(helm template test "$chart_dir" "${base[@]}" \
   --set migrationOperation.planDigest=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc)
 grep -Fq "/usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint $contract_fingerprint" <<<"$verify"
 grep -Fq "/usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint $contract_fingerprint --plan /migration/primary-plan.json --expect-plan-digest cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" <<<"$verify"
-if grep -Eq -- 'mnemoshare-migrate verify .*--exclusive' <<<"$verify"; then
-  echo 'verify phase must not receive apply-only --exclusive' >&2
+if grep -Eq -- 'mnemoshare-migrate verify .*--(exclusive|bootstrap-policy)' <<<"$verify"; then
+  echo 'verify phase must not receive apply-only exclusivity or bootstrap policy flags' >&2
   exit 1
 fi
 grep -Fq 'mnemoshare.io/migration-operation-phase: "verify"' <<<"$verify"
@@ -230,7 +236,7 @@ for invalid_case in missing malformed mismatch; do
       ;;
     mismatch)
       invalid_args=(--set migrationOperation.contractFingerprint=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee)
-      expected_error="does not match the chart's vendored migration-operation/v2 contract $contract_fingerprint"
+      expected_error="does not match the chart's vendored migration-operation/v3 contract $contract_fingerprint"
       ;;
   esac
   if invalid_output=$(helm template test "$chart_dir" "${base[@]}" \
@@ -246,4 +252,4 @@ for invalid_case in missing malformed mismatch; do
   grep -Fq "$expected_error" <<<"$invalid_output"
 done
 
-echo 'migration-operation/v2 chart checks passed'
+echo 'migration-operation/v3 chart checks passed'

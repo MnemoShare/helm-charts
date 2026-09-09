@@ -139,7 +139,7 @@ migration orchestration:
   by retrying the exact frozen automatic target or by an explicit external state
   handoff. Operator mode assumes that state ownership and reconciliation itself.
 
-### External migration-operation/v2 lifecycle
+### External migration-operation/v3 lifecycle
 
 For deployments that use an external controller, set
 `formatMigrations.mode=operator` and opt into `migrationOperation.enabled=true`.
@@ -147,7 +147,7 @@ This path has no Helm hooks and never performs an implicit rollback. The
 controller reconciles one immutable phase at a time:
 
 Set `migrationOperation.contractFingerprint` to the fingerprint embedded in
-the target image. The chart requires it to match its vendored v2 contract and
+the target image. The chart requires it to match its vendored v3 contract and
 every CLI invocation independently attests it with
 `--expect-contract-fingerprint` before opening persistence.
 
@@ -156,8 +156,10 @@ every CLI invocation independently attests it with
    `migrationOperation.transport.existingClaim`.
 2. `phase=down` renders every governed writer at `replicas: 0` and omits its
    HPA/KEDA resources. The controller proves zero writer pods externally.
-3. `phase=apply` runs the target image once with the exact plan path,
-   `--exclusive`, and the supplied `--expect-plan-digest`.
+3. `phase=apply` runs the target image once with the exact plan path, supplied
+   `--expect-plan-digest`, and the immutable
+   `--exclusive --bootstrap-policy provision-untracked` policy. The bootstrap
+   policy is application-owned and cannot be selected through chart values.
 4. `phase=verify` uses the same exact plan path and digest. A failed Job is
    retained (`backoffLimit: 0`); the controller must repair forward and bump
    `operationId` for a retry.
