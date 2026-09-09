@@ -55,6 +55,10 @@ grep -Fq 'mnemoshare.io/migration-operation-contract: v3' <<<"$plan"
 grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$contract_fingerprint\"" <<<"$plan"
 test "$(grep -Fc "mnemoshare.io/migration-operation-contract-fingerprint: \"$contract_fingerprint\"" <<<"$plan")" -eq 3
 grep -Fq "/usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint $contract_fingerprint --output /migration/primary-plan.json --result /migration/primary-result.json" <<<"$plan"
+if grep -Fq -- '--planning-mode' <<<"$plan"; then
+  echo 'ordinary planning mode unexpectedly emitted a planning-mode flag' >&2
+  exit 1
+fi
 if grep -Eq -- 'mnemoshare-migrate plan .*--(exclusive|bootstrap-policy)' <<<"$plan"; then
   echo 'plan phase must not receive apply-only exclusivity or bootstrap policy flags' >&2
   exit 1
@@ -67,12 +71,26 @@ grep -Fq 'mnemoshare.io/migration-operation-phase: "plan"' <<<"$plan"
 grep -Fq 'mnemoshare.io/migration-operation-universe: "primary"' <<<"$plan"
 grep -Fq 'mnemoshare.io/migration-operation-plan-digest: "pending"' <<<"$plan"
 grep -Fq 'mnemoshare.io/migration-operation-id: "active"' <<<"$plan"
+test "$(grep -Fc 'mnemoshare.io/migration-operation-planning-mode: "ordinary"' <<<"$plan")" -eq 3
 grep -Fq '/migration/primary-plan.json' <<<"$plan"
 grep -Fq '/migration/primary-result.json' <<<"$plan"
 if grep -Fq 'helm.sh/hook' <<<"$plan"; then
   echo 'migration-operation Job must not be a Helm hook' >&2
   exit 1
 fi
+
+legacy_plan=$(helm template test "$chart_dir" "${base[@]}" \
+  --set migrationOperation.contractFingerprint="$contract_fingerprint" \
+  --set migrationOperation.enabled=true \
+  --set migrationOperation.phase=plan \
+  --set migrationOperation.operationId=legacy-adoption \
+  --set migrationOperation.planningMode=legacy-bootstrap \
+  --set migrationOperation.targetImage.repository=mnemoshare/mnemoshare \
+  --set migrationOperation.targetImage.digest="$target_digest" \
+  --set migrationOperation.transport.existingClaim=migration-transport)
+grep -Fq "/usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint $contract_fingerprint --planning-mode legacy-bootstrap --output /migration/primary-plan.json --result /migration/primary-result.json" <<<"$legacy_plan"
+test "$(grep -Fc 'mnemoshare.io/migration-operation-planning-mode: "legacy-bootstrap"' <<<"$legacy_plan")" -eq 3
+grep -Fq 'name: test-mnemoshare-migration-primary-plan-legacy-adoption' <<<"$legacy_plan"
 
 apply=$(helm template test "$chart_dir" "${base[@]}" \
   --set migrationOperation.contractFingerprint="$contract_fingerprint" \
@@ -93,6 +111,22 @@ grep -Fq 'name: test-mnemoshare-migration-primary-apply-active' <<<"$apply"
 grep -Fq 'outcome=succeeded' <<<"$apply"
 grep -Fq 'planDigest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' <<<"$apply"
 grep -Fq 'backoffLimit: 0' <<<"$apply"
+
+legacy_apply=$(helm template test "$chart_dir" "${base[@]}" \
+  --set migrationOperation.contractFingerprint="$contract_fingerprint" \
+  --set migrationOperation.enabled=true \
+  --set migrationOperation.phase=apply \
+  --set migrationOperation.operationId=legacy-adoption \
+  --set migrationOperation.planningMode=legacy-bootstrap \
+  --set migrationOperation.targetImage.repository=mnemoshare/mnemoshare \
+  --set migrationOperation.targetImage.digest="$target_digest" \
+  --set migrationOperation.transport.existingClaim=migration-transport \
+  --set migrationOperation.planDigest=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc)
+if grep -Fq -- '--planning-mode' <<<"$legacy_apply"; then
+  echo 'apply phase must consume the frozen plan rather than reinterpret planning mode' >&2
+  exit 1
+fi
+test "$(grep -Fc 'mnemoshare.io/migration-operation-planning-mode: "legacy-bootstrap"' <<<"$legacy_apply")" -eq 3
 
 verify=$(helm template test "$chart_dir" "${base[@]}" \
   --set migrationOperation.contractFingerprint="$contract_fingerprint" \
@@ -255,5 +289,18 @@ for invalid_case in missing malformed mismatch; do
   fi
   grep -Fq "$expected_error" <<<"$invalid_output"
 done
+
+if invalid_mode_output=$(helm template test "$chart_dir" "${base[@]}" \
+    --set migrationOperation.contractFingerprint="$contract_fingerprint" \
+    --set migrationOperation.enabled=true \
+    --set migrationOperation.phase=plan \
+    --set migrationOperation.planningMode=guess-legacy \
+    --set migrationOperation.targetImage.repository=mnemoshare/mnemoshare \
+    --set migrationOperation.targetImage.digest="$target_digest" \
+    --set migrationOperation.transport.existingClaim=migration-transport 2>&1); then
+  echo 'unknown migration planning mode unexpectedly rendered' >&2
+  exit 1
+fi
+grep -Eq 'migrationOperation.planningMode.*(ordinary|legacy-bootstrap)' <<<"$invalid_mode_output"
 
 echo 'migration-operation/v3 chart checks passed'

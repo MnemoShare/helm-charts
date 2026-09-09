@@ -95,6 +95,12 @@
           "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
           "default": "active"
         },
+        "planningMode": {
+          "type": "string",
+          "enum": ["ordinary", "legacy-bootstrap"],
+          "default": "ordinary",
+          "description": "Immutable planning interpretation for this operationId; legacy-bootstrap explicitly adopts a known pre-ledger installation"
+        },
         "targetImage": {
           "type": "object",
           "additionalProperties": false,
@@ -119,7 +125,7 @@
         "backoffLimit": { "type": "integer", "minimum": 0 },
         "activeDeadlineSeconds": { "type": "integer", "minimum": 60 }
       },
-      "required": ["enabled", "contractFingerprint", "phase", "operationId", "targetImage", "transport", "universe", "planDigest", "verifiedPlanDigest", "backoffLimit", "activeDeadlineSeconds"]
+      "required": ["enabled", "contractFingerprint", "phase", "operationId", "planningMode", "targetImage", "transport", "universe", "planDigest", "verifiedPlanDigest", "backoffLimit", "activeDeadlineSeconds"]
     },
     "formatMigrations": {
       "type": "object",

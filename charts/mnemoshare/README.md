@@ -151,6 +151,13 @@ the target image. The chart requires it to match its vendored v3 contract and
 every CLI invocation independently attests it with
 `--expect-contract-fingerprint` before opening persistence.
 
+`migrationOperation.planningMode` defaults to `ordinary`. Set it to
+`legacy-bootstrap` only for the one-time adoption of an installation known to
+predate the format ledger. That mode is passed only to `plan`; the resulting
+plan digest carries the decision through apply and verify. The mode is also
+part of each retained Job's pod-template identity, so it cannot change while
+reusing a phase and `operationId`. Start a distinct operation ID to change it.
+
 1. `phase=plan` runs the target image's embedded `plan --contract embedded`
    command and writes the universe-specific plan and strict result files to
    `migrationOperation.transport.existingClaim`.
@@ -177,7 +184,7 @@ The chart also projects the controller handshake into Kubernetes metadata.
 Every governed workload and pod template carries the stable
 `mnemoshare.io/process-id`, `mnemoshare.io/process-profile`, and
 `mnemoshare.io/process-universe` labels. Each operation Job carries its
-`operationId`, phase, universe, and plan digest on both the Job and its pod,
+`operationId`, planning mode, phase, universe, and plan digest on both the Job and its pod,
 and repeats them as annotations together with the transport paths and target
 image digest and the immutable migration-operation contract fingerprint; the
 operation ID is included in the Job name so stale attempts remain

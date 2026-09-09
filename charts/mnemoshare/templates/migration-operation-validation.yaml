@@ -21,6 +21,9 @@
 {{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" (.Values.migrationOperation.operationId | default "")) }}
 {{- fail "migrationOperation.operationId must be a DNS label; bump it for every retry because migration Jobs are retained" }}
 {{- end }}
+{{- if not (has .Values.migrationOperation.planningMode (list "ordinary" "legacy-bootstrap")) }}
+{{- fail "migrationOperation.planningMode must be ordinary or legacy-bootstrap" }}
+{{- end }}
 {{- $digest := .Values.migrationOperation.planDigest | default "" }}
 {{- if has $phase (list "apply" "verify" "up") }}
 {{- if not (regexMatch "^[a-f0-9]{64}$" $digest) }}

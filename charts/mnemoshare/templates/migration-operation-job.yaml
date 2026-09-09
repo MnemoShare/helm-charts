@@ -3,6 +3,7 @@
 {{- $phase := .Values.migrationOperation.phase }}
 {{- $universe := .Values.migrationOperation.universe }}
 {{- $operationID := .Values.migrationOperation.operationId }}
+{{- $planningMode := .Values.migrationOperation.planningMode }}
 {{- $planDigest := .Values.migrationOperation.planDigest | default "" }}
 {{- $contractFingerprint := include "mnemoshare.migrationOperationContractFingerprint" . }}
 {{- $planDigestLabel := $planDigest | default "pending" }}
@@ -19,6 +20,7 @@ metadata:
     mnemoshare.io/migration-operation-contract: v3
     mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
     mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
+    mnemoshare.io/migration-operation-planning-mode: {{ $planningMode | quote }}
     mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
     mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
     mnemoshare.io/migration-operation-plan-digest: {{ $planDigestLabel | quote }}
@@ -28,6 +30,11 @@ metadata:
     mnemoshare.io/migration-operation-plan-file: {{ $planFile | quote }}
     mnemoshare.io/migration-operation-result-file: {{ $resultFile | quote }}
     mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
+    # The retained Job name is keyed by phase and operationId. Mirroring the
+    # mode into its pod template makes changing it under that identity fail on
+    # Kubernetes' immutable Job template instead of silently resuming another
+    # interpretation of the operation.
+    mnemoshare.io/migration-operation-planning-mode: {{ $planningMode | quote }}
     mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
     mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
     mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
@@ -44,6 +51,7 @@ spec:
         mnemoshare.io/migration-operation-contract: v3
         mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
         mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
+        mnemoshare.io/migration-operation-planning-mode: {{ $planningMode | quote }}
         mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
         mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
         mnemoshare.io/migration-operation-plan-digest: {{ $planDigestLabel | quote }}
@@ -70,7 +78,7 @@ spec:
             - |
               result_file={{ $resultFile | quote }}
               set +e
-              /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint {{ $contractFingerprint }} {{ if ne $universe "primary" }}--universe {{ $universe }} {{ end }}--output {{ $planFile }} --result {{ $resultFile }}
+              /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint {{ $contractFingerprint }} {{ if eq $planningMode "legacy-bootstrap" }}--planning-mode legacy-bootstrap {{ end }}{{ if ne $universe "primary" }}--universe {{ $universe }} {{ end }}--output {{ $planFile }} --result {{ $resultFile }}
               status=$?
               set -e
               publish_status=${status}
