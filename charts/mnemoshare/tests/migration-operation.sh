@@ -6,6 +6,8 @@ digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 target_digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 contract_fingerprint=a9199c4063b23be0f05db926fb9ecfcb032bcaba1bbe7278dd1900c6de794530
 source_fingerprint=a88b82b7508f5c69e52c27ddfb5b6bb1fe9652b19154e3840abddc177f8082ef
+source_commit=dd97aedb22b518ef90e87f212469e77e7a222fb6
+bundle_checksum=483103a8c0f0b29252bd2459c024bab85faeebe99964d245df52f09cc5740c7f
 contract_dir="$chart_dir/tests/contracts/migration-operation/v3"
 base=(
   --set customerId=ci-test
@@ -23,7 +25,9 @@ base=(
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
 grep -Fq "\"fingerprint\":\"$contract_fingerprint\"" "$contract_dir/contract.json"
 grep -Fq "\"sourceFingerprint\":\"$source_fingerprint\"" "$contract_dir/contract.json"
-test "$(sed -n 's/^sha256sums=//p' "$contract_dir/UPSTREAM")" = "$(sha256sum "$contract_dir/SHA256SUMS" | cut -d' ' -f1)"
+grep -Fxq "commit=$source_commit" "$contract_dir/UPSTREAM"
+grep -Fxq "sha256sums=$bundle_checksum" "$contract_dir/UPSTREAM"
+test "$bundle_checksum" = "$(sha256sum "$contract_dir/SHA256SUMS" | cut -d' ' -f1)"
 grep -Fxq "contractFingerprint=$contract_fingerprint" "$contract_dir/UPSTREAM"
 grep -Fxq "sourceFingerprint=$source_fingerprint" "$contract_dir/UPSTREAM"
 
