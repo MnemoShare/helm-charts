@@ -1,0 +1,599 @@
+{
+  "contract": "mnemoshare.deployment-contract.v2",
+  "fingerprint_algorithm": "SHA-256 over RFC 8785 JCS of the contract with fingerprint set to the empty string",
+  "restamp": {
+    "input": {
+      "adapters": [
+        {
+          "args": [
+            "--serve"
+          ],
+          "executable": "/fixture/adapter",
+          "probe": {
+            "command": [
+              "check",
+              "--once"
+            ],
+            "kind": "process"
+          },
+          "processes": [
+            "maximal"
+          ]
+        }
+      ],
+      "fingerprint": "",
+      "processes": [
+        {
+          "args": [
+            "--mode=maximal"
+          ],
+          "capabilities": [
+            "capability"
+          ],
+          "coexistence": "application-peers",
+          "engines": [
+            "engine"
+          ],
+          "environment": [
+            "REQUIRED_VALUE"
+          ],
+          "executable": "/fixture/maximal",
+          "id": "maximal",
+          "image_default": true,
+          "kind": "api",
+          "liveness_probe": {
+            "kind": "http",
+            "path": "/live",
+            "port": 9443
+          },
+          "persistence": "selected",
+          "probe": {
+            "kind": "http",
+            "path": "/ready",
+            "port": 9443
+          }
+        }
+      ],
+      "provenance": {
+        "generator": "conformance-fixture",
+        "schema": "mnemoshare.deployment-contract.v2",
+        "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    },
+    "canonical_jcs": "{\"adapters\":[{\"args\":[\"--serve\"],\"executable\":\"/fixture/adapter\",\"probe\":{\"command\":[\"check\",\"--once\"],\"kind\":\"process\"},\"processes\":[\"maximal\"]}],\"fingerprint\":\"\",\"processes\":[{\"args\":[\"--mode=maximal\"],\"capabilities\":[\"capability\"],\"coexistence\":\"application-peers\",\"engines\":[\"engine\"],\"environment\":[\"REQUIRED_VALUE\"],\"executable\":\"/fixture/maximal\",\"id\":\"maximal\",\"image_default\":true,\"kind\":\"api\",\"liveness_probe\":{\"kind\":\"http\",\"path\":\"/live\",\"port\":9443},\"persistence\":\"selected\",\"probe\":{\"kind\":\"http\",\"path\":\"/ready\",\"port\":9443}}],\"provenance\":{\"generator\":\"conformance-fixture\",\"schema\":\"mnemoshare.deployment-contract.v2\",\"source_fingerprint\":\"1111111111111111111111111111111111111111111111111111111111111111\"}}",
+    "sha256": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99"
+  },
+  "valid": [
+    {
+      "name": "maximal-process",
+      "json": {
+        "provenance": {
+          "schema": "mnemoshare.deployment-contract.v2",
+          "generator": "conformance-fixture",
+          "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "processes": [
+          {
+            "id": "maximal",
+            "executable": "/fixture/maximal",
+            "args": [
+              "--mode=maximal"
+            ],
+            "kind": "api",
+            "persistence": "selected",
+            "engines": [
+              "engine"
+            ],
+            "capabilities": [
+              "capability"
+            ],
+            "environment": [
+              "REQUIRED_VALUE"
+            ],
+            "probe": {
+              "kind": "http",
+              "path": "/ready",
+              "port": 9443
+            },
+            "liveness_probe": {
+              "kind": "http",
+              "path": "/live",
+              "port": 9443
+            },
+            "coexistence": "application-peers",
+            "image_default": true
+          }
+        ],
+        "adapters": [
+          {
+            "executable": "/fixture/adapter",
+            "args": [
+              "--serve"
+            ],
+            "processes": [
+              "maximal"
+            ],
+            "probe": {
+              "kind": "process",
+              "command": [
+                "check",
+                "--once"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "maximal-adapter",
+      "json": {
+        "provenance": {
+          "schema": "mnemoshare.deployment-contract.v2",
+          "generator": "conformance-fixture",
+          "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "fingerprint": "2942a489ac8263104c74b1747459f5a1a062cbb45a2b9b712a7852e4bc14bc48",
+        "processes": [
+          {
+            "id": "maximal",
+            "executable": "/fixture/maximal",
+            "args": [
+              "--mode=maximal"
+            ],
+            "kind": "api",
+            "persistence": "selected",
+            "engines": [
+              "engine"
+            ],
+            "capabilities": [
+              "capability"
+            ],
+            "environment": [
+              "REQUIRED_VALUE"
+            ],
+            "probe": {
+              "kind": "http",
+              "path": "/ready",
+              "port": 9443
+            },
+            "liveness_probe": {
+              "kind": "http",
+              "path": "/live",
+              "port": 9443
+            },
+            "coexistence": "application-peers"
+          }
+        ],
+        "adapters": [
+          {
+            "executable": "/fixture/adapter",
+            "args": [
+              "--serve"
+            ],
+            "processes": [
+              "maximal"
+            ],
+            "probe": {
+              "kind": "process",
+              "command": [
+                "check",
+                "--once"
+              ]
+            },
+            "image_default": true,
+            "image_entrypoint": [
+              "/fixture/entrypoint"
+            ],
+            "entrypoint_pass_through": true,
+            "entrypoint_profile": "pass-through"
+          }
+        ]
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "missing-persistence",
+      "layer": "schema",
+      "json": {
+        "adapters": [
+          {
+            "args": [
+              "--serve"
+            ],
+            "executable": "/fixture/adapter",
+            "probe": {
+              "command": [
+                "check",
+                "--once"
+              ],
+              "kind": "process"
+            },
+            "processes": [
+              "maximal"
+            ]
+          }
+        ],
+        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "processes": [
+          {
+            "args": [
+              "--mode=maximal"
+            ],
+            "capabilities": [
+              "capability"
+            ],
+            "coexistence": "application-peers",
+            "engines": [
+              "engine"
+            ],
+            "environment": [
+              "REQUIRED_VALUE"
+            ],
+            "executable": "/fixture/maximal",
+            "id": "maximal",
+            "image_default": true,
+            "kind": "api",
+            "liveness_probe": {
+              "kind": "http",
+              "path": "/live",
+              "port": 9443
+            },
+            "probe": {
+              "kind": "http",
+              "path": "/ready",
+              "port": 9443
+            }
+          }
+        ],
+        "provenance": {
+          "generator": "conformance-fixture",
+          "schema": "mnemoshare.deployment-contract.v2",
+          "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    {
+      "name": "unknown-persistence",
+      "layer": "schema",
+      "json": {
+        "adapters": [
+          {
+            "args": [
+              "--serve"
+            ],
+            "executable": "/fixture/adapter",
+            "probe": {
+              "command": [
+                "check",
+                "--once"
+              ],
+              "kind": "process"
+            },
+            "processes": [
+              "maximal"
+            ]
+          }
+        ],
+        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "processes": [
+          {
+            "args": [
+              "--mode=maximal"
+            ],
+            "capabilities": [
+              "capability"
+            ],
+            "coexistence": "application-peers",
+            "engines": [
+              "engine"
+            ],
+            "environment": [
+              "REQUIRED_VALUE"
+            ],
+            "executable": "/fixture/maximal",
+            "id": "maximal",
+            "image_default": true,
+            "kind": "api",
+            "liveness_probe": {
+              "kind": "http",
+              "path": "/live",
+              "port": 9443
+            },
+            "persistence": "ambient",
+            "probe": {
+              "kind": "http",
+              "path": "/ready",
+              "port": 9443
+            }
+          }
+        ],
+        "provenance": {
+          "generator": "conformance-fixture",
+          "schema": "mnemoshare.deployment-contract.v2",
+          "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    {
+      "name": "stale-fingerprint",
+      "layer": "semantic",
+      "json": {
+        "adapters": [
+          {
+            "args": [
+              "--serve"
+            ],
+            "executable": "/fixture/adapter",
+            "probe": {
+              "command": [
+                "check",
+                "--once"
+              ],
+              "kind": "process"
+            },
+            "processes": [
+              "maximal"
+            ]
+          }
+        ],
+        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "processes": [
+          {
+            "args": [
+              "--mode=maximal"
+            ],
+            "capabilities": [
+              "capability"
+            ],
+            "coexistence": "application-peers",
+            "engines": [
+              "engine"
+            ],
+            "environment": [
+              "REQUIRED_VALUE"
+            ],
+            "executable": "/fixture/maximal",
+            "id": "maximal",
+            "image_default": true,
+            "kind": "worker",
+            "liveness_probe": {
+              "kind": "http",
+              "path": "/live",
+              "port": 9443
+            },
+            "persistence": "selected",
+            "probe": {
+              "kind": "http",
+              "path": "/ready",
+              "port": 9443
+            }
+          }
+        ],
+        "provenance": {
+          "generator": "conformance-fixture",
+          "schema": "mnemoshare.deployment-contract.v2",
+          "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    {
+      "name": "duplicate-process-id",
+      "layer": "semantic",
+      "json": {
+        "adapters": [
+          {
+            "args": [
+              "--serve"
+            ],
+            "executable": "/fixture/adapter",
+            "probe": {
+              "command": [
+                "check",
+                "--once"
+              ],
+              "kind": "process"
+            },
+            "processes": [
+              "maximal"
+            ]
+          }
+        ],
+        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "processes": [
+          {
+            "args": [
+              "--mode=maximal"
+            ],
+            "capabilities": [
+              "capability"
+            ],
+            "coexistence": "application-peers",
+            "engines": [
+              "engine"
+            ],
+            "environment": [
+              "REQUIRED_VALUE"
+            ],
+            "executable": "/fixture/maximal",
+            "id": "maximal",
+            "image_default": true,
+            "kind": "api",
+            "liveness_probe": {
+              "kind": "http",
+              "path": "/live",
+              "port": 9443
+            },
+            "persistence": "selected",
+            "probe": {
+              "kind": "http",
+              "path": "/ready",
+              "port": 9443
+            }
+          },
+          {
+            "args": [
+              "--mode=maximal"
+            ],
+            "capabilities": [
+              "capability"
+            ],
+            "coexistence": "application-peers",
+            "engines": [
+              "engine"
+            ],
+            "environment": [
+              "REQUIRED_VALUE"
+            ],
+            "executable": "/fixture/maximal",
+            "id": "maximal",
+            "image_default": true,
+            "kind": "api",
+            "liveness_probe": {
+              "kind": "http",
+              "path": "/live",
+              "port": 9443
+            },
+            "persistence": "selected",
+            "probe": {
+              "kind": "http",
+              "path": "/ready",
+              "port": 9443
+            }
+          }
+        ],
+        "provenance": {
+          "generator": "conformance-fixture",
+          "schema": "mnemoshare.deployment-contract.v2",
+          "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    {
+      "name": "unknown-adapter-process",
+      "layer": "semantic",
+      "json": {
+        "adapters": [
+          {
+            "args": [
+              "--serve"
+            ],
+            "executable": "/fixture/adapter",
+            "probe": {
+              "command": [
+                "check",
+                "--once"
+              ],
+              "kind": "process"
+            },
+            "processes": [
+              "missing"
+            ]
+          }
+        ],
+        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "processes": [
+          {
+            "args": [
+              "--mode=maximal"
+            ],
+            "capabilities": [
+              "capability"
+            ],
+            "coexistence": "application-peers",
+            "engines": [
+              "engine"
+            ],
+            "environment": [
+              "REQUIRED_VALUE"
+            ],
+            "executable": "/fixture/maximal",
+            "id": "maximal",
+            "image_default": true,
+            "kind": "api",
+            "liveness_probe": {
+              "kind": "http",
+              "path": "/live",
+              "port": 9443
+            },
+            "persistence": "selected",
+            "probe": {
+              "kind": "http",
+              "path": "/ready",
+              "port": 9443
+            }
+          }
+        ],
+        "provenance": {
+          "generator": "conformance-fixture",
+          "schema": "mnemoshare.deployment-contract.v2",
+          "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    {
+      "name": "extra-property",
+      "layer": "schema",
+      "json": {
+        "adapters": [
+          {
+            "args": [
+              "--serve"
+            ],
+            "executable": "/fixture/adapter",
+            "probe": {
+              "command": [
+                "check",
+                "--once"
+              ],
+              "kind": "process"
+            },
+            "processes": [
+              "maximal"
+            ]
+          }
+        ],
+        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "manualOverride": true,
+        "processes": [
+          {
+            "args": [
+              "--mode=maximal"
+            ],
+            "capabilities": [
+              "capability"
+            ],
+            "coexistence": "application-peers",
+            "engines": [
+              "engine"
+            ],
+            "environment": [
+              "REQUIRED_VALUE"
+            ],
+            "executable": "/fixture/maximal",
+            "id": "maximal",
+            "image_default": true,
+            "kind": "api",
+            "liveness_probe": {
+              "kind": "http",
+              "path": "/live",
+              "port": 9443
+            },
+            "persistence": "selected",
+            "probe": {
+              "kind": "http",
+              "path": "/ready",
+              "port": 9443
+            }
+          }
+        ],
+        "provenance": {
+          "generator": "conformance-fixture",
+          "schema": "mnemoshare.deployment-contract.v2",
+          "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    }
+  ]
+}

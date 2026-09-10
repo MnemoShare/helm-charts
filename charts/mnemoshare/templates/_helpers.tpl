@@ -5,6 +5,17 @@ Expand the name of the chart.
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/* Full target contract digest. Names use a prefix; every persisted object also
+stores and validates the complete digest. Hashing all values deliberately makes
+credentials, database identity, scheduling and policy part of the attempt. */}}
+{{- define "mnemoshare.formatMigrationTargetDigest" -}}
+{{- printf "%s\n%s" (include "mnemoshare.applicationImage" (dict "root" . "name" "migration")) (toJson .Values) | sha256sum -}}
+{{- end -}}
+
+{{- define "mnemoshare.formatMigrationTargetSuffix" -}}
+{{- include "mnemoshare.formatMigrationTargetDigest" . | trunc 24 -}}
+{{- end -}}
+
 {{/*
 Create a default fully qualified app name.
 */}}
@@ -20,6 +31,101 @@ Create a default fully qualified app name.
 {{- end }}
 {{- end }}
 {{- end }}
+
+{{/* Bind contract-governed peers to a declared immutable application identity. */}}
+{{- define "mnemoshare.requireDeploymentContractIdentity" -}}
+{{- $expectedCommit := "aba43f7911586189a6e056bb1c9dcab7258b21d4" -}}
+{{- if ne .Values.deploymentContractV2.sourceCommit $expectedCommit -}}{{- fail (printf "deploymentContractV2.sourceCommit must equal vendored application commit %s" $expectedCommit) -}}{{- end -}}
+{{- $raw := required "vendored deployment contract is required" (.Files.Get "tests/contracts/deployment/v2/contract.json") -}}
+{{- $contract := fromJson $raw -}}
+{{- if ne .Values.deploymentContractV2.contractFingerprint $contract.fingerprint -}}{{- fail (printf "deploymentContractV2.contractFingerprint must equal vendored contract fingerprint %s" $contract.fingerprint) -}}{{- end -}}
+{{- $digest := required "deploymentContractV2.imageDigest is required for contract-governed MCP/SFTP" .Values.deploymentContractV2.imageDigest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}{{- fail "deploymentContractV2.imageDigest must be sha256:<64 lowercase hex>" -}}{{- end -}}
+{{- if ne $digest .Values.image.digest -}}{{- fail "deploymentContractV2.imageDigest must equal the global image.digest actually selected for contract-governed peers" -}}{{- end -}}
+{{- end -}}
+
+{{- define "mnemoshare.contractApplicationImage" -}}
+{{- printf "%s@%s" (required "image.repository is required" .Values.image.repository) .Values.deploymentContractV2.imageDigest -}}
+{{- end -}}
+
+{{/* Bind v3 contract-governed peers to a declared immutable application identity. */}}
+{{- define "mnemoshare.requireDeploymentContractV3Identity" -}}
+{{- $expectedCommit := "0dd4f8eb13b9afb35a586f4ac7bc8618d25d7886" -}}
+{{- if ne .Values.deploymentContractV3.sourceCommit $expectedCommit -}}{{- fail (printf "deploymentContractV3.sourceCommit must equal vendored application commit %s" $expectedCommit) -}}{{- end -}}
+{{- $raw := required "vendored deployment contract v3 is required" (.Files.Get "tests/contracts/deployment/v3/contract.json") -}}
+{{- $contract := fromJson $raw -}}
+{{- if ne .Values.deploymentContractV3.contractFingerprint $contract.fingerprint -}}{{- fail (printf "deploymentContractV3.contractFingerprint must equal vendored contract fingerprint %s" $contract.fingerprint) -}}{{- end -}}
+{{- $digest := required "deploymentContractV3.imageDigest is required for contract-governed emailgateway" .Values.deploymentContractV3.imageDigest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}{{- fail "deploymentContractV3.imageDigest must be sha256:<64 lowercase hex>" -}}{{- end -}}
+{{- if ne $digest .Values.image.digest -}}{{- fail "deploymentContractV3.imageDigest must equal the global image.digest actually selected for contract-governed peers" -}}{{- end -}}
+{{- end -}}
+
+{{- define "mnemoshare.contractV3ApplicationImage" -}}
+{{- printf "%s@%s" (required "image.repository is required" .Values.image.repository) .Values.deploymentContractV3.imageDigest -}}
+{{- end -}}
+
+{{- define "mnemoshare.deploymentExecutableV3" -}}
+{{- $raw := required "vendored tests/contracts/deployment/v3/contract.json is required" (.root.Files.Get "tests/contracts/deployment/v3/contract.json") -}}
+{{- $contract := fromJson $raw -}}
+{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v3" -}}{{- fail "vendored deployment contract is not v3" -}}{{- end -}}
+{{- $found := dict -}}
+{{- range $contract.executables -}}{{- if eq .id $.id -}}{{- $_ := set $found "executable" . -}}{{- end -}}{{- end -}}
+{{- if not (hasKey $found "executable") -}}{{- fail (printf "vendored deployment contract has no executable %s" .id) -}}{{- end -}}
+{{- toJson (get $found "executable") -}}
+{{- end -}}
+
+{{- define "mnemoshare.deploymentProfileV3" -}}
+{{- $executable := include "mnemoshare.deploymentExecutableV3" (dict "root" .root "id" .executable) | fromJson -}}
+{{- $found := dict -}}
+{{- range $executable.profiles -}}{{- if eq .id $.profile -}}{{- $_ := set $found "profile" . -}}{{- end -}}{{- end -}}
+{{- if not (hasKey $found "profile") -}}{{- fail (printf "vendored deployment executable %s has no profile %s" .executable .profile) -}}{{- end -}}
+{{- toJson (get $found "profile") -}}
+{{- end -}}
+
+{{- define "mnemoshare.deploymentProcessV2" -}}
+{{- $raw := required "vendored tests/contracts/deployment/v2/contract.json is required" (.root.Files.Get "tests/contracts/deployment/v2/contract.json") -}}
+{{- $contract := fromJson $raw -}}
+{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v2" -}}{{- fail "vendored deployment contract is not v2" -}}{{- end -}}
+{{- $found := dict -}}
+{{- range $contract.processes -}}{{- if eq .id $.id -}}{{- $_ := set $found "process" . -}}{{- end -}}{{- end -}}
+{{- if not (hasKey $found "process") -}}{{- fail (printf "vendored deployment contract has no process %s" .id) -}}{{- end -}}
+{{- $process := get $found "process" -}}
+{{- if ne $process.persistence "none" -}}{{- fail (printf "deployment process %s must remain persistence=none" .id) -}}{{- end -}}
+{{- toJson $process -}}
+{{- end -}}
+
+{{- define "mnemoshare.requireUnifiedComponentImage" -}}
+{{- $root := .root -}}
+{{- $component := .component -}}
+{{- $name := .name -}}
+{{- if and $component.repository (ne $component.repository $root.Values.image.repository) -}}
+{{- fail (printf "%s.image.repository is retired by deployment contract v2; use the unified image.repository" $name) -}}
+{{- end -}}
+{{- if $component.tag -}}
+{{- fail (printf "%s.image.tag is retired by deployment contract v2; contract-governed peers require a digest" $name) -}}
+{{- end -}}
+{{- if and $component.digest (ne $component.digest $root.Values.deploymentContractV2.imageDigest) -}}
+{{- fail (printf "%s.image.digest is retired by deployment contract v2; use the unified image.digest" $name) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "mnemoshare.validateMCPContractV2" -}}
+{{- include "mnemoshare.requireDeploymentContractIdentity" . -}}
+{{- include "mnemoshare.requireUnifiedComponentImage" (dict "root" . "component" .Values.mcp.image "name" "mcp") -}}
+{{- if ne .Values.mcp.transport.type "http" -}}{{- fail "mcp.transport.type is fixed to http by deployment contract v2; stdio Kubernetes deployments are no longer supported" -}}{{- end -}}
+{{- if ne (int .Values.mcp.transport.http.containerPort) 9222 -}}{{- fail "mcp.transport.http.containerPort is fixed to 9222 by deployment contract v2; vary only mcp.service.port" -}}{{- end -}}
+{{- if and (hasKey .Values.mcp.transport.http "port") (ne (int .Values.mcp.transport.http.port) (int .Values.mcp.service.port)) -}}{{- fail "mcp.transport.http.port is retired; keep it equal to mcp.service.port while migrating values" -}}{{- end -}}
+{{- if ne .Values.mcp.logging.level "info" -}}{{- fail "mcp.logging.level is fixed to info by deployment contract v2" -}}{{- end -}}
+{{- if ne .Values.mcp.logging.format "json" -}}{{- fail "mcp.logging.format is fixed to json by deployment contract v2" -}}{{- end -}}
+{{- if and (not .Values.mcp.apiKey.existingSecret) (not .Values.mcp.apiKey.key) -}}{{- fail "mcp.enabled requires mcp.apiKey.existingSecret or mcp.apiKey.key; the chart will not render a dangling secretKeyRef" -}}{{- end -}}
+{{- end -}}
+
+{{- define "mnemoshare.validateSFTPContractV2" -}}
+{{- include "mnemoshare.requireDeploymentContractIdentity" . -}}
+{{- include "mnemoshare.requireUnifiedComponentImage" (dict "root" . "component" .Values.sftpGateway.image "name" "sftpGateway") -}}
+{{- $command := toJson .Values.sftpGateway.command -}}
+{{- if and (ne $command "[]") (ne $command "[\"/usr/local/bin/sftp-gateway\"]") -}}{{- fail "sftpGateway.command is fixed to [/usr/local/bin/sftp-gateway] by deployment contract v2" -}}{{- end -}}
+{{- end -}}
 
 {{/*
 Create chart name and version as used by the chart label.
@@ -100,6 +206,8 @@ phases. Ordinary startup remains fail-closed in the application.
     {{- fail (printf "migrationOperation.phase=up requires %s to resolve exactly to %s@%s" $name $targetRepo $targetDigest) -}}
   {{- end -}}
   {{- printf "%s@%s" $targetRepo $targetDigest -}}
+{{- else if or (eq $root.Values.formatMigrations.mode "automatic") (eq $root.Values.formatMigrations.mode "operator") -}}
+  {{- include "mnemoshare.applicationImage" (dict "root" $root "component" $component "name" $name) -}}
 {{- else -}}
   {{- $repo := $component.repository | default (required "image.repository is required" $root.Values.image.repository) -}}
   {{- $digest := $component.digest | default "" -}}
@@ -113,6 +221,36 @@ phases. Ordinary startup remains fail-closed in the application.
     {{- $tag := $component.tag | default $root.Values.image.tag | default $root.Chart.AppVersion -}}
     {{- printf "%s:%s" $repo $tag -}}
   {{- end }}
+{{- end -}}
+{{- end }}
+
+{{/*
+Resolve an application database-writer image. Automatic format migration mode
+closes every writer over one immutable global repository@digest; other modes
+retain the chart's historical repository:tag fallback behavior.
+Input: dict "root" . ["component" .Values.<component>.image] ["name" string]
+*/}}
+{{- define "mnemoshare.applicationImage" -}}
+{{- $root := .root -}}
+{{- $component := .component | default dict -}}
+{{- $name := .name | default "application" -}}
+{{- $globalRepo := required "image.repository is required" $root.Values.image.repository -}}
+{{- if eq $root.Values.formatMigrations.mode "automatic" -}}
+  {{- $globalDigest := required "formatMigrations.mode=automatic requires image.digest pinned as sha256:<64 lowercase hex>" $root.Values.image.digest -}}
+  {{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $globalDigest) -}}
+    {{- fail "formatMigrations.mode=automatic requires image.digest pinned as sha256:<64 lowercase hex>" -}}
+  {{- end -}}
+  {{- $repo := $component.repository | default $globalRepo -}}
+  {{- $digest := $component.digest | default $globalDigest -}}
+  {{- $tag := $component.tag | default "" -}}
+  {{- if or (ne $repo $globalRepo) (ne $digest $globalDigest) (ne $tag "") -}}
+    {{- fail (printf "formatMigrations.mode=automatic requires %s image to resolve exactly to %s@%s; per-process repository, digest, or tag override diverges" $name $globalRepo $globalDigest) -}}
+  {{- end -}}
+  {{- printf "%s@%s" $globalRepo $globalDigest -}}
+{{- else -}}
+  {{- $repo := $component.repository | default $globalRepo -}}
+  {{- $tag := $component.tag | default $root.Values.image.tag | default $root.Chart.AppVersion -}}
+  {{- printf "%s:%s" $repo $tag -}}
 {{- end -}}
 {{- end }}
 

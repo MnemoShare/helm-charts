@@ -14,6 +14,7 @@ metadata:
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: ices
+    mnemoshare.io/database-writer: "true"
 spec:
   {{- if or (not .Values.ices.autoscaling.enabled) (eq (include "mnemoshare.migrationOperationDown" .) "true") }}
   replicas: {{ if eq (include "mnemoshare.migrationOperationDown" .) "true" }}0{{ else }}{{ .Values.ices.replicas }}{{ end }}
@@ -27,6 +28,7 @@ spec:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: ices
+        mnemoshare.io/database-writer: "true"
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -44,7 +46,9 @@ spec:
         # Dedicated email-security binary (workerboot). Hosts mail-monitoring:
         # BEC poller + Pub/Sub subscriber + mail-security sweepers. It pins its
         # own worker engine set internally, so no selection env is set here.
-        command: ["/usr/local/bin/ices"]
+        {{- $icesCommand := .Values.ices.command | default (list "/usr/local/bin/ices") }}
+        command:
+          {{- toYaml $icesCommand | nindent 10 }}
         env:
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
@@ -82,6 +86,16 @@ spec:
               name: {{ .Values.redis.external.urlExistingSecret }}
               key: {{ .Values.redis.external.urlExistingSecretKey | default "redis-url" }}
         {{- else if .Values.redis.external.url }}
+        {{- if or .Values.redis.external.existingSecret .Values.existingSecrets.redis }}
+        # Emitted BEFORE REDIS_URL so a url containing $(REDIS_PASSWORD) is
+        # substituted by the kubelet. This is what lets a redis-sentinel:// URL
+        # carry its password without baking the literal into the rendered manifest.
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.redis.external.existingSecret | default .Values.existingSecrets.redis }}
+              key: {{ .Values.existingSecretKeys.redisPassword | default "redis-password" }}
+        {{- end }}
         - name: REDIS_URL
           value: {{ .Values.redis.external.url | quote }}
         {{- else }}
@@ -246,7 +260,7 @@ spec:
             # own `/bin/sh -c ...` cmdline (contains "ices") → false-positive
             # even when the binary is dead. `-f` + ^...$ works on both procps
             # and busybox pgrep and cannot match the probe shell.
-            - "pgrep -f '^/usr/local/bin/ices$'"
+            - {{ printf "pgrep -f '^%s$'" (first $icesCommand) | quote }}
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
@@ -256,7 +270,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - "pgrep -f '^/usr/local/bin/ices$'"
+            - {{ printf "pgrep -f '^%s$'" (first $icesCommand) | quote }}
           initialDelaySeconds: 10
           periodSeconds: 15
           timeoutSeconds: 5

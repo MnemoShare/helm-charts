@@ -1,4 +1,6 @@
 {{- if .Values.sftpGateway.enabled }}
+{{- include "mnemoshare.validateSFTPContractV2" . }}
+{{- $process := include "mnemoshare.deploymentProcessV2" (dict "root" . "id" "sftp-gateway") | fromJson }}
 {{- $hostKeySecret := .Values.sftpGateway.hostKey.existingSecret -}}
 {{- $internalSecret := .Values.sftpGateway.internalApiSecret.existingSecret -}}
 apiVersion: apps/v1
@@ -35,6 +37,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      {{- if .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml .Values.dnsConfig | nindent 8 }}
+      {{- end }}
       securityContext:
         fsGroup: 1000
         runAsNonRoot: true
@@ -42,23 +48,15 @@ spec:
         runAsGroup: 1000
       containers:
       - name: sftp-gateway
-        image: "{{ .Values.sftpGateway.image.repository | default .Values.image.repository }}:{{ .Values.sftpGateway.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+        image: {{ include "mnemoshare.contractApplicationImage" . | quote }}
         imagePullPolicy: {{ .Values.sftpGateway.image.pullPolicy }}
-        {{- with .Values.sftpGateway.command }}
-        # Explicit entrypoint override. Set this when pointing at the unified
-        # ghcr.io/mnemoshare/mnemoshare image (whose default ENTRYPOINT runs
-        # the API server) — typically: ["/usr/local/bin/sftp-gateway"].
-        # Leave unset to use the image's own ENTRYPOINT (preserves the legacy
-        # ghcr.io/mnemoshare/sftp-gateway image's "just run it" behaviour).
-        command:
-          {{- toYaml . | nindent 8 }}
-        {{- end }}
+        command: [{{ $process.executable | quote }}]
         ports:
         - name: sftp
           containerPort: 2222
           protocol: TCP
         - name: health
-          containerPort: 8090
+          containerPort: {{ $process.probe.port }}
           protocol: TCP
         env:
         - name: SFTP_GATEWAY_LISTEN_ADDR
@@ -67,8 +65,6 @@ spec:
           value: /etc/sftp-gateway/host_key
         - name: SFTP_GATEWAY_API_BASE_URL
           value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}"
-        - name: SFTP_GATEWAY_HEALTH_PORT
-          value: "8090"
         # The license-capability gate. Operator/provisioner injects this
         # from the tier capability bundle. The binary refuses to start
         # without an explicit "true" — a Pod that boots into an unlicensed
@@ -121,7 +117,7 @@ spec:
           mountPath: /var/spool/sftp-gateway
         readinessProbe:
           httpGet:
-            path: /readyz
+            path: {{ $process.probe.path }}
             port: health
           initialDelaySeconds: 2
           periodSeconds: 5
@@ -129,7 +125,7 @@ spec:
           failureThreshold: 3
         livenessProbe:
           httpGet:
-            path: /healthz
+            path: {{ $process.liveness_probe.path }}
             port: health
           initialDelaySeconds: 10
           periodSeconds: 15

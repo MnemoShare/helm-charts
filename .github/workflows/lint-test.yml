@@ -46,6 +46,9 @@ jobs:
       - name: Set up chart-testing
         uses: helm/chart-testing-action@v2.6.1
 
+      - name: Install deployment contract schema validator
+        run: python -m pip install jsonschema==4.25.1
+
       - name: Add Helm repositories
         run: |
           helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -62,6 +65,7 @@ jobs:
           # Note: Full install test skipped because the app requires real MongoDB/S3
           helm template mnemoshare charts/mnemoshare \
             --set customerId="ci-test" \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \
@@ -82,6 +86,24 @@ jobs:
           fi
           echo "✓ Default-path chart templates rendered successfully"
 
+      - name: Validate format migration orchestration
+        run: bash charts/mnemoshare/tests/format-migrations.sh
+
+      - name: Validate migration contract updater
+        run: bash charts/mnemoshare/tests/update-migration-result-contract-test.sh
+
+      - name: Validate deployment contract v2 consumer
+        run: bash charts/mnemoshare/tests/deployment-contract.sh
+
+      - name: Validate deployment contract v2 updater
+        run: bash charts/mnemoshare/tests/update-deployment-contract-test.sh
+
+      - name: Validate deployment contract v3 emailgateway consumer
+        run: bash charts/mnemoshare/tests/deployment-contract-v3.sh
+
+      - name: Validate deployment contract v3 updater
+        run: bash charts/mnemoshare/tests/update-deployment-contract-v3-test.sh
+
       - name: Validate chart templates (sftpGateway enabled)
         if: github.event_name == 'pull_request'
         run: |
@@ -92,6 +114,11 @@ jobs:
           # PR #12 review's testing recommendation.
           helm template mnemoshare charts/mnemoshare \
             --set customerId="ci-test" \
+            --set formatMigrations.mode=disabled \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set deploymentContractV2.sourceCommit=aba43f7911586189a6e056bb1c9dcab7258b21d4 \
+            --set deploymentContractV2.contractFingerprint=e73dd2b91c7de17428fbfe1c4984758aa9a3894c6aadced0531f0ff591b67836 \
+            --set deploymentContractV2.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \
@@ -117,6 +144,7 @@ jobs:
           # recommendation (MSC-372).
           helm template mnemoshare charts/mnemoshare \
             --set customerId="ci-test" \
+            --set formatMigrations.mode=disabled \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \
@@ -146,6 +174,7 @@ jobs:
           # has a separate keyguard injection point.
           WORKER_BASE=(
             --set customerId="ci-test"
+            --set formatMigrations.mode=disabled
             --set mongodb.external.enabled=true
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test"
             --set s3.bucket="test-bucket"
@@ -210,6 +239,7 @@ jobs:
           # lost the guard.
           BASE_VALUES=(
             --set customerId=ci-test
+            --set formatMigrations.mode=disabled
             --set mongodb.external.enabled=true
             --set mongodb.external.uri=mongodb://test:test@localhost:27017/test
             --set s3.bucket=test-bucket
@@ -262,6 +292,7 @@ jobs:
 
           BASE=(
             --set customerId=ci-test
+            --set formatMigrations.mode=disabled
             --set mongodb.external.enabled=true
             --set mongodb.external.uri=mongodb://test:test@localhost:27017/test
             --set s3.bucket=test-bucket
@@ -416,6 +447,11 @@ jobs:
           set +e
           OUT=$(helm template mnemoshare charts/mnemoshare \
             --set customerId="ci-test" \
+            --set formatMigrations.mode=disabled \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set deploymentContractV2.sourceCommit=aba43f7911586189a6e056bb1c9dcab7258b21d4 \
+            --set deploymentContractV2.contractFingerprint=e73dd2b91c7de17428fbfe1c4984758aa9a3894c6aadced0531f0ff591b67836 \
+            --set deploymentContractV2.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \

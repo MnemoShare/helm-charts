@@ -1,0 +1,115 @@
+{
+  "contract": "mnemoshare.migration-result.v1",
+  "valid": [
+    {
+      "name": "ordinary",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":\"abababababababababababababababababababababababababababababababab\"}"
+    },
+    {
+      "name": "maintenance",
+      "json": "{\"decision\":\"maintenance\",\"planDigest\":\"abababababababababababababababababababababababababababababababab\"}"
+    },
+    {
+      "name": "reordered",
+      "json": "{\"planDigest\":\"abababababababababababababababababababababababababababababababab\",\"decision\":\"ordinary\"}"
+    },
+    {
+      "name": "trailing-newline",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":\"abababababababababababababababababababababababababababababababab\"}\n"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "missing-decision",
+      "json": "{\"planDigest\":\"abababababababababababababababababababababababababababababababab\"}"
+    },
+    {
+      "name": "missing-plan-digest",
+      "json": "{\"decision\":\"ordinary\"}"
+    },
+    {
+      "name": "extra-compatible-reads",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":\"abababababababababababababababababababababababababababababababab\",\"compatibleReads\":[]}"
+    },
+    {
+      "name": "unknown-decision",
+      "json": "{\"decision\":\"reordered\",\"planDigest\":\"abababababababababababababababababababababababababababababababab\"}"
+    },
+    {
+      "name": "null-decision",
+      "json": "{\"decision\":null,\"planDigest\":\"abababababababababababababababababababababababababababababababab\"}"
+    },
+    {
+      "name": "boolean-decision",
+      "json": "{\"decision\":true,\"planDigest\":\"abababababababababababababababababababababababababababababababab\"}"
+    },
+    {
+      "name": "number-decision",
+      "json": "{\"decision\":1,\"planDigest\":\"abababababababababababababababababababababababababababababababab\"}"
+    },
+    {
+      "name": "object-decision",
+      "json": "{\"decision\":{},\"planDigest\":\"abababababababababababababababababababababababababababababababab\"}"
+    },
+    {
+      "name": "array-decision",
+      "json": "{\"decision\":[],\"planDigest\":\"abababababababababababababababababababababababababababababababab\"}"
+    },
+    {
+      "name": "uppercase-digest",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":\"ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB\"}"
+    },
+    {
+      "name": "short-digest",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":\"abc\"}"
+    },
+    {
+      "name": "nonhex-digest",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":\"gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg\"}"
+    },
+    {
+      "name": "null-plan-digest",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":null}"
+    },
+    {
+      "name": "boolean-plan-digest",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":true}"
+    },
+    {
+      "name": "number-plan-digest",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":1}"
+    },
+    {
+      "name": "object-plan-digest",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":{}}"
+    },
+    {
+      "name": "array-plan-digest",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":[]}"
+    },
+    {
+      "name": "null",
+      "json": "null"
+    },
+    {
+      "name": "array",
+      "json": "[]"
+    },
+    {
+      "name": "string",
+      "json": "\"ordinary\""
+    },
+    {
+      "name": "duplicate-decision",
+      "json": "{\"decision\":\"ordinary\",\"decision\":\"maintenance\",\"planDigest\":\"abababababababababababababababababababababababababababababababab\"}"
+    },
+    {
+      "name": "duplicate-plan-digest",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":\"abababababababababababababababababababababababababababababababab\",\"planDigest\":\"abababababababababababababababababababababababababababababababab\"}"
+    },
+    {
+      "name": "trailing-second-json",
+      "json": "{\"decision\":\"ordinary\",\"planDigest\":\"abababababababababababababababababababababababababababababababab\"} {}"
+    }
+  ]
+}

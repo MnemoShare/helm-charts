@@ -3,6 +3,26 @@ MnemoShare {{ .Chart.AppVersion }} deployed successfully.
 
 Release: {{ .Release.Name }}
 Namespace: {{ .Release.Namespace }}
+{{- if or .Values.mcp.enabled .Values.sftpGateway.enabled }}
+
+DEPLOYMENT CONTRACT V2
+----------------------
+  MCP/SFTP runtime shape is sourced from application commit
+  aba43f7911586189a6e056bb1c9dcab7258b21d4. These persistence-none peers are
+  excluded from the migration writer census but remain in the pod termination
+  fence. The chart verified the declared source, contract, and immutable image
+  identities agree with its pin; proving source-to-image build provenance
+  requires an external attestation.
+{{- end }}
+{{- if eq .Values.formatMigrations.mode "automatic" }}
+
+FORMAT MIGRATION SAFETY
+-----------------------
+  NEVER use `helm upgrade --atomic` with formatMigrations.mode=automatic.
+  Helm does not expose the --atomic flag to chart templates, so this chart
+  cannot reject it automatically. A rollback after a maintenance migration
+  could restart the old writer image against the migrated database.
+{{- end }}
 
 {{- if .Values.ingress.enabled }}
 

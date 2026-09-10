@@ -13,6 +13,7 @@ metadata:
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: workflow-worker
+    mnemoshare.io/database-writer: "true"
 spec:
   serviceName: {{ include "mnemoshare.fullname" . }}-worker
   {{- if or (not .Values.workflowWorker.autoscaling.enabled) (eq (include "mnemoshare.migrationOperationDown" .) "true") }}
@@ -27,6 +28,7 @@ spec:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: workflow-worker
+        mnemoshare.io/database-writer: "true"
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -42,7 +44,8 @@ spec:
         image: {{ include "mnemoshare.writerImage" (dict "root" . "component" .Values.workflowWorker.image "name" "workflow-worker") | quote }}
         imagePullPolicy: {{ .Values.workflowWorker.image.pullPolicy }}
         # Override command to run the compiled workflow worker binary.
-        command: ["/usr/local/bin/worker"]
+        command:
+          {{- toYaml (.Values.workflowWorker.command | default (list "/usr/local/bin/worker")) | nindent 10 }}
         env:
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
@@ -87,6 +90,16 @@ spec:
               name: {{ .Values.redis.external.urlExistingSecret }}
               key: {{ .Values.redis.external.urlExistingSecretKey | default "redis-url" }}
         {{- else if .Values.redis.external.url }}
+        {{- if or .Values.redis.external.existingSecret .Values.existingSecrets.redis }}
+        # Emitted BEFORE REDIS_URL so a url containing $(REDIS_PASSWORD) is
+        # substituted by the kubelet. This is what lets a redis-sentinel:// URL
+        # carry its password without baking the literal into the rendered manifest.
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.redis.external.existingSecret | default .Values.existingSecrets.redis }}
+              key: {{ .Values.existingSecretKeys.redisPassword | default "redis-password" }}
+        {{- end }}
         - name: REDIS_URL
           value: {{ .Values.redis.external.url | quote }}
         {{- else }}

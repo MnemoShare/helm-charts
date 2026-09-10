@@ -110,6 +110,141 @@ helm install mnemoshare mnemoshare/mnemoshare \
 
 ## Configuration
 
+### Format migrations during standalone upgrades
+
+`formatMigrations.mode` controls the standalone chart's pre-install/pre-upgrade format
+migration orchestration:
+
+> **Safety requirement:** never run `helm upgrade --atomic` with
+> `formatMigrations.mode=automatic`. Helm does not expose the `--atomic` flag to
+> templates, so the chart cannot enforce this at render time. A post-migration
+> upgrade failure followed by automatic rollback could restart old writers
+> against the migrated database. Retry the same target forward instead.
+
+- `automatic` (default) renders a pre-install/pre-upgrade hook using the target application
+  image. The plan runs before any disruption. An `ordinary` decision preserves
+  the running fleet; a `maintenance` decision removes the API HPA and enabled
+  workflow-worker/ICES KEDA controllers, scales only the seven application-plane
+  components to zero, waits for their pods to terminate, and then applies and
+  verifies the plan. Maintenance is one-way: old controllers are never restored;
+  Helm applies the target manifests and recreates their desired replicas and
+  autoscalers. Redis, ClamAV, Step-CA, and MinIO remain running.
+- `operator` renders no chart-owned migration authority because the operator owns
+  the complete lifecycle. The chart emits no migration Job, state or target
+  objects, cleanup or mode-fence hooks, RBAC, ServiceAccounts, or migration
+  NetworkPolicies, and does not require Kubernetes API targets for them.
+- `disabled` renders no migration Job for externally coordinated maintenance.
+  Disabled mode retains the chart-owned pre-upgrade fence and pre-delete cleanup
+  path that reject unresolved release-owned automatic-migration state. Resolve it
+  by retrying the exact frozen automatic target or by an explicit external state
+  handoff. Operator mode assumes that state ownership and reconciliation itself.
+
+In automatic mode, the target-image CLI contract is application-owned and
+provisional until the corresponding application release lands. The target image
+supplies the dedicated executable at this stable path (and `/bin/sh` for the
+decision-bound apply dispatch):
+
+```text
+/usr/local/bin/mnemoshare-migrate plan --contract embedded --result /migration/result.json --output /migration/plan.json
+/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-plan-digest DIGEST [--exclusive]
+/usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-plan-digest DIGEST
+```
+
+The result must be exactly a `decision` plus a 64-character lowercase hexadecimal
+`planDigest`; extra fields, malformed digests, and unknown decisions fail closed
+before any drain. An ordinary plan does not drain, but
+still applies without `--exclusive` so safe `initialize-current` ledger
+baselines persist. A maintenance plan drains first and applies with
+`--exclusive`; the application CLI rejects migration, adoption, and resume
+actions without that flag.
+After a maintenance drain, failures intentionally leave the application plane
+down so a retry can continue forward with the same target image. Failed hook
+Jobs are retained for diagnosis.
+
+Target identity, sticky decision, plan digest, and replica census are captured
+in an immutable, target-keyed ConfigMap before the first scale-down. Retries
+validate it; maintenance can never downgrade to ordinary and digest drift fails
+closed with the plane still down. Controller and autoscaler discovery uses the
+release instance/component labels rather than constructed names, so a
+`nameOverride` or `fullnameOverride` transition still drains and recovers the
+old owners selected by their actual names.
+
+Automatic mode requires `image.digest` in exact lowercase
+`sha256:<64 hex>` form. The API, workflow/background/cloud worker, email and
+inbound gateways, SFTP gateway, ICES, MCP, and all three migration commands are
+rendered from the same `image.repository@image.digest` reference. MCP and SFTP
+are application peers with `persistence=none`, so they are excluded from the
+writer replica census and scale-down set; they are still included in the
+post-drain pod-termination fence before migration begins. Divergent legacy MCP
+or SFTP image, command, transport, port, or logging values fail explicitly.
+
+The chart vendors deployment contract v2 from application commit
+`aba43f7911586189a6e056bb1c9dcab7258b21d4`. Because chart `appVersion` 0.18.11
+predates that commit, enabling MCP or SFTP requires the exact `sourceCommit`,
+vendored `contractFingerprint`, and an explicit `imageDigest` equal to global
+`image.digest`. MCP/SFTP always render that repository@digest, even outside
+automatic migration mode. This verifies the declared immutable identities and
+their equality; it cannot prove that an image was built from the declared
+source without an external signed build-provenance attestation.
+
+The hook reads inline MongoDB/PostgreSQL settings from a pre-upgrade target
+snapshot Secret, so it never accidentally consumes the old release's generated
+Secret. A target `existingSecrets.mongodb` or `existingSecrets.postgres`
+reference is copied to a target-keyed immutable Secret before planning and must
+therefore exist before `helm upgrade`.
+Automatic mode rejects SQLite because the hook cannot share the API container's
+local filesystem, and currently rejects every driver other than MongoDB and
+PostgreSQL because no target connection environment is wired for them. Use
+operator/disabled mode to coordinate those migrations externally. The hook pod
+inherits the chart's global `dnsConfig`, `nodeSelector`, `affinity`, and
+`tolerations`, so it reaches the database from the same scheduled environment
+as the application workloads.
+
+The Kubernetes orchestrator runs from the shell-capable `alpine/k8s:1.31.0`
+toolbox at its multi-architecture digest (rather than the distroless upstream
+kubectl image). The default digest is pinned in `values.yaml`; changing it is an
+explicit supply-chain decision. Resource probes use
+`kubectl get --ignore-not-found -o name`: a genuine absence is skipped, while
+authorization, discovery, and transport failures still fail the hook.
+When chart-level NetworkPolicy is enabled, the hook pods participate in the
+same default-deny selector and receive dedicated hook-scoped egress policies.
+Set `formatMigrations.networkPolicy.databaseCIDRs` and
+`kubernetesApiTargets` to the exact destinations observed by your CNI; the
+database port defaults to 27017 for MongoDB or 5432 for PostgreSQL and can be
+overridden with `databasePort`. The migration policy permits only DNS, those
+database targets, and those API targets; cleanup has no database access.
+
+The pre-install hook requires a fresh database to plan ordinary, then applies and
+verifies its current-format baseline before any writer boots; a maintenance
+decision on a fresh install fails closed. If plan fails, no workloads were touched. If an
+ordinary apply/verify fails, the old fleet remains running. If maintenance
+apply/verify fails after drain, inspect the retained hook Job and retry the same
+target chart/image forward; do not roll back across a possibly applied format
+migration. The retry replaces hook support resources and resumes from the
+persisted ledger state.
+If the pre-install hook completed but Helm later failed while applying ordinary
+release resources, retrying the exact target with `helm upgrade --install`
+reuses that retained ordinary plan. An install-origin state is never reused for
+a maintenance decision.
+
+The narrowly scoped ServiceAccount, Role, RoleBinding, NetworkPolicy, and target snapshot use
+`before-hook-creation` cleanup and therefore persist until the next automatic
+upgrade attempt replaces them. This is intentional: Helm executes weighted
+hooks serially and considers these non-Job resources successful immediately;
+adding `hook-succeeded` would delete them before the later migration Job could
+use them. The orchestrator attaches only replaceable RBAC and policy support to
+its own Job UID. The immutable target credential snapshot is deliberately not
+Job-owned: deleting a failed Job is asynchronous, and cascading that Secret
+could race the next retry after it validated the snapshot. It remains alongside
+the target-keyed state until successful post-upgrade cleanup. A failed Job,
+desired-replica ConfigMap, credential snapshot, and prerequisites remain for diagnosis.
+A separate cleanup hook runs only after a successful automatic install/upgrade,
+or on uninstall. Failed active evidence is not removed merely by switching modes.
+The cleanup removes superseded state and credential snapshots, then deletes the narrowly scoped support objects; its own
+support is likewise Job-owned and garbage-collected. Because pre-delete hooks
+come from the installed chart, deployments predating this cleanup path should
+upgrade to this chart before uninstalling.
+
 ### Required Values
 
 | Parameter | Description | Example |
@@ -129,6 +264,7 @@ helm install mnemoshare mnemoshare/mnemoshare \
 |-----------|-------------|---------|
 | `replicaCount` | Number of replicas | `2` |
 | `image.tag` | Image tag | `latest` |
+| `image.digest` | Immutable application/writer digest required by automatic format migrations | Pinned for the chart `appVersion` |
 | `ingress.enabled` | Enable ingress | `true` |
 | `autoscaling.enabled` | Enable HPA | `false` |
 | `sendgrid.apiKey` | SendGrid API key for emails | `""` |
@@ -579,3 +715,21 @@ curl http://localhost:8080/health
 ## License
 
 Commercial - License required to run. Get a license at https://mnemoshare.com/pricing
+
+### Email gateway deployment contract v3
+
+Enabling `emailGateway` requires `deploymentContractV3.sourceCommit`,
+`deploymentContractV3.contractFingerprint`, and an explicit
+`deploymentContractV3.imageDigest` equal to the global `image.digest`. The
+chart checks the declared source and vendored contract identities and renders
+the gateway from that immutable image. It cannot prove that an image was built
+from the declared source without an external build-provenance attestation.
+
+Relay and inbound-relay profiles require a persistent spool PVC, created by the
+chart or supplied through `emailGateway.relay.persistence.existingClaim`, and a
+spool rotation key supplied inline or through
+`emailGateway.relay.existingSpoolKeySecret`. Relay SMTP authentication uses
+`RELAY_SMTP_AUTH_REQUIRED`; with the default `smtpAuthRequired=true`, relay mode
+also requires its MongoDB configuration and selects the token-bearing profile.
+When that profile owns the `email-relay-mongo` universe, automatic migrations
+plan it before drain and apply it exclusively in the existing migration hook.
