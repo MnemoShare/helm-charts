@@ -194,12 +194,6 @@ s3:
 # JWT authentication (ES256 / ECDSA P-256)
 jwt:
   ecPrivateKey: ""  # PEM-encoded EC P-256 private key for ES256 JWT signing (auto-generated if empty)
-  # Legacy single-token lifetime, in whole hours (env JWT_EXPIRY_HOURS). Governs
-  # the deprecated GenerateToken path (register/MFA-pending/device intermediate
-  # tokens); browser SSO/SAML now use short access + refresh pairs (MSC-486).
-  # Renamed from the old `expiration: "24h"`, which the backend never read
-  # (MSC-493) — tokens silently used the 1-year code default.
-  expiryHours: 24
 
 # Encryption
 encryption:
@@ -282,20 +276,8 @@ turnstile:
   # Private secret key (used for server-side validation)
   secretKey: ""
 
-# Session timeout configuration
-session:
-  # Inactivity timeout in seconds before showing logout warning
-  # After this period of no activity, a 30-second warning modal appears
-  # Default: 300 (5 minutes)
-  inactivityTimeoutSeconds: 300
-
 # Application URL
 appUrl: ""  # Required: https://mnemoshare.example.com
-
-# File upload settings
-files:
-  maxSize: "10737418240"  # 10GB in bytes
-  defaultLinkExpiration: "168h"  # 7 days
 
 # ============================================================================
 # Disk Buffer Configuration - Memory Management for Large File Uploads
@@ -353,11 +335,6 @@ diskBuffer:
 # CORS settings
 cors:
   allowedOrigins: ""  # Comma-separated list, e.g., "https://example.com,https://app.example.com"
-
-# Rate limiting
-rateLimit:
-  requests: 100
-  window: "1m"
 
 # Startup probe (MNS-1033).
 #
@@ -1116,19 +1093,6 @@ redis:
 # ============================================================================
 # Processes inbound file transfers from SFTP/FTPS/rsync sources.
 # Requires Redis to be enabled for the job queue.
-# API-pod engine activation override (see templates/deployment.yaml).
-# Empty = derived: "none" when the workflow worker is enabled (the worker
-# hosts every engine), else "*" — with no external worker the API pod IS
-# the worker, hosting scans, the workflows engine (over the database-backed
-# inproc dispatch queue when Redis is absent — dispatchinproc.NewBackend in
-# cmd/worker/main.go, tested in internal/dispatch/inproc/backend_test.go),
-# and key rotation/rewrap in-process (MNS-1159;
-# db2 derives "background,messaging" because the kmsrotation engine
-# refuses that backend at boot — overriding with "*" or a list naming
-# "kmsrotation" on db2 crash-loops app releases to date, MNS-1159).
-# Set only for edge configs.
-apiFilteredProcess: ""
-
 workflowWorker:
   # Enable/disable workflow worker deployment
   enabled: false
@@ -1157,18 +1121,6 @@ workflowWorker:
 
   # Worker concurrency (tasks per worker)
   concurrency: 10
-
-  # Engine activation filter — selects which dispatch engines this pod
-  # hosts. Empty = derived by the template: "*" (every engine the app
-  # binary registers), or "background,messaging" on db2 — every engine
-  # except kmsrotation, whose backend db2's driver refuses at boot on app
-  # releases to date. Do NOT hardcode an
-  # engine list here: names drift across app versions and an unknown
-  # name is a boot fatal — the earlier "background,workflow" default
-  # fatals on app >= 0.16, where "workflow" was folded into "messaging".
-  # Whatever you set MUST include "background" or file uploads sit on
-  # the "Pending" scan_status badge forever (MNS-505).
-  filteredProcess: ""
 
   # Temporary directory for file processing
   # Leave empty to use system default

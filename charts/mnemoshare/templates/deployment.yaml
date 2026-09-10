@@ -1,18 +1,4 @@
 {{- /*
-Validation (MNS-1159): apiFilteredProcess is the worker-less escape hatch.
-Setting it while the workflow-worker is enabled makes BOTH pods consume the
-same dispatch events (duplicate scans, scan_status races) — fail at template
-time; "none" is allowed only alongside an enabled worker. On a worker-less
-install "none" would leave ZERO engines running (uploads stuck at
-scan_status=pending forever), so that combination fails too.
-*/}}
-{{- if and .Values.workflowWorker.enabled .Values.apiFilteredProcess (ne .Values.apiFilteredProcess "none") }}
-{{- fail "apiFilteredProcess must be empty (or \"none\") when workflowWorker.enabled=true: the worker already hosts every engine; hosting engines on the API pod too double-processes dispatch events. Narrow workflowWorker.filteredProcess instead if you need a custom engine split." }}
-{{- end }}
-{{- if and (not .Values.workflowWorker.enabled) (eq (.Values.apiFilteredProcess | default "") "none") }}
-{{- fail "apiFilteredProcess=none is only safe when workflowWorker.enabled=true. With no external worker, none leaves zero engines running — files stall at scan_status=pending forever. Omit apiFilteredProcess to use the derived default." }}
-{{- end }}
-{{- /*
 Validation: when stepCA.mode=external (new tri-state, no legacy fallback)
 and mTLS is enabled on the api, the app needs a concrete CA URL to reach
 the external Step-CA. Without it, neither branch of the CA_SMALLSTEP_URL
@@ -84,33 +70,6 @@ spec:
         # backend is added or activated.
         - name: CUSTOMER_ID
           value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
-        # Engine hosting on the API pod (MNS-1159). With no external
-        # workflow-worker the API pod IS the worker: it must host every
-        # engine — background (scans; MSC-441), messaging (the workflows
-        # engine executes IN-PROCESS here, using the database-backed inproc
-        # dispatch queue when Redis is absent), and kmsrotation (Settings
-        # rotate/rewrap + scheduled rotation). So:
-        #   - workflow-worker enabled -> it hosts every engine ("*"); the API
-        #     stays "none" (pure HTTP) to avoid double-processing.
-        #   - no worker (the chart default) -> the API hosts "*" itself.
-        #     db2 exception: on app releases to date the kmsrotation engine
-        #     refuses that backend at boot even under "*", so db2 gets
-        #     "background,messaging". WARNING: an apiFilteredProcess override
-        #     of "*" (or any list naming "kmsrotation") on db2 crash-loops
-        #     those app versions — only widen on an app release that lifts
-        #     the db2 rotation restriction (MNS-1159).
-        # Override via .Values.apiFilteredProcess (guarded: rejected alongside
-        # an enabled worker, and "none" is rejected on worker-less installs).
-        - name: FILTERED_PROCESS
-        {{- if .Values.apiFilteredProcess }}
-          value: {{ .Values.apiFilteredProcess | quote }}
-        {{- else if .Values.workflowWorker.enabled }}
-          value: "none"
-        {{- else if eq .Values.database.driver "db2" }}
-          value: "background,messaging"
-        {{- else }}
-          value: "*"
-        {{- end }}
         {{- if .Values.ices.enabled }}
         # Standalone ICES hosts mail-monitoring; suppress the embedded
         # mail-monitoring engine here so it is registered exactly once.
@@ -194,11 +153,6 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.jwt }}{{ .Values.existingSecrets.jwt }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: jwt-ec-private-key
-        # MSC-493: the app reads JWT_EXPIRY_HOURS (integer hours); the old
-        # JWT_EXPIRATION ("24h") was never read by the backend, so token
-        # lifetime silently fell back to the 1-year code default.
-        - name: JWT_EXPIRY_HOURS
-          value: {{ .Values.jwt.expiryHours | quote }}
         {{- if ne (include "mnemoshare.redisMode" .) "disabled" }}
         # Redis - for workflow task enqueueing (manual triggers)
         # Note: REDIS_PASSWORD must be defined BEFORE REDIS_URL for $(REDIS_PASSWORD) substitution to work
@@ -312,18 +266,10 @@ spec:
           value: {{ $mcpExternalUrl | quote }}
         {{- end }}
         {{- end }}
-        - name: MAX_FILE_SIZE
-          value: {{ .Values.files.maxSize | quote }}
-        - name: DEFAULT_LINK_EXPIRATION
-          value: {{ .Values.files.defaultLinkExpiration | quote }}
         {{- if .Values.cors.allowedOrigins }}
         - name: CORS_ORIGINS
           value: {{ .Values.cors.allowedOrigins | quote }}
         {{- end }}
-        - name: RATE_LIMIT_REQUESTS
-          value: {{ .Values.rateLimit.requests | quote }}
-        - name: RATE_LIMIT_WINDOW
-          value: {{ .Values.rateLimit.window | quote }}
         # SendGrid (optional)
         {{- if or .Values.sendgrid.apiKey .Values.existingSecrets.sendgrid }}
         - name: SENDGRID_API_KEY
@@ -349,11 +295,6 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.turnstile }}{{ .Values.existingSecrets.turnstile }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: turnstile-secret-key
-        {{- end }}
-        # Session inactivity timeout (seconds before warning modal appears)
-        {{- if .Values.session }}
-        - name: INACTIVITY_TIMEOUT_SECONDS
-          value: {{ .Values.session.inactivityTimeoutSeconds | default 300 | quote }}
         {{- end }}
         # ClamAV ICAP endpoint
         {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}

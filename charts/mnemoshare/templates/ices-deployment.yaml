@@ -43,7 +43,7 @@ spec:
         imagePullPolicy: {{ .Values.ices.image.pullPolicy }}
         # Dedicated email-security binary (workerboot). Hosts mail-monitoring:
         # BEC poller + Pub/Sub subscriber + mail-security sweepers. It pins its
-        # own FILTERED_PROCESS internally, so none is set on this pod.
+        # own worker engine set internally, so no selection env is set here.
         command: ["/usr/local/bin/ices"]
         env:
         # Tenant Identity — required for dispatch keyspace isolation.

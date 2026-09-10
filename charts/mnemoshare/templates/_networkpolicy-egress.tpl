@@ -11,7 +11,7 @@ hard way more than once, most recently MSA-46):
   runs in one of two topologies, but its egress needs are IDENTICAL to the API's:
 
     team          -> NO external worker. The API pod hosts every engine
-                     in-process (FILTERED_PROCESS=*, MNS-1159): background
+                     in-process (compiled worker engines): background
                      (virus scan / DLP / email queueing), messaging (the
                      workflows engine, license-gated OFF on this tier but
                      hosted), and kmsrotation (rotate/rewrap). Any egress a
