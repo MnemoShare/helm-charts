@@ -43,8 +43,9 @@ spec:
       app.kubernetes.io/component: api
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        mnemoshare.com/deployment-executable: /usr/local/bin/run-api-worker
+      {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:

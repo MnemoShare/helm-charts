@@ -29,6 +29,20 @@ jobs:
         with:
           python-version: '3.x'
 
+      # The chart must be checked against the application-generated
+      # deployment contract, not a second hand-maintained env allowlist.
+      - name: Checkout application deployment contract
+        uses: actions/checkout@v4
+        with:
+          repository: MnemoShare/mnemoshare
+          ref: dev
+          path: application
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: application/go.mod
+
       - name: Set up chart-testing
         uses: helm/chart-testing-action@v2.6.1
 
@@ -58,7 +72,13 @@ jobs:
             --set license.key="test-license-key" \
             --set appUrl="https://test.example.com" \
             --set ingress.enabled=false \
-            > /dev/null
+            > /tmp/mnemoshare-rendered.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-rendered.yaml)
+          grep -q 'name: CORS_ORIGINS' /tmp/mnemoshare-rendered.yaml
+          if grep -q 'name: CORS_ALLOWED_ORIGINS' /tmp/mnemoshare-rendered.yaml; then
+            echo 'legacy CORS_ALLOWED_ORIGINS must not be rendered'
+            exit 1
+          fi
           echo "✓ Default-path chart templates rendered successfully"
 
       - name: Validate chart templates (sftpGateway enabled)
