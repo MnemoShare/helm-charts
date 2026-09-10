@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mnemoshare.com/contracts/migration-operation/v3/schema.json",
+  "title": "MnemoShare migration operation v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["provenance", "fingerprint", "executable", "commands", "schemaOwnership", "bootstrapPolicy", "universeFlag", "governedProcesses", "universes", "result", "lifecycle"],
+  "properties": {
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "generator", "sourceFingerprint"],
+      "properties": {
+        "schema": {"const": "mnemoshare.migration-operation.v3"},
+        "generator": {"type": "string", "minLength": 1},
+        "sourceFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "executable": {"const": "/usr/local/bin/mnemoshare-migrate"},
+    "commands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan", "apply", "verify"],
+      "properties": {
+        "plan": {"$ref": "#/$defs/planCommand"},
+        "apply": {"$ref": "#/$defs/applyCommand"},
+        "verify": {"$ref": "#/$defs/verifyCommand"}
+      }
+    },
+    "schemaOwnership": {"const": "exclusive-operation"},
+    "bootstrapPolicy": {"const": "provision-untracked"},
+    "universeFlag": {"const": "--universe"},
+    "governedProcesses": {"type": "array", "minItems": 1},
+    "universes": {"type": "array", "minItems": 1},
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "mediaType", "resultFlag", "planDigestField", "digestEncoding"],
+      "properties": {
+        "schema": {"const": "mnemoshare.migration-result.v1"},
+        "mediaType": {"const": "application/json"},
+        "resultFlag": {"const": "--result"},
+        "planDigestField": {"const": "planDigest"},
+        "digestEncoding": {"const": "sha256-hex-lowercase"}
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["order", "failureAfterCommitted"],
+      "properties": {
+        "order": {"const": ["down", "apply-exclusive", "verify", "up"]},
+        "failureAfterCommitted": {"const": "remain-down-forward-repair-no-rollback"}
+      }
+    }
+  },
+  "$defs": {
+    "planCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "executable": {"const": "/usr/local/bin/mnemoshare-migrate"},
+        "args": {"const": ["plan", "--contract", "embedded", "--expect-contract-fingerprint", "<contract-fingerprint>", "--output", "<plan-file>", "--result", "<result-file>"]}
+      },
+      "required": ["executable", "args"]
+    },
+    "applyCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "executable": {"const": "/usr/local/bin/mnemoshare-migrate"},
+        "args": {"const": ["apply", "--contract", "embedded", "--expect-contract-fingerprint", "<contract-fingerprint>", "--plan", "<plan-file>", "--expect-plan-digest", "<plan-digest>", "--exclusive", "--bootstrap-policy", "provision-untracked"]}
+      },
+      "required": ["executable", "args"]
+    },
+    "verifyCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "executable": {"const": "/usr/local/bin/mnemoshare-migrate"},
+        "args": {"const": ["verify", "--contract", "embedded", "--expect-contract-fingerprint", "<contract-fingerprint>", "--plan", "<plan-file>", "--expect-plan-digest", "<plan-digest>"]}
+      },
+      "required": ["executable", "args"]
+    }
+  }
+}

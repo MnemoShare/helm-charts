@@ -68,6 +68,9 @@ jobs:
       - name: Validate format migration orchestration
         run: bash charts/mnemoshare/tests/format-migrations.sh
 
+      - name: Validate migration operation v3 consumer
+        run: bash charts/mnemoshare/tests/migration-operation.sh
+
       - name: Validate migration contract updater
         run: bash charts/mnemoshare/tests/update-migration-result-contract-test.sh
 

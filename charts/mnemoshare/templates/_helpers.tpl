@@ -61,7 +61,11 @@ Create a default fully qualified app name.
 {{- end -}}
 
 {{- define "mnemoshare.contractV3ApplicationImage" -}}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled (eq .Values.migrationOperation.phase "up") -}}
+{{- include "mnemoshare.migrationOperationTargetImage" . -}}
+{{- else -}}
 {{- printf "%s@%s" (required "image.repository is required" .Values.image.repository) .Values.deploymentContractV3.imageDigest -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "mnemoshare.deploymentExecutableV3" -}}
@@ -166,6 +170,67 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Migration-operation/v1 keeps the deployment adapter declarative. A controller
+sets one phase at a time; only the maintenance phases suppress governed
+writers and their autoscalers. `up` is intentionally not considered a
+maintenance phase because it is the verified release handoff.
+*/}}
+{{- define "mnemoshare.migrationOperationDown" -}}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled (has .Values.migrationOperation.phase (list "down" "apply" "verify")) }}true{{ else }}false{{ end }}
+{{- end }}
+
+{{/*
+The executable/profile/universe tuple is the observer-facing projection of
+migration-operation/v3's governedProcesses table. Keep this table in one
+place: workload templates may choose their process key, but never invent a
+second spelling for the contract identity.
+Input: dict "key" (api|background-worker|workflow-worker|cloud-worker|emailgateway|inboundgateway)
+and, for emailgateway, "profile" from the selected deployment contract.
+*/}}
+{{- define "mnemoshare.migrationProcessIdentity" -}}
+{{- $key := .key -}}
+{{- $table := dict
+  "api" (dict "executableId" "api" "profileId" "default" "universeId" "primary")
+  "background-worker" (dict "executableId" "background-worker" "profileId" "default" "universeId" "primary")
+  "workflow-worker" (dict "executableId" "workflow-worker" "profileId" "default" "universeId" "primary")
+  "cloud-worker" (dict "executableId" "cloud-worker" "profileId" "default" "universeId" "primary")
+  "emailgateway" (dict "executableId" "emailgateway" "profileId" "" "universeId" "email-relay-mongo")
+  "inboundgateway" (dict "executableId" "inboundgateway" "profileId" "default" "universeId" "primary")
+-}}
+{{- $identity := get $table $key -}}
+{{- if not $identity -}}{{- fail (printf "unknown migration-operation governed process key %q" $key) -}}{{- end -}}
+{{- $profile := get $identity "profileId" -}}
+{{- if eq $key "emailgateway" -}}{{- $profile = required "emailgateway migration profile is required" .profile -}}{{- end -}}
+mnemoshare.io/process-id: {{ get $identity "executableId" | quote }}
+mnemoshare.io/process-profile: {{ $profile | quote }}
+mnemoshare.io/process-universe: {{ get $identity "universeId" | quote }}
+{{- end }}
+
+{{/* The immutable fingerprint of the vendored migration-operation/v3 contract. */}}
+{{- define "mnemoshare.migrationOperationExpectedContractFingerprint" -}}
+{{- $raw := required "vendored tests/contracts/migration-operation/v3/contract.json is required" (.Files.Get "tests/contracts/migration-operation/v3/contract.json") -}}
+{{- $contract := fromJson $raw -}}
+{{- if ne $contract.provenance.schema "mnemoshare.migration-operation.v3" -}}{{- fail "vendored migration operation contract is not v3" -}}{{- end -}}
+{{- $contract.fingerprint -}}
+{{- end }}
+
+{{/* The target image's explicitly attested migration-operation/v3 contract. */}}
+{{- define "mnemoshare.migrationOperationContractFingerprint" -}}
+{{- .Values.migrationOperation.contractFingerprint -}}
+{{- end }}
+
+{{/* Target image for the one-shot migration-operation Job. */}}
+{{- define "mnemoshare.migrationOperationTargetImage" -}}
+{{- $target := required "migrationOperation.targetImage is required when migrationOperation.enabled=true" .Values.migrationOperation.targetImage -}}
+{{- $repo := required "migrationOperation.targetImage.repository is required when migrationOperation.enabled=true" $target.repository -}}
+{{- $digest := required "migrationOperation.targetImage.digest is required when migrationOperation.enabled=true" $target.digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}
+{{- fail "migrationOperation.targetImage.digest must be sha256:<64 lowercase hex>" -}}
+{{- end -}}
+{{- printf "%s@%s" $repo $digest -}}
+{{- end }}
+
+{{/*
 Resolve an application database-writer image. Automatic format migration mode
 closes every writer over one immutable global repository@digest; other modes
 retain the chart's historical repository:tag fallback behavior.
@@ -176,7 +241,21 @@ Input: dict "root" . ["component" .Values.<component>.image] ["name" string]
 {{- $component := .component | default dict -}}
 {{- $name := .name | default "application" -}}
 {{- $globalRepo := required "image.repository is required" $root.Values.image.repository -}}
-{{- if eq $root.Values.formatMigrations.mode "automatic" -}}
+{{- if and $root.Values.migrationOperation $root.Values.migrationOperation.enabled (eq $root.Values.migrationOperation.phase "up") -}}
+  {{- $target := $root.Values.migrationOperation.targetImage -}}
+  {{- $targetRepo := required "migrationOperation.targetImage.repository is required when migrationOperation.phase=up" $target.repository -}}
+  {{- $targetDigest := required "migrationOperation.targetImage.digest is required when migrationOperation.phase=up" $target.digest -}}
+  {{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $targetDigest) -}}
+    {{- fail "migrationOperation.targetImage.digest must be sha256:<64 lowercase hex>" -}}
+  {{- end -}}
+  {{- $repo := $component.repository | default $targetRepo -}}
+  {{- $digest := $component.digest | default $targetDigest -}}
+  {{- $tag := $component.tag | default "" -}}
+  {{- if or (ne $repo $targetRepo) (ne $digest $targetDigest) (ne $tag "") -}}
+    {{- fail (printf "migrationOperation.phase=up requires %s image to resolve exactly to %s@%s; per-process repository, digest, or tag override diverges" $name $targetRepo $targetDigest) -}}
+  {{- end -}}
+  {{- printf "%s@%s" $targetRepo $targetDigest -}}
+{{- else if eq $root.Values.formatMigrations.mode "automatic" -}}
   {{- $globalDigest := required "formatMigrations.mode=automatic requires image.digest pinned as sha256:<64 lowercase hex>" $root.Values.image.digest -}}
   {{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $globalDigest) -}}
     {{- fail "formatMigrations.mode=automatic requires image.digest pinned as sha256:<64 lowercase hex>" -}}

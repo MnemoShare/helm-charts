@@ -1,0 +1,179 @@
+{{- if and .Values.migrationOperation.enabled (has .Values.migrationOperation.phase (list "plan" "apply" "verify")) }}
+{{- $fullname := include "mnemoshare.fullname" . }}
+{{- $phase := .Values.migrationOperation.phase }}
+{{- $universe := .Values.migrationOperation.universe }}
+{{- $operationID := .Values.migrationOperation.operationId }}
+{{- $planningMode := .Values.migrationOperation.planningMode }}
+{{- $planDigest := .Values.migrationOperation.planDigest | default "" }}
+{{- $contractFingerprint := include "mnemoshare.migrationOperationContractFingerprint" . }}
+{{- $planDigestLabel := $planDigest | default "pending" }}
+{{- $planFile := printf "/migration/%s-plan.json" $universe }}
+{{- $resultFile := printf "/migration/%s-result.json" $universe }}
+{{- $jobName := printf "%s-migration-%s-%s-%s" $fullname $universe $phase $operationID | trunc 63 | trimSuffix "-" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $jobName }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration-operation
+    mnemoshare.io/migration-operation-contract: v3
+    mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
+    mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
+    mnemoshare.io/migration-operation-planning-mode: {{ $planningMode | quote }}
+    mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
+    mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
+    mnemoshare.io/migration-operation-plan-digest: {{ $planDigestLabel | quote }}
+  annotations:
+    # This is intentionally not a Helm hook. The external controller owns
+    # ordering, observes Job status, and retains failures for forward repair.
+    mnemoshare.io/migration-operation-plan-file: {{ $planFile | quote }}
+    mnemoshare.io/migration-operation-result-file: {{ $resultFile | quote }}
+    mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
+    # The retained Job name is keyed by phase and operationId. Mirroring the
+    # mode into its pod template makes changing it under that identity fail on
+    # Kubernetes' immutable Job template instead of silently resuming another
+    # interpretation of the operation.
+    mnemoshare.io/migration-operation-planning-mode: {{ $planningMode | quote }}
+    mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
+    mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
+    mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
+    mnemoshare.io/migration-operation-plan-digest: {{ $planDigest | quote }}
+    mnemoshare.io/migration-operation-target-image-digest: {{ .Values.migrationOperation.targetImage.digest | quote }}
+spec:
+  backoffLimit: {{ .Values.migrationOperation.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrationOperation.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migration-operation
+        mnemoshare.io/migration-operation-contract: v3
+        mnemoshare.io/migration-operation-contract-fingerprint: {{ include "mnemoshare.migrationOperationContractFingerprint" . | quote }}
+        mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
+        mnemoshare.io/migration-operation-planning-mode: {{ $planningMode | quote }}
+        mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
+        mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
+        mnemoshare.io/migration-operation-plan-digest: {{ $planDigestLabel | quote }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migration-operation
+          image: {{ include "mnemoshare.migrationOperationTargetImage" . | quote }}
+          imagePullPolicy: {{ .Values.migrationOperation.targetImage.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            {{- if eq $phase "plan" }}
+            - |
+              result_file={{ $resultFile | quote }}
+              set +e
+              /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint {{ $contractFingerprint }} {{ if eq $planningMode "legacy-bootstrap" }}--planning-mode legacy-bootstrap {{ end }}{{ if ne $universe "primary" }}--universe {{ $universe }} {{ end }}--output {{ $planFile }} --result {{ $resultFile }}
+              status=$?
+              set -e
+              publish_status=${status}
+              if [ -f "${result_file}" ]; then
+                result_bytes="$(wc -c < "${result_file}")"
+                compact="$(tr -d '[:space:]' < "${result_file}")"
+                if [ "${result_bytes}" -le 4096 ] && printf %s "${compact}" | grep -Eq '^(\{"decision":"(ordinary|maintenance)","planDigest":"[0-9a-f]{64}"\}|\{"planDigest":"[0-9a-f]{64}","decision":"(ordinary|maintenance)"\})$'; then
+                  cp "${result_file}" /dev/termination-log
+                else
+                  printf '%s\n' 'migration-result/v1 artifact failed the bounded canonical-shape check' > /dev/termination-log
+                  [ "${publish_status}" -ne 0 ] || publish_status=1
+                fi
+              else
+                printf '%s\n' 'migration plan failed before producing migration-result/v1' > /dev/termination-log
+                [ "${publish_status}" -ne 0 ] || publish_status=1
+              fi
+              exit "${publish_status}"
+            {{- else }}
+            - |
+              set +e
+              /usr/local/bin/mnemoshare-migrate {{ $phase }} --contract embedded --expect-contract-fingerprint {{ $contractFingerprint }} {{ if ne $universe "primary" }}--universe {{ $universe }} {{ end }}--plan {{ $planFile }} --expect-plan-digest {{ $planDigest }} {{ if eq $phase "apply" }}--exclusive --bootstrap-policy provision-untracked{{ end }}
+              status=$?
+              set -e
+              outcome=succeeded
+              [ "${status}" -eq 0 ] || outcome=failed
+              printf '{"phase":"{{ $phase }}","universe":"{{ $universe }}","planDigest":"{{ $planDigest }}","outcome":"%s","exitCode":%s}\n' "${outcome}" "${status}" > /dev/termination-log
+              exit "${status}"
+            {{- end }}
+          env:
+            {{- include "mnemoshare.migrationOperationEnv" . | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - name: migration-transport
+              mountPath: /migration
+      volumes:
+        - name: migration-transport
+          persistentVolumeClaim:
+            claimName: {{ .Values.migrationOperation.transport.existingClaim | quote }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+
+{{- define "mnemoshare.migrationOperationEnv" }}
+- name: CUSTOMER_ID
+  value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
+{{- if eq .Values.migrationOperation.universe "primary" }}
+- name: DB_DRIVER
+  value: {{ .Values.database.driver | default "mongodb" | quote }}
+{{- if eq (.Values.database.driver | default "mongodb") "mongodb" }}
+- name: MONGODB_URI
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.existingSecrets.mongodb | default (printf "%s-secrets" (include "mnemoshare.fullname" .)) }}
+      key: mongodb-uri
+- name: MONGODB_DATABASE
+  value: {{ .Values.mongodb.external.database | quote }}
+{{- else if eq .Values.database.driver "postgres" }}
+- name: POSTGRES_DSN
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.existingSecrets.postgres | default (printf "%s-secrets" (include "mnemoshare.fullname" .)) }}
+      key: postgres-dsn
+{{- else if eq .Values.database.driver "sqlite" }}
+- name: SQLITE_PATH
+  value: {{ .Values.database.sqlite.path | default "/var/lib/mnemoshare/mnemoshare.db" | quote }}
+{{- end }}
+- name: ENCRYPTION_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.existingSecrets.encryption | default (printf "%s-secrets" (include "mnemoshare.fullname" .)) }}
+      key: encryption-key
+{{- else if eq .Values.migrationOperation.universe "email-relay-mongo" }}
+- name: RELAY_DB_URI
+  {{- if .Values.emailGateway.relay.db.existingSecret }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.emailGateway.relay.db.existingSecret }}
+      key: relay-db-uri
+  {{- else }}
+  value: {{ required "emailGateway.relay.db.uri is required for migrationOperation.universe=email-relay-mongo" .Values.emailGateway.relay.db.uri | quote }}
+  {{- end }}
+- name: RELAY_DB_NAME
+  value: {{ .Values.emailGateway.relay.db.name | quote }}
+{{- end }}
+{{- end }}

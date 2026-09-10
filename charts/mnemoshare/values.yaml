@@ -76,6 +76,54 @@ formatMigrations:
     # - cidr: 10.96.0.1/32
     #   port: 443
 
+# Explicit migration-operation/v3 adapter for an external deployment
+# controller. This is deliberately separate from the legacy automatic hook
+# above: the controller owns down -> plan/apply -> verify -> up, and a failed
+# operation remains observable instead of being hidden by Helm hook cleanup.
+# Leave disabled to retain the chart's ordinary rolling behavior.
+migrationOperation:
+  enabled: false
+  # Fingerprint of the migration-operation/v3 contract embedded in targetImage.
+  # Required when enabled and must match the immutable contract vendored by
+  # this chart, preventing a controller from invoking a different CLI grammar.
+  contractFingerprint: ""
+  # One immutable phase per Helm reconciliation. `plan` leaves existing
+  # writers running, `down`/`apply`/`verify` render governed writers at zero,
+  # and `up` restores the target image after the controller has verified it.
+  phase: ""
+  # Bump this for every retry. Jobs are intentionally retained and have no
+  # Helm hook/delete policy, so an old failed attempt cannot be silently
+  # replaced by a retry with the same name.
+  operationId: active
+  # The planning interpretation is immutable for an operationId. Ordinary is
+  # the safe default for fresh or already-ledgered installations. Select
+  # legacy-bootstrap only for the one-time adoption of a known pre-ledger
+  # installation; changing it requires a new operationId.
+  planningMode: ordinary
+  # The target application image used by the one-shot migration Job. Writer
+  # workloads keep their current image until phase=up, preventing a plan or a
+  # failed apply from accidentally starting the new writer.
+  targetImage:
+    repository: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  # The external controller provisions one ReadWriteOnce/RWX claim and keeps
+  # it across plan, apply, and verify. It is the strict transport for the
+  # universe-specific plan/result files; no logs or loosely parsed output are
+  # used as migration input.
+  transport:
+    existingClaim: ""
+  # primary uses the application database; email-relay-mongo selects the
+  # separately configured relay database and its own transport filenames.
+  universe: primary
+  planDigest: ""
+  # Required for phase=up. The controller sets it only after a successful
+  # verify Job and it must equal planDigest, making the down->up handoff
+  # explicit in values as well as in the external controller's state.
+  verifiedPlanDigest: ""
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+
 # Extra labels merged into every rendered resource's metadata.labels.
 # NOT used in spec.selector — selector labels are deliberately frozen
 # (name + instance) so adding/removing entries here never causes a

@@ -1,0 +1,57 @@
+{{- if .Values.migrationOperation.enabled }}
+{{- $phase := .Values.migrationOperation.phase | default "" }}
+{{- $_ := include "mnemoshare.migrationOperationTargetImage" . }}
+{{- if ne .Values.formatMigrations.mode "operator" }}
+{{- fail "migrationOperation.enabled requires formatMigrations.mode=operator: the legacy automatic pre-upgrade hook must not run alongside migration-operation/v3" }}
+{{- end }}
+{{- $contractFingerprint := .Values.migrationOperation.contractFingerprint | default "" }}
+{{- if eq $contractFingerprint "" }}
+{{- fail "migrationOperation.contractFingerprint is required when migrationOperation.enabled=true" }}
+{{- end }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" $contractFingerprint) }}
+{{- fail "migrationOperation.contractFingerprint must be a 64-character lowercase hex digest" }}
+{{- end }}
+{{- $expectedContractFingerprint := include "mnemoshare.migrationOperationExpectedContractFingerprint" . }}
+{{- if ne $contractFingerprint $expectedContractFingerprint }}
+{{- fail (printf "migrationOperation.contractFingerprint %s does not match the chart's vendored migration-operation/v3 contract %s" $contractFingerprint $expectedContractFingerprint) }}
+{{- end }}
+{{- if not (has $phase (list "plan" "down" "apply" "verify" "up")) }}
+{{- fail "migrationOperation.phase must be one of plan, down, apply, verify, or up when migrationOperation.enabled=true" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" (.Values.migrationOperation.operationId | default "")) }}
+{{- fail "migrationOperation.operationId must be a DNS label; bump it for every retry because migration Jobs are retained" }}
+{{- end }}
+{{- if not (has .Values.migrationOperation.planningMode (list "ordinary" "legacy-bootstrap")) }}
+{{- fail "migrationOperation.planningMode must be ordinary or legacy-bootstrap" }}
+{{- end }}
+{{- $digest := .Values.migrationOperation.planDigest | default "" }}
+{{- if has $phase (list "apply" "verify" "up") }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" $digest) }}
+{{- fail "migrationOperation.planDigest must be a 64-character lowercase hex digest for apply, verify, and up" }}
+{{- end }}
+{{- end }}
+{{- if eq $phase "up" }}
+{{- if ne $digest (.Values.migrationOperation.verifiedPlanDigest | default "") }}
+{{- fail "migrationOperation.phase=up requires verifiedPlanDigest to equal planDigest after an external verify succeeded" }}
+{{- end }}
+{{- end }}
+{{- if not (has .Values.migrationOperation.universe (list "primary" "email-relay-mongo")) }}
+{{- fail "migrationOperation.universe must be primary or email-relay-mongo" }}
+{{- end }}
+{{- if has $phase (list "plan" "apply" "verify") }}
+{{- if not .Values.migrationOperation.transport.existingClaim }}
+{{- fail "migrationOperation.transport.existingClaim is required for plan, apply, and verify so the controller can preserve strict plan/result files" }}
+{{- end }}
+{{- end }}
+{{- if eq .Values.migrationOperation.universe "email-relay-mongo" }}
+{{- if not .Values.emailGateway.enabled }}
+{{- fail "migrationOperation.universe=email-relay-mongo requires emailGateway.enabled=true" }}
+{{- end }}
+{{- $facts := include "mnemoshare.emailGatewayV3" . | fromJson }}
+{{- $external := false }}
+{{- range $facts.profile.external_universes }}{{- if eq .id "email-relay-mongo" }}{{- $external = true }}{{- end }}{{- end }}
+{{- if not $external }}
+{{- fail "migrationOperation.universe=email-relay-mongo requires the selected email gateway profile to declare that external universe" }}
+{{- end }}
+{{- end }}
+{{- end }}

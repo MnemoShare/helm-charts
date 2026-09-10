@@ -53,8 +53,9 @@ metadata:
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: email-gateway
+    {{- include "mnemoshare.migrationProcessIdentity" (dict "key" "emailgateway" "profile" $facts.profile.id) | nindent 4 }}
 spec:
-  replicas: {{ .Values.emailGateway.replicas }}
+  replicas: {{ if eq (include "mnemoshare.migrationOperationDown" .) "true" }}0{{ else }}{{ .Values.emailGateway.replicas }}{{ end }}
   strategy:
     type: {{ ternary "Recreate" "RollingUpdate" $durableProfile }}
   selector:
@@ -66,6 +67,7 @@ spec:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: email-gateway
+        {{- include "mnemoshare.migrationProcessIdentity" (dict "key" "emailgateway" "profile" $facts.profile.id) | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

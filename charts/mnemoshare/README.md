@@ -139,6 +139,62 @@ migration orchestration:
   by retrying the exact frozen automatic target or by an explicit external state
   handoff. Operator mode assumes that state ownership and reconciliation itself.
 
+### External migration-operation/v3 lifecycle
+
+For deployments that use an external controller, set
+`formatMigrations.mode=operator` and opt into `migrationOperation.enabled=true`.
+This path has no Helm hooks and never performs an implicit rollback. The
+controller reconciles one immutable phase at a time:
+
+Set `migrationOperation.contractFingerprint` to the fingerprint embedded in
+the target image. The chart requires it to match its vendored v3 contract and
+every CLI invocation independently attests it with
+`--expect-contract-fingerprint` before opening persistence.
+
+`migrationOperation.planningMode` defaults to `ordinary`. Set it to
+`legacy-bootstrap` only for the one-time adoption of an installation known to
+predate the format ledger. That mode is passed only to `plan`; the resulting
+plan digest carries the decision through apply and verify. The mode is also
+part of each retained Job's pod-template identity, so it cannot change while
+reusing a phase and `operationId`. Start a distinct operation ID to change it.
+
+1. `phase=plan` runs the target image's embedded `plan --contract embedded`
+   command and writes the universe-specific plan and strict result files to
+   `migrationOperation.transport.existingClaim`.
+2. `phase=down` renders every governed writer at `replicas: 0` and omits its
+   HPA/KEDA resources. The controller proves zero writer pods externally.
+3. `phase=apply` runs the target image once with the exact plan path, supplied
+   `--expect-plan-digest`, and the immutable
+   `--exclusive --bootstrap-policy provision-untracked` policy. The bootstrap
+   policy is application-owned and cannot be selected through chart values.
+4. `phase=verify` uses the same exact plan path and digest. A failed Job is
+   retained (`backoffLimit: 0`); the controller must repair forward and bump
+   `operationId` for a retry.
+5. `phase=up` requires `verifiedPlanDigest` to equal `planDigest`, switches
+   governed workloads to `targetImage`, and restores their configured
+   replicas/autoscalers.
+
+The transport claim is controller-owned and persists across all three Job
+phases. `universe=primary` uses the application database and
+`universe=email-relay-mongo` uses only the separately configured relay
+database, with distinct plan/result filenames. The default disabled path
+renders no operation Job and retains ordinary rolling behavior.
+
+The chart also projects the controller handshake into Kubernetes metadata.
+Every governed workload and pod template carries the stable
+`mnemoshare.io/process-id`, `mnemoshare.io/process-profile`, and
+`mnemoshare.io/process-universe` labels. Each operation Job carries its
+`operationId`, planning mode, phase, universe, and plan digest on both the Job and its pod,
+and repeats them as annotations together with the transport paths and target
+image digest and the immutable migration-operation contract fingerprint; the
+operation ID is included in the Job name so stale attempts remain
+distinguishable. The plan wrapper validates the bounded canonical
+`migration-result/v1` shape and copies the exact result file to
+`/dev/termination-log` on success or failure when valid, while retaining the
+PVC artifact. Apply and verify publish their exact phase, universe, digest,
+outcome, and exit code through the same termination channel and Job/Pod
+metadata. No credentials or secret values are included in this projection.
+
 In automatic mode, the target-image CLI contract is application-owned and
 provisional until the corresponding application release lands. The target image
 supplies the dedicated executable at this stable path (and `/bin/sh` for the
