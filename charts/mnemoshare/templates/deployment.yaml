@@ -34,8 +34,8 @@ metadata:
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
+  {{- if or (not .Values.autoscaling.enabled) (eq (include "mnemoshare.migrationOperationDown" .) "true") }}
+  replicas: {{ if eq (include "mnemoshare.migrationOperationDown" .) "true" }}0{{ else }}{{ .Values.replicaCount }}{{ end }}
   {{- end }}
   selector:
     matchLabels:
@@ -62,7 +62,7 @@ spec:
       - name: {{ .Chart.Name }}
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        image: {{ include "mnemoshare.writerImage" (dict "root" . "component" .Values.image "name" "api") | quote }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         ports:
         - name: http
@@ -316,7 +316,7 @@ spec:
         - name: DEFAULT_LINK_EXPIRATION
           value: {{ .Values.files.defaultLinkExpiration | quote }}
         {{- if .Values.cors.allowedOrigins }}
-        - name: CORS_ALLOWED_ORIGINS
+        - name: CORS_ORIGINS
           value: {{ .Values.cors.allowedOrigins | quote }}
         {{- end }}
         - name: RATE_LIMIT_REQUESTS

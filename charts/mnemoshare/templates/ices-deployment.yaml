@@ -15,8 +15,8 @@ metadata:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: ices
 spec:
-  {{- if not .Values.ices.autoscaling.enabled }}
-  replicas: {{ .Values.ices.replicas }}
+  {{- if or (not .Values.ices.autoscaling.enabled) (eq (include "mnemoshare.migrationOperationDown" .) "true") }}
+  replicas: {{ if eq (include "mnemoshare.migrationOperationDown" .) "true" }}0{{ else }}{{ .Values.ices.replicas }}{{ end }}
   {{- end }}
   selector:
     matchLabels:
@@ -39,7 +39,7 @@ spec:
       - name: ices
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: "{{ .Values.ices.image.repository | default .Values.image.repository }}:{{ .Values.ices.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+        image: {{ include "mnemoshare.writerImage" (dict "root" . "component" .Values.ices.image "name" "ices") | quote }}
         imagePullPolicy: {{ .Values.ices.image.pullPolicy }}
         # Dedicated email-security binary (workerboot). Hosts mail-monitoring:
         # BEC poller + Pub/Sub subscriber + mail-security sweepers. It pins its

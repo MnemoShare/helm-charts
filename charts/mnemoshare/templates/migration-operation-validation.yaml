@@ -1,0 +1,38 @@
+{{- if .Values.migrationOperation.enabled }}
+{{- $phase := .Values.migrationOperation.phase | default "" }}
+{{- $fingerprint := .Values.migrationOperation.contractFingerprint | default "" }}
+{{- $_ := include "mnemoshare.migrationOperationTargetImage" . }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" $fingerprint) }}
+{{- fail "migrationOperation.contractFingerprint must be a 64-character lowercase hex digest" }}
+{{- end }}
+{{- if ne $fingerprint (include "mnemoshare.migrationOperationExpectedContractFingerprint" .) }}
+{{- fail (printf "migrationOperation.contractFingerprint %s does not match the chart's vendored migration-operation/v1 contract %s" $fingerprint (include "mnemoshare.migrationOperationExpectedContractFingerprint" .)) }}
+{{- end }}
+{{- if not (has $phase (list "plan" "down" "apply" "verify" "up")) }}
+{{- fail "migrationOperation.phase must be one of plan, down, apply, verify, or up when migrationOperation.enabled=true" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" (.Values.migrationOperation.operationId | default "")) }}
+{{- fail "migrationOperation.operationId must be a DNS label; bump it for every retry because migration Jobs are retained" }}
+{{- end }}
+{{- if ne (.Values.migrationOperation.universe | default "primary") "primary" }}
+{{- fail "migrationOperation.universe must be primary; external universes are not present in this chart's v1 adapter" }}
+{{- end }}
+{{- if eq .Values.database.driver "sqlite" }}
+{{- fail "migrationOperation.enabled is not supported with database.driver=sqlite until the controller provisions the application data volume" }}
+{{- end }}
+{{- if has $phase (list "apply" "verify" "up") }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" (.Values.migrationOperation.planDigest | default "")) }}
+{{- fail "migrationOperation.planDigest must be a 64-character lowercase hex digest for apply, verify, and up" }}
+{{- end }}
+{{- end }}
+{{- if eq $phase "up" }}
+{{- if ne (.Values.migrationOperation.planDigest | default "") (.Values.migrationOperation.verifiedPlanDigest | default "") }}
+{{- fail "migrationOperation.phase=up requires verifiedPlanDigest to equal planDigest after an external verify succeeded" }}
+{{- end }}
+{{- end }}
+{{- if has $phase (list "plan" "apply" "verify") }}
+{{- if not .Values.migrationOperation.transport.existingClaim }}
+{{- fail "migrationOperation.transport.existingClaim is required for plan, apply, and verify" }}
+{{- end }}
+{{- end }}
+{{- end }}

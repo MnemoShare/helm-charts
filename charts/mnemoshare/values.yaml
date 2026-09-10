@@ -140,6 +140,30 @@ database:
   sqlite:
     path: "/var/lib/mnemoshare/mnemoshare.db"
 
+# Explicit migration-operation/v1 adapter for the external deployment
+# controller. The application refuses ordinary startup until this operation
+# has admitted the database format. Keep disabled until the controller owns
+# the plan -> down -> apply -> verify -> up sequence for this release.
+migrationOperation:
+  enabled: false
+  # Must match the immutable v1 contract embedded in targetImage.
+  contractFingerprint: ""
+  # One immutable phase per reconciliation. Failed attempts remain observable.
+  phase: ""
+  operationId: active
+  targetImage:
+    repository: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  # The controller provisions and retains this claim across plan/apply/verify.
+  transport:
+    existingClaim: ""
+  universe: primary
+  planDigest: ""
+  verifiedPlanDigest: ""
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+
 # MongoDB configuration (when database.driver = "mongodb")
 mongodb:
   # If using external MongoDB

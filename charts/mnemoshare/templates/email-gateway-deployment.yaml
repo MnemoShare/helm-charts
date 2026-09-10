@@ -14,7 +14,7 @@ metadata:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: email-gateway
 spec:
-  replicas: {{ .Values.emailGateway.replicas }}
+  replicas: {{ if eq (include "mnemoshare.migrationOperationDown" .) "true" }}0{{ else }}{{ .Values.emailGateway.replicas }}{{ end }}
   selector:
     matchLabels:
       {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
@@ -36,7 +36,7 @@ spec:
       - name: email-gateway
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        image: {{ include "mnemoshare.writerImage" (dict "root" . "component" .Values.image "name" "email-gateway") | quote }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command: ["/usr/local/bin/email-gateway"]
         ports:

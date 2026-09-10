@@ -1,0 +1,127 @@
+{{- if and .Values.migrationOperation.enabled (has .Values.migrationOperation.phase (list "plan" "apply" "verify")) }}
+{{- $fullname := include "mnemoshare.fullname" . }}
+{{- $phase := .Values.migrationOperation.phase }}
+{{- $operationID := .Values.migrationOperation.operationId }}
+{{- $fingerprint := .Values.migrationOperation.contractFingerprint }}
+{{- $planFile := "/migration/primary-plan.json" }}
+{{- $resultFile := "/migration/primary-result.json" }}
+{{- $jobName := printf "%s-migration-%s-%s" $fullname $phase $operationID | trunc 63 | trimSuffix "-" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $jobName }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration-operation
+    mnemoshare.io/migration-operation-contract: v1
+    mnemoshare.io/migration-operation-contract-fingerprint: {{ $fingerprint | quote }}
+    mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
+    mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
+  annotations:
+    # This is intentionally not a Helm hook. The external controller owns
+    # ordering, observes status, and retains failures for forward repair.
+    mnemoshare.io/migration-operation-plan-file: {{ $planFile | quote }}
+    mnemoshare.io/migration-operation-result-file: {{ $resultFile | quote }}
+spec:
+  backoffLimit: {{ .Values.migrationOperation.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrationOperation.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migration-operation
+        mnemoshare.io/migration-operation-contract: v1
+        mnemoshare.io/migration-operation-contract-fingerprint: {{ $fingerprint | quote }}
+        mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
+        mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migration-operation
+          image: {{ include "mnemoshare.migrationOperationTargetImage" . | quote }}
+          imagePullPolicy: {{ .Values.migrationOperation.targetImage.pullPolicy }}
+          command: ["/usr/local/bin/mnemoshare-migrate"]
+          args:
+            - {{ $phase | quote }}
+            - "--contract"
+            - "embedded"
+            - "--expect-contract-fingerprint"
+            - {{ $fingerprint | quote }}
+            {{- if eq $phase "plan" }}
+            - "--output"
+            - {{ $planFile | quote }}
+            - "--result"
+            - {{ $resultFile | quote }}
+            {{- else }}
+            - "--plan"
+            - {{ $planFile | quote }}
+            - "--expect-plan-digest"
+            - {{ .Values.migrationOperation.planDigest | quote }}
+            {{- if eq $phase "apply" }}
+            - "--exclusive"
+            - "--bootstrap-policy"
+            - "provision-untracked"
+            {{- end }}
+            {{- end }}
+          env:
+            {{- include "mnemoshare.migrationOperationEnv" . | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: migration-transport
+              mountPath: /migration
+      volumes:
+        - name: migration-transport
+          persistentVolumeClaim:
+            claimName: {{ .Values.migrationOperation.transport.existingClaim | quote }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+
+{{- define "mnemoshare.migrationOperationEnv" }}
+- name: CUSTOMER_ID
+  value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
+- name: DB_DRIVER
+  value: {{ .Values.database.driver | default "mongodb" | quote }}
+{{- if eq (.Values.database.driver | default "mongodb") "mongodb" }}
+- name: MONGODB_URI
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.existingSecrets.mongodb | default (printf "%s-secrets" (include "mnemoshare.fullname" .)) }}
+      key: mongodb-uri
+- name: MONGODB_DATABASE
+  value: {{ .Values.mongodb.external.database | quote }}
+{{- else if eq .Values.database.driver "postgres" }}
+- name: POSTGRES_DSN
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.existingSecrets.postgres | default (printf "%s-secrets" (include "mnemoshare.fullname" .)) }}
+      key: postgres-dsn
+{{- end }}
+- name: ENCRYPTION_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.existingSecrets.encryption | default (printf "%s-secrets" (include "mnemoshare.fullname" .)) }}
+      key: encryption-key
+{{- end }}

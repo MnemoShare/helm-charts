@@ -1,4 +1,4 @@
-{{- if and .Values.workflowWorker.enabled .Values.workflowWorker.autoscaling.enabled }}
+{{- if and .Values.workflowWorker.enabled .Values.workflowWorker.autoscaling.enabled (ne (include "mnemoshare.migrationOperationDown" .) "true") }}
 {{- /*
 KEDA's Redis trigger needs a concrete host:port to poll queue depth. The
 `urlExistingSecret` path is for the app's REDIS_URL only — KEDA can't
