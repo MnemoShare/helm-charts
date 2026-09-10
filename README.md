@@ -23,8 +23,26 @@ helm search repo mnemoshare
 Install a chart:
 
 ```bash
-helm install mnemoshare mnemoshare/mnemoshare --namespace mnemoshare --create-namespace
+helm install mnemoshare mnemoshare/mnemoshare --namespace mnemoshare --create-namespace --version '~1.26'
 ```
+
+## Release trains
+
+The chart follows the application's release trains. Pin the chart line that
+matches the MnemoShare version you run; `helm upgrade` without a version
+constraint follows the highest published version, which may belong to the
+other train.
+
+| Application | Chart line | Branch | Pin with |
+|---|---|---|---|
+| 0.x (`0.18.x` and later 0.x releases) | `1.26.x` | `release/0.x` | `--version '~1.26'` |
+| 1.x | `2.x` | `main` | `--version '~2'` |
+
+`main` is the 1.x line: it carries the format-migration hooks and the
+deployment-contract templates the 1.x application requires. A fix that applies
+to both trains lands on `main` and is cherry-picked to `release/0.x`.
+Chart versions `1.25.11`–`1.25.19` were published from the 1.x line before the
+split; 0.x installs should move to `1.26.x`.
 
 ## Available Charts
 
