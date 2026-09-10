@@ -102,8 +102,17 @@ phases. Ordinary startup remains fail-closed in the application.
   {{- printf "%s@%s" $targetRepo $targetDigest -}}
 {{- else -}}
   {{- $repo := $component.repository | default (required "image.repository is required" $root.Values.image.repository) -}}
-  {{- $tag := $component.tag | default $root.Values.image.tag | default $root.Chart.AppVersion -}}
-  {{- printf "%s:%s" $repo $tag -}}
+  {{- $digest := $component.digest | default "" -}}
+  {{- if and (eq $digest "") (eq ($component.repository | default "") "") (eq ($component.tag | default "") "") ($root.Values.image.digest | default "") }}
+    {{- $digest = $root.Values.image.digest -}}
+  {{- end -}}
+  {{- if $digest }}
+    {{- if $component.tag }}{{ fail (printf "%s cannot combine image.tag with image.digest" $name) }}{{ end }}
+    {{- printf "%s@%s" $repo $digest -}}
+  {{- else }}
+    {{- $tag := $component.tag | default $root.Values.image.tag | default $root.Chart.AppVersion -}}
+    {{- printf "%s:%s" $repo $tag -}}
+  {{- end }}
 {{- end -}}
 {{- end }}
 

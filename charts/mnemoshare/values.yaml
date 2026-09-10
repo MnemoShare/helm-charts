@@ -24,6 +24,9 @@ replicaCount: 2
 image:
   repository: mnemoshare/mnemoshare
   pullPolicy: IfNotPresent
+  # Optional immutable manifest digest. When set without a tag, all default
+  # application entrypoints resolve to repository@sha256:digest.
+  digest: ""
   # Overrides the image tag whose default is the chart appVersion.
   # Leave empty to use appVersion from Chart.yaml (recommended)
   tag: ""
@@ -1149,6 +1152,7 @@ workflowWorker:
     # image.repository + image.tag drives every app-entrypoint component.
     repository: ""
     tag: ""  # Defaults to chart appVersion
+    digest: ""
     pullPolicy: IfNotPresent
 
   # Worker concurrency (tasks per worker)
