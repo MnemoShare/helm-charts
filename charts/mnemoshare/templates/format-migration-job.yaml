@@ -36,6 +36,7 @@
 {{- end }}
 {{- $fullname := include "mnemoshare.fullname" . }}
 {{- $migrationImage := include "mnemoshare.applicationImage" (dict "root" . "name" "migration") }}
+{{- $migrationContractFingerprint := include "mnemoshare.migrationOperationExpectedContractFingerprint" . }}
 {{- $externalRelayUniverse := false }}
 {{- if .Values.emailGateway.enabled }}
 {{- $gatewayFacts := include "mnemoshare.emailGatewayV3" . | fromJson }}
@@ -171,7 +172,7 @@ spec:
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/usr/local/bin/mnemoshare-migrate"]
-          args: ["plan", "--contract", "embedded", "--result", "/migration/result.json", "--output", "/migration/plan.json"]
+          args: ["plan", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--result", "/migration/result.json", "--output", "/migration/plan.json"]
           env:
             {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
           securityContext:
@@ -184,7 +185,7 @@ spec:
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/usr/local/bin/mnemoshare-migrate"]
-          args: ["plan", "--contract", "embedded", "--universe", "email-relay-mongo", "--result", "/migration/email-relay-result.json", "--output", "/migration/email-relay-plan.json"]
+          args: ["plan", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--universe", "email-relay-mongo", "--result", "/migration/email-relay-result.json", "--output", "/migration/email-relay-plan.json"]
           env:
             {{- include "mnemoshare.emailRelayMigrationEnv" . | nindent 12 }}
           securityContext:
@@ -432,14 +433,14 @@ spec:
                 ordinary|maintenance)
                   {{- if $externalRelayUniverse }}
                   /usr/local/bin/mnemoshare-migrate apply \
-                    --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" \
+                    --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --expect-plan-digest "$(cat /migration/plan-digest)" \
                     --exclusive --bootstrap-policy provision-untracked
                   exec /usr/local/bin/mnemoshare-migrate apply \
-                    --contract embedded --universe email-relay-mongo --expect-plan-digest "$(cat /migration/email-relay-plan-digest)" \
+                    --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --universe email-relay-mongo --expect-plan-digest "$(cat /migration/email-relay-plan-digest)" \
                     --exclusive --bootstrap-policy provision-untracked
                   {{- else }}
                   exec /usr/local/bin/mnemoshare-migrate apply \
-                    --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" \
+                    --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --expect-plan-digest "$(cat /migration/plan-digest)" \
                     --exclusive --bootstrap-policy provision-untracked
                   {{- end }}
                   ;;
@@ -464,9 +465,9 @@ spec:
           command: ["/bin/sh", "-ec"]
           args:
             - |
-              /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)"
+              /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --expect-plan-digest "$(cat /migration/plan-digest)"
               {{- if $externalRelayUniverse }}
-              exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --universe email-relay-mongo --expect-plan-digest "$(cat /migration/email-relay-plan-digest)"
+              exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --universe email-relay-mongo --expect-plan-digest "$(cat /migration/email-relay-plan-digest)"
               {{- end }}
           env:
             {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}

@@ -145,9 +145,9 @@ supplies the dedicated executable at this stable path (and `/bin/sh` for the
 decision-bound apply dispatch):
 
 ```text
-/usr/local/bin/mnemoshare-migrate plan --contract embedded --result /migration/result.json --output /migration/plan.json
-/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-plan-digest DIGEST [--exclusive]
-/usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-plan-digest DIGEST
+/usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint FINGERPRINT --result /migration/result.json --output /migration/plan.json
+/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-contract-fingerprint FINGERPRINT --expect-plan-digest DIGEST --exclusive --bootstrap-policy provision-untracked
+/usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint FINGERPRINT --expect-plan-digest DIGEST
 ```
 
 The result must be exactly a `decision` plus a 64-character lowercase hexadecimal

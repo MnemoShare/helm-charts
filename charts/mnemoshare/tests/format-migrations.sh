@@ -140,8 +140,8 @@ stateful_render=$(helm template test "$chart_dir" "${base[@]}" \
   --set redis.external.host=redis.example.com)
 assert_image_in_source "$stateful_render" 'templates/workflow-worker-statefulset.yaml'
 assert_has 'command: ["/usr/local/bin/mnemoshare-migrate"]'
-assert_has 'args: ["plan", "--contract", "embedded", "--result", "/migration/result.json", "--output", "/migration/plan.json"]'
-assert_has 'verify --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)"'
+assert_has 'args: ["plan", "--contract", "embedded", "--expect-contract-fingerprint", "201bde72fb66a4cb07af10d76f752619661590702e2441422ebb0a8bd2b7a8c7", "--result", "/migration/result.json", "--output", "/migration/plan.json"]'
+assert_has 'verify --contract embedded --expect-contract-fingerprint "201bde72fb66a4cb07af10d76f752619661590702e2441422ebb0a8bd2b7a8c7" --expect-plan-digest "$(cat /migration/plan-digest)"'
 assert_has 'case "${decision}" in'
 assert_has 'selected_pods="$(kubectl get pods -l "${selector}" -o name)"'
 assert_has 'if [ -n "${selected_pods}" ]; then'
@@ -297,7 +297,7 @@ if decision_is_valid_value $'ordinary\nunterminated'; then
   exit 1
 fi
 assert_has 'exec /usr/local/bin/mnemoshare-migrate apply \'
-assert_has '--contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" \'
+assert_has '--contract embedded --expect-contract-fingerprint "201bde72fb66a4cb07af10d76f752619661590702e2441422ebb0a8bd2b7a8c7" --expect-plan-digest "$(cat /migration/plan-digest)" \'
 assert_has '--exclusive --bootstrap-policy provision-untracked'
 assert_has '"helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded'
 if [ "$(grep -Ec '^[[:space:]]+"helm.sh/hook-delete-policy": before-hook-creation$' <<<"$render")" -lt 7 ]; then
