@@ -71,6 +71,7 @@ jobs:
             --set encryption.key="test-encryption-key-exactly-32by" \
             --set license.key="test-license-key" \
             --set appUrl="https://test.example.com" \
+            --set cors.allowedOrigins="https://ci.example.com" \
             --set ingress.enabled=false \
             > /tmp/mnemoshare-rendered.yaml
           (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-rendered.yaml)
