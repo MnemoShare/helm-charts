@@ -52,6 +52,8 @@ for phase in plan down apply verify up; do
       deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$render")
       grep -Fq 'replicas: 0' <<<"$deployment"
       grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$deployment"
+      selector=$(awk '/^  selector:/{active=1; next} active && /^  template:/{exit} active{print}' <<<"$deployment")
+      ! grep -q 'mnemoshare.io/migration-operation-contract' <<<"$selector"
       ! grep -q 'kind: Job' <<<"$render"
       ;;
     apply)
