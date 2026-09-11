@@ -2,37 +2,31 @@
   "contract": "mnemoshare.migration-operation.v1",
   "fingerprintAlgorithm": "SHA-256 over RFC 8785 JCS of the contract with fingerprint set to the empty string",
   "commands": [
-    "plan --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --output \u003cplan-file\u003e --result \u003cresult-file\u003e",
-    "apply --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e --exclusive --bootstrap-policy provision-untracked",
-    "verify --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e"
+    "plan --contract embedded --output \u003cplan-file\u003e --result \u003cresult-file\u003e",
+    "apply --contract embedded --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e --exclusive",
+    "verify --contract embedded --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e"
   ],
-  "schemaOwnership": "exclusive-operation",
-  "bootstrapPolicy": "provision-untracked",
-  "governedProcessCount": 10,
+  "governedProcessCount": 7,
   "universeIds": [
     "email-relay-mongo",
     "primary"
   ],
   "deploymentContractBytes": {
     "v2/README.md": "787169fe49d505fd86f92374202e543d68fa38baaf633cc00a919325eef481b8",
-    "v2/SHA256SUMS": "0e81b312bdebaeebe2a3a5fe032332a373844e98c06cf411b6952ec92cd5117c",
-    "v2/conformance.json": "ecf480bc7039fed2954242908766f050e07f031c08dfad09c87ef52aa72cb9aa",
-    "v2/contract.json": "1bc7c8b830021e7c718512bf5d9de71eb2ed3847fb39acdb8d480e0b5bd3f70c",
-    "v2/schema.json": "c1e3587496e09cf4d67f073e8b730d05e870b35f282d862b497ddae1a833af9c",
+    "v2/SHA256SUMS": "50aec8cdb5bf2f6acd9facf4c63161e12778b7e5a4cb2e1351a8612361bf4022",
+    "v2/conformance.json": "f175a51f0851462d97488b0246c35e96d5cbfb6c6a9691cb3414a8c910af961a",
+    "v2/contract.json": "cadb9b84117357b40dda16b2692c852eb00cdb391ba49af990dcb00eb20c4948",
+    "v2/schema.json": "7405cfa684ffad277449e25900de4dd31dc558062107181da3cbfeda8789e835",
     "v3/README.md": "dff4cad9dc8b075d1bb45d148819c3938220272a5dd2c2b02d52cfba03e640e9",
-    "v3/SHA256SUMS": "5ed7d2bbf558b178a6fef316e0b425a37ea32d05fa8568862d51d16d43bb63f7",
+    "v3/SHA256SUMS": "5b009284e93c10764b7ddbb60808ee6531972418d77d25b462a7702bdcc80aed",
     "v3/conformance.json": "9c6ca2d750df5ef60d234150637502144565a7dca2bd4310efef1187164afaf1",
-    "v3/contract.json": "cf87a145cb56e03f4b7fdd3dc34ed898bd78652688a215295238dae9a97ce073",
+    "v3/contract.json": "c076928f93ca4f4604efb64f2f9cc9a5250b4d86faf9bbeab7f00f8faa7bec6e",
     "v3/schema.json": "3cfe1154a91c30bb7d7b8b37c64366b26d5c04b756f2c9405bd6c943944fcce8"
   },
   "lifecycle": [
-    "plan-all",
     "down",
-    "apply-verify-all",
+    "apply-exclusive",
+    "verify",
     "up"
-  ],
-  "planningModes": [
-    "ordinary",
-    "legacy-bootstrap"
   ]
 }
