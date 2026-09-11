@@ -107,6 +107,8 @@ render_profile() {
 }
 
 gateway=$(render_profile gateway --set emailGateway.mode=gateway)
+api_deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1;next} active&&/^---$/{exit} active{print}' <<<"$gateway")
+grep -A1 -F 'name: ENVIRONMENT' <<<"$api_deployment" | grep -Fq 'value: "production"'
 ! grep -Fq -- '--universe email-relay-mongo' <<<"$gateway"
 grep -Fq 'type: RollingUpdate' <<<"$gateway"
 inbound=$(render_profile inbound-relay --set emailGateway.mode=inbound-relay --set emailGateway.relay.spoolSharedKey=spool)
