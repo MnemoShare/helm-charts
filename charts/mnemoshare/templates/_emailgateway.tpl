@@ -1,11 +1,11 @@
 {{/* Resolve the one emailgateway profile selected by the exact environment emitted by this chart. */}}
-{{- define "mnemoshare.emailGatewayV3" -}}
-{{- $raw := required "vendored tests/contracts/deployment/v3/contract.json is required" (.Files.Get "tests/contracts/deployment/v3/contract.json") -}}
+{{- define "mnemoshare.emailGatewayV4" -}}
+{{- $raw := required "vendored tests/contracts/deployment/v4/contract.json is required" (.Files.Get "tests/contracts/deployment/v4/contract.json") -}}
 {{- $contract := fromJson $raw -}}
-{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v3" -}}{{- fail "vendored deployment contract is not v3" -}}{{- end -}}
+{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v4" -}}{{- fail "vendored deployment contract is not v4" -}}{{- end -}}
 {{- $found := dict -}}
 {{- range $contract.executables -}}{{- if eq .id "emailgateway" -}}{{- $_ := set $found "executable" . -}}{{- end -}}{{- end -}}
-{{- if not (hasKey $found "executable") -}}{{- fail "vendored deployment contract v3 has no emailgateway executable" -}}{{- end -}}
+{{- if not (hasKey $found "executable") -}}{{- fail "vendored deployment contract v4 has no emailgateway executable" -}}{{- end -}}
 {{- $executable := get $found "executable" -}}
 {{- $env := dict "GATEWAY_MODE" .Values.emailGateway.mode -}}
 {{- $relayMode := eq .Values.emailGateway.mode "relay" -}}
@@ -27,13 +27,13 @@
       {{- if eq $condition.operator "equals" -}}{{- $all = and $all $present (eq (get $env $condition.name) $condition.value) -}}
       {{- else if eq $condition.operator "set" -}}{{- $all = and $all $present -}}
       {{- else if eq $condition.operator "unset" -}}{{- $all = and $all (not $present) -}}
-      {{- else -}}{{- fail (printf "unsupported deployment-contract v3 selection operator %s" $condition.operator) -}}{{- end -}}
+      {{- else -}}{{- fail (printf "unsupported deployment-contract v4 selection operator %s" $condition.operator) -}}{{- end -}}
     {{- end -}}
     {{- $profileMatches = or $profileMatches $all -}}
   {{- end -}}
   {{- if $profileMatches -}}{{- $matches = append $matches $profile.id -}}{{- end -}}
 {{- end -}}
-{{- if ne (len $matches) 1 -}}{{- fail (printf "emailGateway configuration must select exactly one deployment-contract v3 profile, selected %d" (len $matches)) -}}{{- end -}}
+{{- if ne (len $matches) 1 -}}{{- fail (printf "emailGateway configuration must select exactly one deployment-contract v4 profile, selected %d" (len $matches)) -}}{{- end -}}
 {{- $profileID := first $matches -}}
 {{- $profile := dict -}}
 {{- range $executable.profiles -}}{{- if eq .id $profileID -}}{{- $profile = . -}}{{- end -}}{{- end -}}
@@ -42,8 +42,8 @@
 {{- end -}}
 
 {{/* Contract-controlled names cannot be redefined through the legacy escape hatch. */}}
-{{- define "mnemoshare.validateEmailGatewayExtraEnvV3" -}}
-{{- $facts := include "mnemoshare.emailGatewayV3" . | fromJson -}}
+{{- define "mnemoshare.validateEmailGatewayExtraEnvV4" -}}
+{{- $facts := include "mnemoshare.emailGatewayV4" . | fromJson -}}
 {{- $reserved := dict "SMTP_AUTH_REQUIRED" true -}}
 {{- $_ := set $reserved $facts.executable.profile_selector true -}}
 {{- range $facts.executable.profiles -}}
@@ -53,6 +53,6 @@
   {{- range .durable_resources -}}{{- if .path_environment -}}{{- $_ := set $reserved .path_environment true -}}{{- end -}}{{- end -}}
 {{- end -}}
 {{- range .Values.emailGateway.extraEnv -}}
-  {{- if hasKey $reserved .name -}}{{- fail (printf "emailGateway.extraEnv may not override deployment-contract v3 environment %s" .name) -}}{{- end -}}
+  {{- if hasKey $reserved .name -}}{{- fail (printf "emailGateway.extraEnv may not override deployment-contract v4 environment %s" .name) -}}{{- end -}}
 {{- end -}}
 {{- end -}}

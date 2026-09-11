@@ -370,7 +370,7 @@ spec:
           port: {{ .Values.service.targetPort }}
 {{- end }}
 {{- if and .Values.emailGateway .Values.emailGateway.enabled }}
-{{- $emailFacts := include "mnemoshare.emailGatewayV3" . | fromJson }}
+{{- $emailFacts := include "mnemoshare.emailGatewayV4" . | fromJson }}
 {{- $emailRelayMongo := false }}
 {{- range $emailFacts.profile.external_universes }}{{- if eq .id "email-relay-mongo" }}{{- $emailRelayMongo = true }}{{- end }}{{- end }}
 {{- if and $emailRelayMongo (not .Values.emailGateway.relay.db.networkPolicyCIDRs) }}{{- fail "email-relay-mongo profile requires emailGateway.relay.db.networkPolicyCIDRs when networkPolicy.enabled=true" }}{{- end }}
@@ -395,7 +395,7 @@ spec:
     - Egress
   ingress:
     # Public SMTP entry on the pod's container ports. The deployment
-    # declares :25 (SMTP) and :8080 (contract v3 health). The :587/:465 entries
+    # declares :25 (SMTP) and :8080 (contract v4 health). The :587/:465 entries
     # cover STARTTLS/implicit-TLS variants when LISTEN_PORTS is overridden.
     # Permissive `from:` matches the public-MFT-endpoint expectation; the
     # SMTP auth + STARTTLS policy is the L7 boundary.

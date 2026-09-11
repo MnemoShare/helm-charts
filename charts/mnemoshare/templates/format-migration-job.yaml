@@ -39,7 +39,7 @@
 {{- $migrationContractFingerprint := include "mnemoshare.migrationOperationExpectedContractFingerprint" . }}
 {{- $externalRelayUniverse := false }}
 {{- if .Values.emailGateway.enabled }}
-{{- $gatewayFacts := include "mnemoshare.emailGatewayV3" . | fromJson }}
+{{- $gatewayFacts := include "mnemoshare.emailGatewayV4" . | fromJson }}
 {{- range $gatewayFacts.profile.external_universes }}
 {{- if ne .id "email-relay-mongo" }}{{- fail (printf "unsupported emailgateway external persistence universe %s" .id) }}{{- end }}
 {{- $externalRelayUniverse = true }}

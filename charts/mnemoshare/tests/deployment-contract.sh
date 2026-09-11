@@ -3,8 +3,8 @@ set -euo pipefail
 
 chart_dir=${1:-$(cd "$(dirname "$0")/.." && pwd)}
 contract_dir=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v2
-upstream=aba43f7911586189a6e056bb1c9dcab7258b21d4
-fingerprint=e73dd2b91c7de17428fbfe1c4984758aa9a3894c6aadced0531f0ff591b67836
+upstream=eb6da48f6f874514c07cd6bf1d6daffaf9c6b101
+fingerprint=0ce6b3e15a0db7de1ee0c4a6baab10f46c3dded5732110484fefc65dda248a31
 digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 identity=(--set "deploymentContractV2.sourceCommit=${upstream}" --set "deploymentContractV2.contractFingerprint=${fingerprint}" --set "deploymentContractV2.imageDigest=${digest}" --set "image.digest=${digest}")
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)

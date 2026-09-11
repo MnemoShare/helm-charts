@@ -17,12 +17,12 @@ base=(
   --set ingress.enabled=false
   --set autoscaling.enabled=true
   --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  --set deploymentContractV2.sourceCommit=aba43f7911586189a6e056bb1c9dcab7258b21d4
-  --set deploymentContractV2.contractFingerprint=e73dd2b91c7de17428fbfe1c4984758aa9a3894c6aadced0531f0ff591b67836
+  --set deploymentContractV2.sourceCommit=eb6da48f6f874514c07cd6bf1d6daffaf9c6b101
+  --set deploymentContractV2.contractFingerprint=0ce6b3e15a0db7de1ee0c4a6baab10f46c3dded5732110484fefc65dda248a31
   --set deploymentContractV2.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  --set deploymentContractV3.sourceCommit=0dd4f8eb13b9afb35a586f4ac7bc8618d25d7886
-  --set deploymentContractV3.contractFingerprint=23dc67fb882b463fbc1bd05d0732d2a5aadc86b3070b228dd5f62cb204319cc6
-  --set deploymentContractV3.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  --set deploymentContractV4.sourceCommit=eb6da48f6f874514c07cd6bf1d6daffaf9c6b101
+  --set deploymentContractV4.contractFingerprint=f42eb9987b37e8e02405c6ba3032eac5e73e853100e06e4e008c1a853c437aa6
+  --set deploymentContractV4.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 )
 
 render=$(helm template test "$chart_dir" "${base[@]}" \

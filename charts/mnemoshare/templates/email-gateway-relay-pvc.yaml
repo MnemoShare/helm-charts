@@ -1,5 +1,5 @@
 {{- if .Values.emailGateway.enabled }}
-{{- $facts := include "mnemoshare.emailGatewayV3" . | fromJson }}
+{{- $facts := include "mnemoshare.emailGatewayV4" . | fromJson }}
 {{- if gt (len ($facts.profile.durable_resources | default list)) 0 }}
 {{- if and .Values.emailGateway.relay.persistence.enabled (not .Values.emailGateway.relay.persistence.existingClaim) }}
 apiVersion: v1

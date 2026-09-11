@@ -25,11 +25,11 @@
 {{- if eq $port 25 }}{{- $hasSMTPPort = true }}{{- end }}
 {{- end }}
 {{- if not $hasSMTPPort }}{{- fail "emailGateway.listenPorts must include port 25 while the Service targets the fixed smtp port" }}{{- end }}
-{{- include "mnemoshare.requireDeploymentContractV3Identity" . }}
-{{- $facts := include "mnemoshare.emailGatewayV3" . | fromJson }}
-{{- if hasKey $seenListenPorts (printf "%d" ($facts.profile.probe.port | int)) }}{{- fail (printf "emailGateway.listenPorts SMTP listener collides with deployment-contract v3 probe port %d" ($facts.profile.probe.port | int)) }}{{- end }}
-{{- if and ($facts.profile.liveness_probe.port | int) (hasKey $seenListenPorts (printf "%d" ($facts.profile.liveness_probe.port | int))) }}{{- fail (printf "emailGateway.listenPorts SMTP listener collides with deployment-contract v3 liveness port %d" ($facts.profile.liveness_probe.port | int)) }}{{- end }}
-{{- include "mnemoshare.validateEmailGatewayExtraEnvV3" . }}
+{{- include "mnemoshare.requireDeploymentContractV4Identity" . }}
+{{- $facts := include "mnemoshare.emailGatewayV4" . | fromJson }}
+{{- if hasKey $seenListenPorts (printf "%d" ($facts.profile.probe.port | int)) }}{{- fail (printf "emailGateway.listenPorts SMTP listener collides with deployment-contract v4 probe port %d" ($facts.profile.probe.port | int)) }}{{- end }}
+{{- if and ($facts.profile.liveness_probe.port | int) (hasKey $seenListenPorts (printf "%d" ($facts.profile.liveness_probe.port | int))) }}{{- fail (printf "emailGateway.listenPorts SMTP listener collides with deployment-contract v4 liveness port %d" ($facts.profile.liveness_probe.port | int)) }}{{- end }}
+{{- include "mnemoshare.validateEmailGatewayExtraEnvV4" . }}
 {{- $durables := $facts.profile.durable_resources | default list }}
 {{- $durableProfile := gt (len $durables) 0 }}
 {{- $durable := dict }}
@@ -38,7 +38,7 @@
 {{- if ne (len $durables) 1 }}{{- fail (printf "emailgateway profile %s declares an unsupported durable-resource count" $facts.profile.id) }}{{- end }}
 {{- $durable = first $durables }}
 {{- if or (ne $durable.id "relay-spool") (ne $durable.kind "filesystem") (ne $durable.path_environment "RELAY_SPOOL_DIR") }}{{- fail (printf "emailgateway profile %s declares an unsupported durable resource" $facts.profile.id) }}{{- end }}
-{{- if ne .Values.emailGateway.relay.spoolDir $durable.path }}{{- fail (printf "emailGateway.relay.spoolDir must equal deployment-contract v3 durable path %s" $durable.path) }}{{- end }}
+{{- if ne .Values.emailGateway.relay.spoolDir $durable.path }}{{- fail (printf "emailGateway.relay.spoolDir must equal deployment-contract v4 durable path %s" $durable.path) }}{{- end }}
 {{- end }}
 {{- if and $durableProfile (not .Values.emailGateway.relay.persistence.enabled) (not .Values.emailGateway.relay.persistence.existingClaim) }}
 {{- fail "emailGateway relay profiles require relay.persistence.enabled=true or relay.persistence.existingClaim for the durable spool" }}
@@ -88,7 +88,7 @@ spec:
       - name: email-gateway
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: {{ if and .Values.migrationOperation .Values.migrationOperation.enabled (eq .Values.migrationOperation.phase "up") }}{{ include "mnemoshare.writerImage" (dict "root" . "component" .Values.image "name" "email-gateway") | quote }}{{ else }}{{ include "mnemoshare.contractV3ApplicationImage" . | quote }}{{ end }}
+        image: {{ if and .Values.migrationOperation .Values.migrationOperation.enabled (eq .Values.migrationOperation.phase "up") }}{{ include "mnemoshare.writerImage" (dict "root" . "component" .Values.image "name" "email-gateway") | quote }}{{ else }}{{ include "mnemoshare.contractV4ApplicationImage" . | quote }}{{ end }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command: [{{ $facts.executable.path | quote }}]
         ports:

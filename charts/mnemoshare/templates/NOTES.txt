@@ -8,7 +8,7 @@ Namespace: {{ .Release.Namespace }}
 DEPLOYMENT CONTRACT V2
 ----------------------
   MCP/SFTP runtime shape is sourced from application commit
-  aba43f7911586189a6e056bb1c9dcab7258b21d4. These persistence-none peers are
+  eb6da48f6f874514c07cd6bf1d6daffaf9c6b101. These persistence-none peers are
   excluded from the migration writer census but remain in the pod termination
   fence. The chart verified the declared source, contract, and immutable image
   identities agree with its pin; proving source-to-image build provenance

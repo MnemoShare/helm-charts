@@ -69,7 +69,7 @@
       },
       "required": ["sourceCommit", "contractFingerprint", "imageDigest"]
     },
-    "deploymentContractV3": {
+    "deploymentContractV4": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

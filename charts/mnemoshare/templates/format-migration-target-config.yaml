@@ -33,7 +33,7 @@ stringData:
   {{- end }}
 {{- end }}
 {{- if and (eq .Values.formatMigrations.mode "automatic") .Values.emailGateway.enabled }}
-{{- $facts := include "mnemoshare.emailGatewayV3" . | fromJson }}
+{{- $facts := include "mnemoshare.emailGatewayV4" . | fromJson }}
 {{- $externalRelayUniverse := false }}
 {{- range $facts.profile.external_universes }}{{- if eq .id "email-relay-mongo" }}{{- $externalRelayUniverse = true }}{{- end }}{{- end }}
 {{- if and $externalRelayUniverse (not .Values.emailGateway.relay.db.existingSecret) }}

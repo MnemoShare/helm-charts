@@ -42,7 +42,7 @@ deploymentContractV2:
 
 # Required immutable identity declaration when emailGateway is enabled. The
 # chart verifies equality and digest addressing, not build provenance.
-deploymentContractV3:
+deploymentContractV4:
   sourceCommit: ""
   contractFingerprint: ""
   imageDigest: ""
