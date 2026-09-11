@@ -3,6 +3,7 @@ set -euo pipefail
 
 chart_dir=${1:-charts/mnemoshare}
 "$(dirname "$0")/migration-result-contract.sh" "$chart_dir"
+migration_fingerprint=$(jq -er .fingerprint "$chart_dir/tests/contracts/migration-operation/v1/contract.json")
 base=(
   --set customerId=ci-test
   --set mongodb.external.enabled=true
@@ -151,8 +152,8 @@ stateful_render=$(helm template test "$chart_dir" "${base[@]}" \
   --set redis.external.host=redis.example.com)
 assert_image_in_source "$stateful_render" 'templates/workflow-worker-statefulset.yaml'
 assert_has 'command: ["/usr/local/bin/mnemoshare-migrate"]'
-assert_has 'args: ["plan", "--contract", "embedded", "--expect-contract-fingerprint", "861e1d6871b2f3bc2cf5b8405208cc4542945006206462e5b3a7520881a7e668", "--result", "/migration/result.json", "--output", "/migration/plan.json"]'
-assert_has 'verify --contract embedded --expect-contract-fingerprint "861e1d6871b2f3bc2cf5b8405208cc4542945006206462e5b3a7520881a7e668" --expect-plan-digest "$(cat /migration/plan-digest)"'
+assert_has "args: [\"plan\", \"--contract\", \"embedded\", \"--expect-contract-fingerprint\", \"${migration_fingerprint}\", \"--result\", \"/migration/result.json\", \"--output\", \"/migration/plan.json\"]"
+assert_has "verify --contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --expect-plan-digest \"\$(cat /migration/plan-digest)\""
 assert_has 'case "${decision}" in'
 assert_has 'selected_pods="$(kubectl get pods -l "${selector}" -o name)"'
 assert_has 'if [ -n "${selected_pods}" ]; then'
@@ -307,7 +308,7 @@ if decision_is_valid_value $'ordinary\nunterminated'; then
   exit 1
 fi
 assert_has 'exec /usr/local/bin/mnemoshare-migrate apply \'
-assert_has '--contract embedded --expect-contract-fingerprint "861e1d6871b2f3bc2cf5b8405208cc4542945006206462e5b3a7520881a7e668" --expect-plan-digest "$(cat /migration/plan-digest)" \'
+assert_has "--contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --expect-plan-digest \"\$(cat /migration/plan-digest)\" \\"
 assert_has '--exclusive --bootstrap-policy provision-untracked'
 assert_has '"helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded'
 if [ "$(grep -Ec '^[[:space:]]+"helm.sh/hook-delete-policy": before-hook-creation$' <<<"$render")" -lt 7 ]; then
