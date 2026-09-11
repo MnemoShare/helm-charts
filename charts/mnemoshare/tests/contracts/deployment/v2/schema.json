@@ -32,6 +32,22 @@
     },
     "optionalHTTPProbe": {"oneOf": [{"type": "object", "maxProperties": 0}, {"type": "object", "additionalProperties": false, "required": ["kind", "path", "port"], "properties": {"kind": {"const": "http"}, "path": {"type": "string", "pattern": "^/"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535}}}]},
     "nonemptyStrings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nonempty"}},
+    "requirementSource": {
+      "type": "object", "additionalProperties": false,
+      "required": ["identity"],
+      "properties": {"identity": {"$ref": "#/$defs/nonempty"}, "address": {"$ref": "#/$defs/nonempty"}, "order": {"type": "integer", "minimum": 0}}
+    },
+    "requirement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "projection", "required", "sources"],
+      "properties": {
+        "id": {"$ref": "#/$defs/nonempty"}, "field": {"$ref": "#/$defs/nonempty"},
+        "sources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/requirementSource"}},
+        "scope": {"$ref": "#/$defs/nonempty"}, "phase": {"$ref": "#/$defs/nonempty"}, "freshness": {"$ref": "#/$defs/nonempty"},
+        "projection": {"enum": ["plain", "secret", "nonprojectable"]},
+        "required": {"type": "object", "additionalProperties": false, "properties": {"invocation": {"const": true}, "composition": {"const": true}, "deployment": {"const": true}}}
+      }
+    },
     "process": {
       "type": "object", "additionalProperties": false,
       "required": ["id", "executable", "kind", "persistence", "probe", "liveness_probe", "coexistence"],
@@ -41,7 +57,7 @@
         "persistence": {"enum": ["selected", "none"]}, "engines": {"$ref": "#/$defs/strings"},
         "capabilities": {"$ref": "#/$defs/strings"}, "environment": {"$ref": "#/$defs/strings"},
         "probe": {"$ref": "#/$defs/probe"}, "liveness_probe": {"$ref": "#/$defs/optionalHTTPProbe"},
-		"coexistence": {"const": "application-peers"}, "image_default": {"const": true}
+        "coexistence": {"const": "application-peers"}, "image_default": {"const": true}, "requirements": {"type": "array", "items": {"$ref": "#/$defs/requirement"}}
       }
     },
     "adapter": {
