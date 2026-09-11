@@ -37,7 +37,15 @@ printf 'changed grammar\n' > "${app}/contracts/deployment/v1/schema.json"
 git -C "$app" add .
 git -C "$app" -c user.name=test -c user.email=test@example.com commit -q -m grammar
 grammar=$(git -C "$app" rev-parse HEAD)
-if "$updater" "$app" "$grammar"; then
-  echo 'updater replaced immutable v1 grammar' >&2
+"$updater" "$app" "$grammar"
+grep -Fxq 'changed grammar' "${destination}/schema.json"
+
+printf 'changed documentation\n' > "${app}/contracts/deployment/v1/README.md"
+(cd "${app}/contracts/deployment/v1" && sha256sum README.md conformance.json contract.json schema.json > SHA256SUMS)
+git -C "$app" add .
+git -C "$app" -c user.name=test -c user.email=test@example.com commit -q -m documentation
+documentation=$(git -C "$app" rev-parse HEAD)
+if "$updater" "$app" "$documentation"; then
+  echo 'updater replaced immutable v1 documentation' >&2
   exit 1
 fi

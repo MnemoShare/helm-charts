@@ -59,6 +59,7 @@ spec:
           containerPort: {{ $process.probe.port }}
           protocol: TCP
         env:
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         - name: SFTP_GATEWAY_LISTEN_ADDR
           value: ":2222"
         - name: SFTP_GATEWAY_HOST_KEY_PATH

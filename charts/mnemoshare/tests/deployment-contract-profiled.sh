@@ -2,8 +2,8 @@
 set -euo pipefail
 
 contract_dir=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v1
-expected_commit=fbe8a553d041855f6763b19bf7c618e85e5c6402
-expected_fingerprint=0e907f6cdb54423774cbe102acf0b73c440cebb0e82172eeed42371360009256
+expected_commit=$(sed -n 's/^commit=//p' "${contract_dir}/UPSTREAM")
+expected_fingerprint=$(jq -er .fingerprint "${contract_dir}/contract.json")
 
 test "$(sed -n 's/^repository=//p' "${contract_dir}/UPSTREAM")" = https://github.com/MnemoShare/mnemoshare.git
 test "$(sed -n 's/^commit=//p' "${contract_dir}/UPSTREAM")" = "$expected_commit"
@@ -188,8 +188,8 @@ grep -Fq 'port: 8080' <<<"$networked"
 ! grep -Fq 'port: 8081' <<<"$networked"
 
 coexist=$(helm template coexist "$chart_dir" "${base[@]}" \
-  --set deploymentContract.sourceCommit=fbe8a553d041855f6763b19bf7c618e85e5c6402 \
-  --set deploymentContract.contractFingerprint=0e907f6cdb54423774cbe102acf0b73c440cebb0e82172eeed42371360009256 \
+  --set deploymentContract.sourceCommit="$expected_commit" \
+  --set deploymentContract.contractFingerprint="$expected_fingerprint" \
   --set deploymentContract.imageDigest="$digest" \
   --set mcp.enabled=true --set mcp.apiKey.key=test)
 test "$(grep -Fc "image: \"mnemoshare/mnemoshare@${digest}\"" <<<"$coexist")" -ge 2

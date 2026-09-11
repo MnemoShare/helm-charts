@@ -3,8 +3,8 @@ set -euo pipefail
 
 chart_dir=${1:-$(cd "$(dirname "$0")/.." && pwd)}
 contract_dir=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v1
-upstream=fbe8a553d041855f6763b19bf7c618e85e5c6402
-fingerprint=0e907f6cdb54423774cbe102acf0b73c440cebb0e82172eeed42371360009256
+upstream=$(sed -n 's/^commit=//p' "${contract_dir}/UPSTREAM")
+fingerprint=$(jq -er .fingerprint "${contract_dir}/contract.json")
 digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 identity=(--set "deploymentContract.sourceCommit=${upstream}" --set "deploymentContract.contractFingerprint=${fingerprint}" --set "deploymentContract.imageDigest=${digest}" --set "image.digest=${digest}")
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)

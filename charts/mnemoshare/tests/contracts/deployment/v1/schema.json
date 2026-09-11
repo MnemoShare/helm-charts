@@ -302,6 +302,14 @@
         "environment": {
           "$ref": "#/$defs/strings"
         },
+        "required_environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ENVIRONMENT"],
+          "properties": {
+            "ENVIRONMENT": {"const": "production"}
+          }
+        },
         "probe": {
           "$ref": "#/$defs/probe"
         },

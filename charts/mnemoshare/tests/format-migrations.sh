@@ -4,6 +4,8 @@ set -euo pipefail
 chart_dir=${1:-charts/mnemoshare}
 "$(dirname "$0")/migration-result-contract.sh" "$chart_dir"
 migration_fingerprint=$(jq -er .fingerprint "$chart_dir/tests/contracts/migration-operation/v1/contract.json")
+deployment_commit=$(sed -n 's/^commit=//p' "$chart_dir/tests/contracts/deployment/v1/UPSTREAM")
+deployment_fingerprint=$(jq -er .fingerprint "$chart_dir/tests/contracts/deployment/v1/contract.json")
 base=(
   --set customerId=ci-test
   --set mongodb.external.enabled=true
@@ -18,8 +20,8 @@ base=(
   --set ingress.enabled=false
   --set autoscaling.enabled=true
   --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  --set deploymentContract.sourceCommit=fbe8a553d041855f6763b19bf7c618e85e5c6402
-  --set deploymentContract.contractFingerprint=0e907f6cdb54423774cbe102acf0b73c440cebb0e82172eeed42371360009256
+  --set deploymentContract.sourceCommit="$deployment_commit"
+  --set deploymentContract.contractFingerprint="$deployment_fingerprint"
   --set deploymentContract.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 )
 
@@ -41,7 +43,7 @@ render=$(helm template test "$chart_dir" "${base[@]}" \
 
 for source in deployment.yaml workflow-worker-deployment.yaml ices-deployment.yaml \
   inbound-gateway-deployment.yaml email-gateway-deployment.yaml \
-  format-migration-job.yaml; do
+  sftp-gateway-deployment.yaml mcp-deployment.yaml format-migration-job.yaml; do
   if ! awk -v source="# Source: mnemoshare/templates/${source}" '
       $0 == source { active=1; next }
       active && /^---$/ { exit }

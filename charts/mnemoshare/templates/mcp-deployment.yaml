@@ -85,6 +85,7 @@ spec:
           containerPort: {{ $process.probe.port }}
           protocol: TCP
         env:
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # MCP API Key - Required for authentication
         - name: MNEMOSHARE_MCP_KEY
           valueFrom:
