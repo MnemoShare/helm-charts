@@ -51,7 +51,25 @@
             "kind": "http",
             "path": "/ready",
             "port": 9443
-          }
+          },
+          "requirements": [
+            {
+              "field": "REQUIRED_VALUE",
+              "id": "fixture.required",
+              "projection": "plain",
+              "required": {
+                "composition": true,
+                "deployment": true,
+                "invocation": true
+              },
+              "sources": [
+                {
+                  "address": "fixture.required",
+                  "identity": "fixture.source"
+                }
+              ]
+            }
+          ]
         }
       ],
       "provenance": {
@@ -60,8 +78,8 @@
         "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
       }
     },
-    "canonical_jcs": "{\"adapters\":[{\"args\":[\"--serve\"],\"executable\":\"/fixture/adapter\",\"probe\":{\"command\":[\"check\",\"--once\"],\"kind\":\"process\"},\"processes\":[\"maximal\"]}],\"fingerprint\":\"\",\"processes\":[{\"args\":[\"--mode=maximal\"],\"capabilities\":[\"capability\"],\"coexistence\":\"application-peers\",\"engines\":[\"engine\"],\"environment\":[\"REQUIRED_VALUE\"],\"executable\":\"/fixture/maximal\",\"id\":\"maximal\",\"image_default\":true,\"kind\":\"api\",\"liveness_probe\":{\"kind\":\"http\",\"path\":\"/live\",\"port\":9443},\"persistence\":\"selected\",\"probe\":{\"kind\":\"http\",\"path\":\"/ready\",\"port\":9443}}],\"provenance\":{\"generator\":\"conformance-fixture\",\"schema\":\"mnemoshare.deployment-contract.v2\",\"source_fingerprint\":\"1111111111111111111111111111111111111111111111111111111111111111\"}}",
-    "sha256": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99"
+    "canonical_jcs": "{\"adapters\":[{\"args\":[\"--serve\"],\"executable\":\"/fixture/adapter\",\"probe\":{\"command\":[\"check\",\"--once\"],\"kind\":\"process\"},\"processes\":[\"maximal\"]}],\"fingerprint\":\"\",\"processes\":[{\"args\":[\"--mode=maximal\"],\"capabilities\":[\"capability\"],\"coexistence\":\"application-peers\",\"engines\":[\"engine\"],\"environment\":[\"REQUIRED_VALUE\"],\"executable\":\"/fixture/maximal\",\"id\":\"maximal\",\"image_default\":true,\"kind\":\"api\",\"liveness_probe\":{\"kind\":\"http\",\"path\":\"/live\",\"port\":9443},\"persistence\":\"selected\",\"probe\":{\"kind\":\"http\",\"path\":\"/ready\",\"port\":9443},\"requirements\":[{\"field\":\"REQUIRED_VALUE\",\"id\":\"fixture.required\",\"projection\":\"plain\",\"required\":{\"composition\":true,\"deployment\":true,\"invocation\":true},\"sources\":[{\"address\":\"fixture.required\",\"identity\":\"fixture.source\"}]}]}],\"provenance\":{\"generator\":\"conformance-fixture\",\"schema\":\"mnemoshare.deployment-contract.v2\",\"source_fingerprint\":\"1111111111111111111111111111111111111111111111111111111111111111\"}}",
+    "sha256": "dd5a7e287daae047b16119583cff7e9e64799dae53ddaf05732a9c34fe46a992"
   },
   "valid": [
     {
@@ -72,7 +90,7 @@
           "generator": "conformance-fixture",
           "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
         },
-        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "fingerprint": "dd5a7e287daae047b16119583cff7e9e64799dae53ddaf05732a9c34fe46a992",
         "processes": [
           {
             "id": "maximal",
@@ -102,7 +120,25 @@
               "port": 9443
             },
             "coexistence": "application-peers",
-            "image_default": true
+            "image_default": true,
+            "requirements": [
+              {
+                "id": "fixture.required",
+                "field": "REQUIRED_VALUE",
+                "sources": [
+                  {
+                    "identity": "fixture.source",
+                    "address": "fixture.required"
+                  }
+                ],
+                "projection": "plain",
+                "required": {
+                  "invocation": true,
+                  "composition": true,
+                  "deployment": true
+                }
+              }
+            ]
           }
         ],
         "adapters": [
@@ -133,7 +169,7 @@
           "generator": "conformance-fixture",
           "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
         },
-        "fingerprint": "2942a489ac8263104c74b1747459f5a1a062cbb45a2b9b712a7852e4bc14bc48",
+        "fingerprint": "f274ae3693a680f87799ec20af5245847ee101f6ab5c16329dfaeee9925928f3",
         "processes": [
           {
             "id": "maximal",
@@ -162,7 +198,25 @@
               "path": "/live",
               "port": 9443
             },
-            "coexistence": "application-peers"
+            "coexistence": "application-peers",
+            "requirements": [
+              {
+                "id": "fixture.required",
+                "field": "REQUIRED_VALUE",
+                "sources": [
+                  {
+                    "identity": "fixture.source",
+                    "address": "fixture.required"
+                  }
+                ],
+                "projection": "plain",
+                "required": {
+                  "invocation": true,
+                  "composition": true,
+                  "deployment": true
+                }
+              }
+            ]
           }
         ],
         "adapters": [
@@ -215,7 +269,7 @@
             ]
           }
         ],
-        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "fingerprint": "dd5a7e287daae047b16119583cff7e9e64799dae53ddaf05732a9c34fe46a992",
         "processes": [
           {
             "args": [
@@ -244,7 +298,25 @@
               "kind": "http",
               "path": "/ready",
               "port": 9443
-            }
+            },
+            "requirements": [
+              {
+                "field": "REQUIRED_VALUE",
+                "id": "fixture.required",
+                "projection": "plain",
+                "required": {
+                  "composition": true,
+                  "deployment": true,
+                  "invocation": true
+                },
+                "sources": [
+                  {
+                    "address": "fixture.required",
+                    "identity": "fixture.source"
+                  }
+                ]
+              }
+            ]
           }
         ],
         "provenance": {
@@ -276,7 +348,7 @@
             ]
           }
         ],
-        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "fingerprint": "dd5a7e287daae047b16119583cff7e9e64799dae53ddaf05732a9c34fe46a992",
         "processes": [
           {
             "args": [
@@ -306,7 +378,25 @@
               "kind": "http",
               "path": "/ready",
               "port": 9443
-            }
+            },
+            "requirements": [
+              {
+                "field": "REQUIRED_VALUE",
+                "id": "fixture.required",
+                "projection": "plain",
+                "required": {
+                  "composition": true,
+                  "deployment": true,
+                  "invocation": true
+                },
+                "sources": [
+                  {
+                    "address": "fixture.required",
+                    "identity": "fixture.source"
+                  }
+                ]
+              }
+            ]
           }
         ],
         "provenance": {
@@ -338,7 +428,7 @@
             ]
           }
         ],
-        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "fingerprint": "dd5a7e287daae047b16119583cff7e9e64799dae53ddaf05732a9c34fe46a992",
         "processes": [
           {
             "args": [
@@ -368,7 +458,25 @@
               "kind": "http",
               "path": "/ready",
               "port": 9443
-            }
+            },
+            "requirements": [
+              {
+                "field": "REQUIRED_VALUE",
+                "id": "fixture.required",
+                "projection": "plain",
+                "required": {
+                  "composition": true,
+                  "deployment": true,
+                  "invocation": true
+                },
+                "sources": [
+                  {
+                    "address": "fixture.required",
+                    "identity": "fixture.source"
+                  }
+                ]
+              }
+            ]
           }
         ],
         "provenance": {
@@ -400,7 +508,7 @@
             ]
           }
         ],
-        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "fingerprint": "dd5a7e287daae047b16119583cff7e9e64799dae53ddaf05732a9c34fe46a992",
         "processes": [
           {
             "args": [
@@ -430,7 +538,25 @@
               "kind": "http",
               "path": "/ready",
               "port": 9443
-            }
+            },
+            "requirements": [
+              {
+                "field": "REQUIRED_VALUE",
+                "id": "fixture.required",
+                "projection": "plain",
+                "required": {
+                  "composition": true,
+                  "deployment": true,
+                  "invocation": true
+                },
+                "sources": [
+                  {
+                    "address": "fixture.required",
+                    "identity": "fixture.source"
+                  }
+                ]
+              }
+            ]
           },
           {
             "args": [
@@ -460,7 +586,25 @@
               "kind": "http",
               "path": "/ready",
               "port": 9443
-            }
+            },
+            "requirements": [
+              {
+                "field": "REQUIRED_VALUE",
+                "id": "fixture.required",
+                "projection": "plain",
+                "required": {
+                  "composition": true,
+                  "deployment": true,
+                  "invocation": true
+                },
+                "sources": [
+                  {
+                    "address": "fixture.required",
+                    "identity": "fixture.source"
+                  }
+                ]
+              }
+            ]
           }
         ],
         "provenance": {
@@ -492,7 +636,7 @@
             ]
           }
         ],
-        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "fingerprint": "dd5a7e287daae047b16119583cff7e9e64799dae53ddaf05732a9c34fe46a992",
         "processes": [
           {
             "args": [
@@ -522,7 +666,25 @@
               "kind": "http",
               "path": "/ready",
               "port": 9443
-            }
+            },
+            "requirements": [
+              {
+                "field": "REQUIRED_VALUE",
+                "id": "fixture.required",
+                "projection": "plain",
+                "required": {
+                  "composition": true,
+                  "deployment": true,
+                  "invocation": true
+                },
+                "sources": [
+                  {
+                    "address": "fixture.required",
+                    "identity": "fixture.source"
+                  }
+                ]
+              }
+            ]
           }
         ],
         "provenance": {
@@ -554,7 +716,7 @@
             ]
           }
         ],
-        "fingerprint": "5b903f2c0bf0bc358a4596d49a0dad4b685f1b1920b0dd0246d21dde5c62db99",
+        "fingerprint": "dd5a7e287daae047b16119583cff7e9e64799dae53ddaf05732a9c34fe46a992",
         "manualOverride": true,
         "processes": [
           {
@@ -585,7 +747,25 @@
               "kind": "http",
               "path": "/ready",
               "port": 9443
-            }
+            },
+            "requirements": [
+              {
+                "field": "REQUIRED_VALUE",
+                "id": "fixture.required",
+                "projection": "plain",
+                "required": {
+                  "composition": true,
+                  "deployment": true,
+                  "invocation": true
+                },
+                "sources": [
+                  {
+                    "address": "fixture.required",
+                    "identity": "fixture.source"
+                  }
+                ]
+              }
+            ]
           }
         ],
         "provenance": {
