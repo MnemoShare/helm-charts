@@ -51,6 +51,24 @@ spec:
           containerPort: 10070
           protocol: TCP
         env:
+        # cmd/inboundgateway builds its OWN dispatch keyspace to publish the
+        # background virus scan for every inbound .eml artifact. With
+        # CUSTOMER_ID unset that keyspace falls back to the literal "default"
+        # prefix, so scans are published to "default:background.scan" while the
+        # API and worker consume under the real customerId prefix — a
+        # publisher/subscriber split across the SHARED dispatch store.
+        #
+        # Nothing consumes those rows and nothing retries them: the bus defers
+        # on a handler-registry miss, returning the row to pending without
+        # burning an attempt, so they loop forever with attempts stuck at 0 and
+        # the attachments are silently never scanned. 4,682 accumulated on demo
+        # over ~4 months before anyone noticed (BUG-3431).
+        #
+        # Same `required` as the API template — customerId is already mandatory
+        # for any install that deploys the API, so this stamps a value every
+        # chart user already supplies.
+        - name: CUSTOMER_ID
+          value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
         # Leading colon is required — the binary passes these straight to
         # net.Listen, which rejects a bare port ("missing port in address").
         - name: CONTENT_FILTER_PORT
