@@ -1,6 +1,6 @@
 {{- if .Values.sftpGateway.enabled }}
-{{- include "mnemoshare.validateSFTPContractV2" . }}
-{{- $process := include "mnemoshare.deploymentProcessV2" (dict "root" . "id" "sftp-gateway") | fromJson }}
+{{- include "mnemoshare.validateSFTPContract" . }}
+{{- $process := include "mnemoshare.deploymentDefaultProfile" (dict "root" . "id" "sftp-gateway") | fromJson }}
 {{- $hostKeySecret := .Values.sftpGateway.hostKey.existingSecret -}}
 {{- $internalSecret := .Values.sftpGateway.internalApiSecret.existingSecret -}}
 apiVersion: apps/v1

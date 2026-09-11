@@ -178,8 +178,8 @@ writer replica census and scale-down set; they are still included in the
 post-drain pod-termination fence before migration begins. Divergent legacy MCP
 or SFTP image, command, transport, port, or logging values fail explicitly.
 
-The chart vendors deployment contract v2 from application commit
-`eb6da48f6f874514c07cd6bf1d6daffaf9c6b101`. Because chart `appVersion` 0.18.11
+The chart vendors deployment contract v1 from application commit
+`fbe8a553d041855f6763b19bf7c618e85e5c6402`. Because chart `appVersion` 0.18.11
 predates that commit, enabling MCP or SFTP requires the exact `sourceCommit`,
 vendored `contractFingerprint`, and an explicit `imageDigest` equal to global
 `image.digest`. MCP/SFTP always render that repository@digest, even outside
@@ -716,11 +716,11 @@ curl http://localhost:8080/health
 
 Commercial - License required to run. Get a license at https://mnemoshare.com/pricing
 
-### Email gateway deployment contract v4
+### Email gateway deployment contract v1
 
-Enabling `emailGateway` requires `deploymentContractV4.sourceCommit`,
-`deploymentContractV4.contractFingerprint`, and an explicit
-`deploymentContractV4.imageDigest` equal to the global `image.digest`. The
+Enabling `emailGateway` requires `deploymentContract.sourceCommit`,
+`deploymentContract.contractFingerprint`, and an explicit
+`deploymentContract.imageDigest` equal to the global `image.digest`. The
 chart checks the declared source and vendored contract identities and renders
 the gateway from that immutable image. It cannot prove that an image was built
 from the declared source without an external build-provenance attestation.

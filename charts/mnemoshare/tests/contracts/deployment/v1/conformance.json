@@ -1,5 +1,5 @@
 {
-  "contract": "mnemoshare.deployment-contract.v4",
+  "contract": "mnemoshare.deployment-contract.v1",
   "fingerprint_algorithm": "SHA-256 over RFC 8785 JCS of the contract with fingerprint set to the empty string",
   "restamp": {
     "input": {
@@ -124,23 +124,23 @@
       "fingerprint": "",
       "provenance": {
         "generator": "conformance-fixture",
-        "schema": "mnemoshare.deployment-contract.v4",
+        "schema": "mnemoshare.deployment-contract.v1",
         "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
       }
     },
-    "canonical_jcs": "{\"adapters\":[{\"entrypoint_pass_through\":true,\"entrypoint_profile\":\"pass-through\",\"executable\":\"/fixture/adapter\",\"image_default\":true,\"image_entrypoint\":[\"/fixture/entrypoint\"],\"probe\":{\"command\":[\"check\"],\"kind\":\"process\"},\"processes\":[\"maximal\"]}],\"executables\":[{\"default_profile\":\"direct\",\"id\":\"maximal\",\"path\":\"/fixture/maximal\",\"profile_selector\":\"MODE\",\"profiles\":[{\"args\":[\"--serve\"],\"capabilities\":[\"capability\"],\"coexistence\":\"application-peers\",\"engines\":[\"engine\"],\"environment\":[\"MODE\"],\"id\":\"direct\",\"kind\":\"api\",\"liveness_probe\":{\"kind\":\"http\",\"path\":\"/live\",\"port\":9443},\"persistence\":\"selected\",\"probe\":{\"kind\":\"http\",\"path\":\"/ready\",\"port\":9443},\"selection\":[{\"all\":[{\"name\":\"MODE\",\"operator\":\"equals\",\"value\":\"direct\"}]}]},{\"coexistence\":\"application-peers\",\"durable_resources\":[{\"id\":\"spool\",\"kind\":\"filesystem\",\"lifecycle\":\"process\",\"path\":\"/spool\",\"path_environment\":\"SPOOL_DIR\"}],\"external_universes\":[{\"carrier\":\"mongodb\",\"environment\":[\"DB_URI\"],\"id\":\"other-db\",\"surfaces\":[\"fixture.rows\"]}],\"id\":\"external\",\"kind\":\"worker\",\"liveness_probe\":{},\"persistence\":\"none\",\"probe\":{\"command\":[\"check\"],\"kind\":\"process\"},\"selection\":[{\"all\":[{\"name\":\"MODE\",\"operator\":\"equals\",\"value\":\"external\"},{\"name\":\"DB_URI\",\"operator\":\"set\"}]}]}]}],\"fingerprint\":\"\",\"provenance\":{\"generator\":\"conformance-fixture\",\"schema\":\"mnemoshare.deployment-contract.v4\",\"source_fingerprint\":\"1111111111111111111111111111111111111111111111111111111111111111\"}}",
-    "sha256": "5276d3f010dc5a9057269bef208f2c65b36b79acf45edefa47c6e72ec5866f8e"
+    "canonical_jcs": "{\"adapters\":[{\"entrypoint_pass_through\":true,\"entrypoint_profile\":\"pass-through\",\"executable\":\"/fixture/adapter\",\"image_default\":true,\"image_entrypoint\":[\"/fixture/entrypoint\"],\"probe\":{\"command\":[\"check\"],\"kind\":\"process\"},\"processes\":[\"maximal\"]}],\"executables\":[{\"default_profile\":\"direct\",\"id\":\"maximal\",\"path\":\"/fixture/maximal\",\"profile_selector\":\"MODE\",\"profiles\":[{\"args\":[\"--serve\"],\"capabilities\":[\"capability\"],\"coexistence\":\"application-peers\",\"engines\":[\"engine\"],\"environment\":[\"MODE\"],\"id\":\"direct\",\"kind\":\"api\",\"liveness_probe\":{\"kind\":\"http\",\"path\":\"/live\",\"port\":9443},\"persistence\":\"selected\",\"probe\":{\"kind\":\"http\",\"path\":\"/ready\",\"port\":9443},\"selection\":[{\"all\":[{\"name\":\"MODE\",\"operator\":\"equals\",\"value\":\"direct\"}]}]},{\"coexistence\":\"application-peers\",\"durable_resources\":[{\"id\":\"spool\",\"kind\":\"filesystem\",\"lifecycle\":\"process\",\"path\":\"/spool\",\"path_environment\":\"SPOOL_DIR\"}],\"external_universes\":[{\"carrier\":\"mongodb\",\"environment\":[\"DB_URI\"],\"id\":\"other-db\",\"surfaces\":[\"fixture.rows\"]}],\"id\":\"external\",\"kind\":\"worker\",\"liveness_probe\":{},\"persistence\":\"none\",\"probe\":{\"command\":[\"check\"],\"kind\":\"process\"},\"selection\":[{\"all\":[{\"name\":\"MODE\",\"operator\":\"equals\",\"value\":\"external\"},{\"name\":\"DB_URI\",\"operator\":\"set\"}]}]}]}],\"fingerprint\":\"\",\"provenance\":{\"generator\":\"conformance-fixture\",\"schema\":\"mnemoshare.deployment-contract.v1\",\"source_fingerprint\":\"1111111111111111111111111111111111111111111111111111111111111111\"}}",
+    "sha256": "5864f77882093b6a5c74337426b7541b6a8764310149f129611b2c529cf9656d"
   },
   "valid": [
     {
       "name": "maximal-profiled-executable-and-default-adapter",
       "json": {
         "provenance": {
-          "schema": "mnemoshare.deployment-contract.v4",
+          "schema": "mnemoshare.deployment-contract.v1",
           "generator": "conformance-fixture",
           "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
         },
-        "fingerprint": "5276d3f010dc5a9057269bef208f2c65b36b79acf45edefa47c6e72ec5866f8e",
+        "fingerprint": "5864f77882093b6a5c74337426b7541b6a8764310149f129611b2c529cf9656d",
         "executables": [
           {
             "id": "maximal",
@@ -384,10 +384,10 @@
             ]
           }
         ],
-        "fingerprint": "5276d3f010dc5a9057269bef208f2c65b36b79acf45edefa47c6e72ec5866f8e",
+        "fingerprint": "5864f77882093b6a5c74337426b7541b6a8764310149f129611b2c529cf9656d",
         "provenance": {
           "generator": "conformance-fixture",
-          "schema": "mnemoshare.deployment-contract.v4",
+          "schema": "mnemoshare.deployment-contract.v1",
           "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
         }
       }
@@ -610,10 +610,10 @@
             ]
           }
         ],
-        "fingerprint": "5276d3f010dc5a9057269bef208f2c65b36b79acf45edefa47c6e72ec5866f8e",
+        "fingerprint": "5864f77882093b6a5c74337426b7541b6a8764310149f129611b2c529cf9656d",
         "provenance": {
           "generator": "conformance-fixture",
-          "schema": "mnemoshare.deployment-contract.v4",
+          "schema": "mnemoshare.deployment-contract.v1",
           "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
         }
       }
@@ -740,10 +740,10 @@
             ]
           }
         ],
-        "fingerprint": "5276d3f010dc5a9057269bef208f2c65b36b79acf45edefa47c6e72ec5866f8e",
+        "fingerprint": "5864f77882093b6a5c74337426b7541b6a8764310149f129611b2c529cf9656d",
         "provenance": {
           "generator": "conformance-fixture",
-          "schema": "mnemoshare.deployment-contract.v4",
+          "schema": "mnemoshare.deployment-contract.v1",
           "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
         }
       }
@@ -871,10 +871,10 @@
             ]
           }
         ],
-        "fingerprint": "5276d3f010dc5a9057269bef208f2c65b36b79acf45edefa47c6e72ec5866f8e",
+        "fingerprint": "5864f77882093b6a5c74337426b7541b6a8764310149f129611b2c529cf9656d",
         "provenance": {
           "generator": "conformance-fixture",
-          "schema": "mnemoshare.deployment-contract.v4",
+          "schema": "mnemoshare.deployment-contract.v1",
           "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
         }
       }
@@ -999,10 +999,10 @@
             ]
           }
         ],
-        "fingerprint": "5276d3f010dc5a9057269bef208f2c65b36b79acf45edefa47c6e72ec5866f8e",
+        "fingerprint": "5864f77882093b6a5c74337426b7541b6a8764310149f129611b2c529cf9656d",
         "provenance": {
           "generator": "conformance-fixture",
-          "schema": "mnemoshare.deployment-contract.v4",
+          "schema": "mnemoshare.deployment-contract.v1",
           "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
         }
       }

@@ -59,17 +59,7 @@
         }
       }
     },
-    "deploymentContractV2": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "sourceCommit": { "type": "string" },
-        "contractFingerprint": { "type": "string" },
-        "imageDigest": { "type": "string", "pattern": "^(|sha256:[a-f0-9]{64})$" }
-      },
-      "required": ["sourceCommit", "contractFingerprint", "imageDigest"]
-    },
-    "deploymentContractV4": {
+    "deploymentContract": {
       "type": "object",
       "additionalProperties": false,
       "properties": {

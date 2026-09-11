@@ -6,7 +6,7 @@
 {{- $fullname := include "mnemoshare.fullname" . }}
 {{- $externalRelayUniverse := false }}
 {{- if .Values.emailGateway.enabled }}
-{{- $gatewayFacts := include "mnemoshare.emailGatewayV4" . | fromJson }}
+{{- $gatewayFacts := include "mnemoshare.emailGateway" . | fromJson }}
 {{- range $gatewayFacts.profile.external_universes }}{{- if eq .id "email-relay-mongo" }}{{- $externalRelayUniverse = true }}{{- end }}{{- end }}
 {{- end }}
 {{- $cleanupHooks := "pre-delete" }}

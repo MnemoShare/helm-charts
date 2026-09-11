@@ -370,7 +370,7 @@ spec:
           port: {{ .Values.service.targetPort }}
 {{- end }}
 {{- if and .Values.emailGateway .Values.emailGateway.enabled }}
-{{- $emailFacts := include "mnemoshare.emailGatewayV4" . | fromJson }}
+{{- $emailFacts := include "mnemoshare.emailGateway" . | fromJson }}
 {{- $emailRelayMongo := false }}
 {{- range $emailFacts.profile.external_universes }}{{- if eq .id "email-relay-mongo" }}{{- $emailRelayMongo = true }}{{- end }}{{- end }}
 {{- if and $emailRelayMongo (not .Values.emailGateway.relay.db.networkPolicyCIDRs) }}{{- fail "email-relay-mongo profile requires emailGateway.relay.db.networkPolicyCIDRs when networkPolicy.enabled=true" }}{{- end }}

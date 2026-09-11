@@ -33,16 +33,9 @@ image:
 
 imagePullSecrets: []
 
-# Required immutable identity declaration when MCP or SFTP is enabled. The
-# chart verifies equality and digest addressing, not build provenance.
-deploymentContractV2:
-  sourceCommit: ""
-  contractFingerprint: ""
-  imageDigest: ""
-
-# Required immutable identity declaration when emailGateway is enabled. The
-# chart verifies equality and digest addressing, not build provenance.
-deploymentContractV4:
+# Required immutable identity declaration for every contract-governed peer.
+# The chart verifies equality and digest addressing, not build provenance.
+deploymentContract:
   sourceCommit: ""
   contractFingerprint: ""
   imageDigest: ""
@@ -184,7 +177,7 @@ database:
   sqlite:
     path: "/var/lib/mnemoshare/mnemoshare.db"
 
-# Explicit migration-operation/v2 adapter for the external deployment
+# Explicit migration-operation/v1 adapter for the external deployment
 # controller. The application refuses ordinary startup until this operation
 # has admitted the database format. Keep disabled until the controller owns
 # the plan -> down -> apply -> verify -> up sequence for this release.
@@ -1864,7 +1857,7 @@ mcp:
   # Compatibility view of the now-fixed Kubernetes transport. Noncanonical
   # retained values fail with an explicit migration error.
   transport:
-    # Fixed by deployment contract v2.
+    # Fixed by deployment contract v1.
     type: "http"
 
     # HTTP transport settings (when transport.type = "http")
@@ -1901,7 +1894,7 @@ mcp:
   # Example: "https://mcp.example.com"
   externalUrl: ""
 
-  # Compatibility values fixed by deployment contract v2.
+  # Compatibility values fixed by deployment contract v1.
   logging:
     # Must remain info.
     level: "info"

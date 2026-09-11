@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mnemoshare.com/contracts/deployment/v4/schema.json",
-  "title": "MnemoShare deployment contract v4",
+  "$id": "https://mnemoshare.com/contracts/deployment/v1/schema.json",
+  "title": "MnemoShare deployment contract v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -58,7 +58,7 @@
       ],
       "properties": {
         "schema": {
-          "const": "mnemoshare.deployment-contract.v4"
+          "const": "mnemoshare.deployment-contract.v1"
         },
         "generator": {
           "$ref": "#/$defs/nonempty"

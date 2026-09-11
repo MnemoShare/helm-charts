@@ -2,10 +2,10 @@
 set -euo pipefail
 
 chart_dir=${1:-charts/mnemoshare}
-contract_dir="$chart_dir/tests/contracts/migration-operation/v2"
+contract_dir="$chart_dir/tests/contracts/migration-operation/v1"
 contract_schema=$(jq -er '.provenance.schema | select(test("^mnemoshare\\.migration-operation\\.v[0-9]+$"))' "$contract_dir/contract.json")
 contract_version=${contract_schema##*.}
-test "$contract_version" = v2
+test "$contract_version" = v1
 fingerprint=$(jq -er '.fingerprint | select(test("^[a-f0-9]{64}$"))' "$contract_dir/contract.json")
 source_fingerprint=$(jq -er '.provenance.sourceFingerprint | select(test("^[a-f0-9]{64}$"))' "$contract_dir/contract.json")
 target=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -25,8 +25,8 @@ base=(
 )
 
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
-test "$(sed -n 's/^path=//p' "$contract_dir/UPSTREAM")" = contracts/migration-operation/v2
-test "$(sed -n 's/^commit=//p' "$contract_dir/UPSTREAM")" = 7f163a8579fd412b4cae4eb4b9cd1d2932a42254
+test "$(sed -n 's/^path=//p' "$contract_dir/UPSTREAM")" = contracts/migration-operation/v1
+test "$(sed -n 's/^commit=//p' "$contract_dir/UPSTREAM")" = d2331a707015fc2bf06640c59d303e0fe48e091d
 test "$(sed -n 's/^sha256sums=//p' "$contract_dir/UPSTREAM")" = "$(sha256sum "$contract_dir/SHA256SUMS" | cut -d' ' -f1)"
 grep -Fq "\"fingerprint\":\"$fingerprint\"" "$contract_dir/contract.json"
 grep -Fq "\"sourceFingerprint\":\"$source_fingerprint\"" "$contract_dir/contract.json"

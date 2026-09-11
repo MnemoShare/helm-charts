@@ -1,7 +1,9 @@
-# Deployment contract v3
+# Deployment contract v1
 
-Version 3 adds executable profiles, named external persistence universes, and
-durable non-collection resources. It does not modify or reinterpret v2.
+This is the canonical pre-1.0 deployment grammar. It includes executable
+profiles, named external persistence universes, and durable non-collection
+resources. The bundle is regenerated from typed application declarations on
+every build; its fingerprint identifies that exact projection.
 
 A profile selection is disjunctive normal form: `selection` is a list of
 alternatives, and every condition in an alternative's `all` list must match.
@@ -21,6 +23,7 @@ accepted configuration without enumerating the unbounded environment domain.
 migration lifecycle. A `durable_resource` tells deployment that state must
 survive process replacement without falsely describing it as a collection.
 
-`contract.json` is generated from typed process manifests. The schema and
-conformance vectors are frozen once v3 is published. Fingerprints use SHA-256
-over RFC 8785 JCS of the complete contract with `fingerprint` set to `""`.
+`contract.json` is generated from typed process manifests. Fingerprints use
+SHA-256 over RFC 8785 JCS of the complete contract with `fingerprint` set to
+`""`. Immutability begins with the first 1.0 release; later grammar changes
+publish a new adjacent version and a generated transition.

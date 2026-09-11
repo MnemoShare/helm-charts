@@ -25,11 +25,11 @@
 {{- if eq $port 25 }}{{- $hasSMTPPort = true }}{{- end }}
 {{- end }}
 {{- if not $hasSMTPPort }}{{- fail "emailGateway.listenPorts must include port 25 while the Service targets the fixed smtp port" }}{{- end }}
-{{- include "mnemoshare.requireDeploymentContractV4Identity" . }}
-{{- $facts := include "mnemoshare.emailGatewayV4" . | fromJson }}
+{{- include "mnemoshare.requireDeploymentContractIdentity" . }}
+{{- $facts := include "mnemoshare.emailGateway" . | fromJson }}
 {{- if hasKey $seenListenPorts (printf "%d" ($facts.profile.probe.port | int)) }}{{- fail (printf "emailGateway.listenPorts SMTP listener collides with deployment-contract v4 probe port %d" ($facts.profile.probe.port | int)) }}{{- end }}
 {{- if and ($facts.profile.liveness_probe.port | int) (hasKey $seenListenPorts (printf "%d" ($facts.profile.liveness_probe.port | int))) }}{{- fail (printf "emailGateway.listenPorts SMTP listener collides with deployment-contract v4 liveness port %d" ($facts.profile.liveness_probe.port | int)) }}{{- end }}
-{{- include "mnemoshare.validateEmailGatewayExtraEnvV4" . }}
+{{- include "mnemoshare.validateEmailGatewayExtraEnv" . }}
 {{- $durables := $facts.profile.durable_resources | default list }}
 {{- $durableProfile := gt (len $durables) 0 }}
 {{- $durable := dict }}
@@ -88,7 +88,7 @@ spec:
       - name: email-gateway
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: {{ if and .Values.migrationOperation .Values.migrationOperation.enabled (eq .Values.migrationOperation.phase "up") }}{{ include "mnemoshare.writerImage" (dict "root" . "name" "email-gateway") | quote }}{{ else }}{{ include "mnemoshare.contractV4ApplicationImage" . | quote }}{{ end }}
+        image: {{ if and .Values.migrationOperation .Values.migrationOperation.enabled (eq .Values.migrationOperation.phase "up") }}{{ include "mnemoshare.writerImage" (dict "root" . "name" "email-gateway") | quote }}{{ else }}{{ include "mnemoshare.contractApplicationImage" . | quote }}{{ end }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command: [{{ $facts.executable.path | quote }}]
         ports:

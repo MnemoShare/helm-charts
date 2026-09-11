@@ -1,6 +1,6 @@
 {{- if .Values.mcp.enabled }}
-{{- include "mnemoshare.validateMCPContractV2" . }}
-{{- $process := include "mnemoshare.deploymentProcessV2" (dict "root" . "id" "mcp-admin") | fromJson }}
+{{- include "mnemoshare.validateMCPContract" . }}
+{{- $process := include "mnemoshare.deploymentDefaultProfile" (dict "root" . "id" "mcp-admin") | fromJson }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

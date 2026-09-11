@@ -21,8 +21,9 @@
     "commands": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["plan", "apply", "verify"],
+      "required": ["reset", "plan", "apply", "verify"],
       "properties": {
+        "reset": {"$ref": "#/$defs/resetCommand"},
         "plan": {"$ref": "#/$defs/planCommand"},
         "apply": {"$ref": "#/$defs/applyCommand"},
         "verify": {"$ref": "#/$defs/verifyCommand"}
@@ -67,6 +68,15 @@
     }
   },
   "$defs": {
+    "resetCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "executable": {"const": "/usr/local/bin/mnemoshare-migrate"},
+        "args": {"const": ["pre-1-reset-format-ledger", "--exclusive", "--confirm-before-first-1.0"]}
+      },
+      "required": ["executable", "args"]
+    },
     "planCommand": {
       "type": "object",
       "additionalProperties": false,

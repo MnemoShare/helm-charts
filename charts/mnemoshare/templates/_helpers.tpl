@@ -34,64 +34,44 @@ Create a default fully qualified app name.
 
 {{/* Bind contract-governed peers to a declared immutable application identity. */}}
 {{- define "mnemoshare.requireDeploymentContractIdentity" -}}
-{{- $expectedCommit := "eb6da48f6f874514c07cd6bf1d6daffaf9c6b101" -}}
-{{- if ne .Values.deploymentContractV2.sourceCommit $expectedCommit -}}{{- fail (printf "deploymentContractV2.sourceCommit must equal vendored application commit %s" $expectedCommit) -}}{{- end -}}
-{{- $raw := required "vendored deployment contract is required" (.Files.Get "tests/contracts/deployment/v2/contract.json") -}}
+{{- $expectedCommit := trim (required "vendored deployment contract provenance is required" (.Files.Get "tests/contracts/deployment/v1/UPSTREAM")) -}}
+{{- $expectedCommit = regexFind "(?m)^commit=([a-f0-9]{40})$" $expectedCommit | trimPrefix "commit=" -}}
+{{- if ne .Values.deploymentContract.sourceCommit $expectedCommit -}}{{- fail (printf "deploymentContract.sourceCommit must equal vendored application commit %s" $expectedCommit) -}}{{- end -}}
+{{- $raw := required "vendored deployment contract is required" (.Files.Get "tests/contracts/deployment/v1/contract.json") -}}
 {{- $contract := fromJson $raw -}}
-{{- if ne .Values.deploymentContractV2.contractFingerprint $contract.fingerprint -}}{{- fail (printf "deploymentContractV2.contractFingerprint must equal vendored contract fingerprint %s" $contract.fingerprint) -}}{{- end -}}
-{{- $digest := required "deploymentContractV2.imageDigest is required for contract-governed MCP/SFTP" .Values.deploymentContractV2.imageDigest -}}
-{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}{{- fail "deploymentContractV2.imageDigest must be sha256:<64 lowercase hex>" -}}{{- end -}}
-{{- if ne $digest .Values.image.digest -}}{{- fail "deploymentContractV2.imageDigest must equal the global image.digest actually selected for contract-governed peers" -}}{{- end -}}
+{{- if ne .Values.deploymentContract.contractFingerprint $contract.fingerprint -}}{{- fail (printf "deploymentContract.contractFingerprint must equal vendored contract fingerprint %s" $contract.fingerprint) -}}{{- end -}}
+{{- $digest := required "deploymentContract.imageDigest is required for contract-governed peers" .Values.deploymentContract.imageDigest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}{{- fail "deploymentContract.imageDigest must be sha256:<64 lowercase hex>" -}}{{- end -}}
+{{- if ne $digest .Values.image.digest -}}{{- fail "deploymentContract.imageDigest must equal the global image.digest actually selected for contract-governed peers" -}}{{- end -}}
 {{- end -}}
 
 {{- define "mnemoshare.contractApplicationImage" -}}
-{{- printf "%s@%s" (required "image.repository is required" .Values.image.repository) .Values.deploymentContractV2.imageDigest -}}
+{{- printf "%s@%s" (required "image.repository is required" .Values.image.repository) .Values.deploymentContract.imageDigest -}}
 {{- end -}}
 
-{{/* Bind v4 contract-governed peers to a declared immutable application identity. */}}
-{{- define "mnemoshare.requireDeploymentContractV4Identity" -}}
-{{- $expectedCommit := "9606120d4d43b42d8ed87cd2ebaa2bf05a726979" -}}
-{{- if ne .Values.deploymentContractV4.sourceCommit $expectedCommit -}}{{- fail (printf "deploymentContractV4.sourceCommit must equal vendored application commit %s" $expectedCommit) -}}{{- end -}}
-{{- $raw := required "vendored deployment contract v4 is required" (.Files.Get "tests/contracts/deployment/v4/contract.json") -}}
+{{- define "mnemoshare.deploymentExecutable" -}}
+{{- $raw := required "vendored tests/contracts/deployment/v1/contract.json is required" (.root.Files.Get "tests/contracts/deployment/v1/contract.json") -}}
 {{- $contract := fromJson $raw -}}
-{{- if ne .Values.deploymentContractV4.contractFingerprint $contract.fingerprint -}}{{- fail (printf "deploymentContractV4.contractFingerprint must equal vendored contract fingerprint %s" $contract.fingerprint) -}}{{- end -}}
-{{- $digest := required "deploymentContractV4.imageDigest is required for contract-governed emailgateway" .Values.deploymentContractV4.imageDigest -}}
-{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}{{- fail "deploymentContractV4.imageDigest must be sha256:<64 lowercase hex>" -}}{{- end -}}
-{{- if ne $digest .Values.image.digest -}}{{- fail "deploymentContractV4.imageDigest must equal the global image.digest actually selected for contract-governed peers" -}}{{- end -}}
-{{- end -}}
-
-{{- define "mnemoshare.contractV4ApplicationImage" -}}
-{{- printf "%s@%s" (required "image.repository is required" .Values.image.repository) .Values.deploymentContractV4.imageDigest -}}
-{{- end -}}
-
-{{- define "mnemoshare.deploymentExecutableV4" -}}
-{{- $raw := required "vendored tests/contracts/deployment/v4/contract.json is required" (.root.Files.Get "tests/contracts/deployment/v4/contract.json") -}}
-{{- $contract := fromJson $raw -}}
-{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v4" -}}{{- fail "vendored deployment contract is not v4" -}}{{- end -}}
+{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v1" -}}{{- fail "vendored deployment contract is not canonical v1" -}}{{- end -}}
 {{- $found := dict -}}
 {{- range $contract.executables -}}{{- if eq .id $.id -}}{{- $_ := set $found "executable" . -}}{{- end -}}{{- end -}}
 {{- if not (hasKey $found "executable") -}}{{- fail (printf "vendored deployment contract has no executable %s" .id) -}}{{- end -}}
 {{- toJson (get $found "executable") -}}
 {{- end -}}
 
-{{- define "mnemoshare.deploymentProfileV4" -}}
-{{- $executable := include "mnemoshare.deploymentExecutableV4" (dict "root" .root "id" .executable) | fromJson -}}
+{{- define "mnemoshare.deploymentProfile" -}}
+{{- $executable := include "mnemoshare.deploymentExecutable" (dict "root" .root "id" .executable) | fromJson -}}
 {{- $found := dict -}}
 {{- range $executable.profiles -}}{{- if eq .id $.profile -}}{{- $_ := set $found "profile" . -}}{{- end -}}{{- end -}}
 {{- if not (hasKey $found "profile") -}}{{- fail (printf "vendored deployment executable %s has no profile %s" .executable .profile) -}}{{- end -}}
 {{- toJson (get $found "profile") -}}
 {{- end -}}
 
-{{- define "mnemoshare.deploymentProcessV2" -}}
-{{- $raw := required "vendored tests/contracts/deployment/v2/contract.json is required" (.root.Files.Get "tests/contracts/deployment/v2/contract.json") -}}
-{{- $contract := fromJson $raw -}}
-{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v2" -}}{{- fail "vendored deployment contract is not v2" -}}{{- end -}}
-{{- $found := dict -}}
-{{- range $contract.processes -}}{{- if eq .id $.id -}}{{- $_ := set $found "process" . -}}{{- end -}}{{- end -}}
-{{- if not (hasKey $found "process") -}}{{- fail (printf "vendored deployment contract has no process %s" .id) -}}{{- end -}}
-{{- $process := get $found "process" -}}
-{{- if ne $process.persistence "none" -}}{{- fail (printf "deployment process %s must remain persistence=none" .id) -}}{{- end -}}
-{{- toJson $process -}}
+{{- define "mnemoshare.deploymentDefaultProfile" -}}
+{{- $executable := include "mnemoshare.deploymentExecutable" (dict "root" .root "id" .id) | fromJson -}}
+{{- $profile := include "mnemoshare.deploymentProfile" (dict "root" .root "executable" .id "profile" $executable.default_profile) | fromJson -}}
+{{- $_ := set $profile "executable" $executable.path -}}
+{{- toJson $profile -}}
 {{- end -}}
 
 {{- define "mnemoshare.requireUnifiedComponentImage" -}}
@@ -99,32 +79,32 @@ Create a default fully qualified app name.
 {{- $component := .component -}}
 {{- $name := .name -}}
 {{- if and $component.repository (ne $component.repository $root.Values.image.repository) -}}
-{{- fail (printf "%s.image.repository is retired by deployment contract v2; use the unified image.repository" $name) -}}
+{{- fail (printf "%s.image.repository is retired by deployment contract v1; use the unified image.repository" $name) -}}
 {{- end -}}
 {{- if $component.tag -}}
-{{- fail (printf "%s.image.tag is retired by deployment contract v2; contract-governed peers require a digest" $name) -}}
+{{- fail (printf "%s.image.tag is retired by deployment contract v1; contract-governed peers require a digest" $name) -}}
 {{- end -}}
-{{- if and $component.digest (ne $component.digest $root.Values.deploymentContractV2.imageDigest) -}}
-{{- fail (printf "%s.image.digest is retired by deployment contract v2; use the unified image.digest" $name) -}}
+{{- if and $component.digest (ne $component.digest $root.Values.deploymentContract.imageDigest) -}}
+{{- fail (printf "%s.image.digest is retired by the deployment contract; use the unified image.digest" $name) -}}
 {{- end -}}
 {{- end -}}
 
-{{- define "mnemoshare.validateMCPContractV2" -}}
+{{- define "mnemoshare.validateMCPContract" -}}
 {{- include "mnemoshare.requireDeploymentContractIdentity" . -}}
 {{- include "mnemoshare.requireUnifiedComponentImage" (dict "root" . "component" .Values.mcp.image "name" "mcp") -}}
-{{- if ne .Values.mcp.transport.type "http" -}}{{- fail "mcp.transport.type is fixed to http by deployment contract v2; stdio Kubernetes deployments are no longer supported" -}}{{- end -}}
-{{- if ne (int .Values.mcp.transport.http.containerPort) 9222 -}}{{- fail "mcp.transport.http.containerPort is fixed to 9222 by deployment contract v2; vary only mcp.service.port" -}}{{- end -}}
+{{- if ne .Values.mcp.transport.type "http" -}}{{- fail "mcp.transport.type is fixed to http by deployment contract v1; stdio Kubernetes deployments are no longer supported" -}}{{- end -}}
+{{- if ne (int .Values.mcp.transport.http.containerPort) 9222 -}}{{- fail "mcp.transport.http.containerPort is fixed to 9222 by deployment contract v1; vary only mcp.service.port" -}}{{- end -}}
 {{- if and (hasKey .Values.mcp.transport.http "port") (ne (int .Values.mcp.transport.http.port) (int .Values.mcp.service.port)) -}}{{- fail "mcp.transport.http.port is retired; keep it equal to mcp.service.port while migrating values" -}}{{- end -}}
-{{- if ne .Values.mcp.logging.level "info" -}}{{- fail "mcp.logging.level is fixed to info by deployment contract v2" -}}{{- end -}}
-{{- if ne .Values.mcp.logging.format "json" -}}{{- fail "mcp.logging.format is fixed to json by deployment contract v2" -}}{{- end -}}
+{{- if ne .Values.mcp.logging.level "info" -}}{{- fail "mcp.logging.level is fixed to info by deployment contract v1" -}}{{- end -}}
+{{- if ne .Values.mcp.logging.format "json" -}}{{- fail "mcp.logging.format is fixed to json by deployment contract v1" -}}{{- end -}}
 {{- if and (not .Values.mcp.apiKey.existingSecret) (not .Values.mcp.apiKey.key) -}}{{- fail "mcp.enabled requires mcp.apiKey.existingSecret or mcp.apiKey.key; the chart will not render a dangling secretKeyRef" -}}{{- end -}}
 {{- end -}}
 
-{{- define "mnemoshare.validateSFTPContractV2" -}}
+{{- define "mnemoshare.validateSFTPContract" -}}
 {{- include "mnemoshare.requireDeploymentContractIdentity" . -}}
 {{- include "mnemoshare.requireUnifiedComponentImage" (dict "root" . "component" .Values.sftpGateway.image "name" "sftpGateway") -}}
 {{- $command := toJson .Values.sftpGateway.command -}}
-{{- if and (ne $command "[]") (ne $command "[\"/usr/local/bin/sftp-gateway\"]") -}}{{- fail "sftpGateway.command is fixed to [/usr/local/bin/sftp-gateway] by deployment contract v2" -}}{{- end -}}
+{{- if and (ne $command "[]") (ne $command "[\"/usr/local/bin/sftp-gateway\"]") -}}{{- fail "sftpGateway.command is fixed to [/usr/local/bin/sftp-gateway] by deployment contract v1" -}}{{- end -}}
 {{- end -}}
 
 {{/*
@@ -176,11 +156,11 @@ phases. Ordinary startup remains fail-closed in the application.
 {{- if and .Values.migrationOperation .Values.migrationOperation.enabled (has .Values.migrationOperation.phase (list "down" "apply" "verify")) }}true{{ else }}false{{ end }}
 {{- end }}
 
-{{/* Load the generated migration-operation/v2 contract owned by the application. */}}
+{{/* Load the generated migration-operation/v1 contract owned by the application. */}}
 {{- define "mnemoshare.migrationOperationContract" -}}
-{{- $raw := required "vendored tests/contracts/migration-operation/v2/contract.json is required" (.Files.Get "tests/contracts/migration-operation/v2/contract.json") -}}
+{{- $raw := required "vendored tests/contracts/migration-operation/v1/contract.json is required" (.Files.Get "tests/contracts/migration-operation/v1/contract.json") -}}
 {{- $contract := fromJson $raw -}}
-{{- if ne $contract.provenance.schema "mnemoshare.migration-operation.v2" -}}{{- fail "vendored migration operation contract is not v2" -}}{{- end -}}
+{{- if ne $contract.provenance.schema "mnemoshare.migration-operation.v1" -}}{{- fail "vendored migration operation contract is not v1" -}}{{- end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" $contract.fingerprint) -}}{{- fail "vendored migration operation contract has an invalid fingerprint" -}}{{- end -}}
 {{- toJson $contract -}}
 {{- end }}

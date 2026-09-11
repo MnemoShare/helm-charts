@@ -8,8 +8,8 @@ fi
 
 app_tree=$1
 app_commit=$2
-source_path=contracts/deployment/v2
-destination=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v2
+source_path=contracts/deployment/v1
+destination=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v1
 resolved=$(git -C "$app_tree" rev-parse --verify "${app_commit}^{commit}")
 if [ "$resolved" != "$app_commit" ]; then
   echo "APP_COMMIT must be the exact 40-character commit identity" >&2
@@ -33,16 +33,16 @@ EOF
 
 mkdir -p "$(dirname "$destination")"
 if [ -e "$destination" ]; then
-  [ -d "$destination" ] && [ ! -L "$destination" ] || { echo "vendored deployment/v2 must be a real directory" >&2; exit 1; }
+  [ -d "$destination" ] && [ ! -L "$destination" ] || { echo "vendored deployment/v1 must be a real directory" >&2; exit 1; }
   for frozen in README.md schema.json conformance.json; do
     [ -f "${destination}/${frozen}" ] && [ ! -L "${destination}/${frozen}" ] && cmp -s "${stage}/${frozen}" "${destination}/${frozen}" || {
-      echo "vendored deployment/v2 grammar differs; a new contract version is required" >&2
+      echo "vendored deployment/v1 grammar differs; a new contract version is required" >&2
       exit 1
     }
   done
   for entry in "$destination"/*; do
-    [ -f "$entry" ] && [ ! -L "$entry" ] || { echo "vendored deployment/v2 contains a non-regular entry" >&2; exit 1; }
-    case "$(basename "$entry")" in README.md|SHA256SUMS|schema.json|conformance.json|contract.json|UPSTREAM) ;; *) echo "vendored deployment/v2 contains an unmanaged entry" >&2; exit 1;; esac
+    [ -f "$entry" ] && [ ! -L "$entry" ] || { echo "vendored deployment/v1 contains a non-regular entry" >&2; exit 1; }
+    case "$(basename "$entry")" in README.md|SHA256SUMS|schema.json|conformance.json|contract.json|UPSTREAM) ;; *) echo "vendored deployment/v1 contains an unmanaged entry" >&2; exit 1;; esac
   done
   for mutable in contract.json SHA256SUMS UPSTREAM; do
     install -m 0644 "${stage}/${mutable}" "${destination}/${mutable}.new"

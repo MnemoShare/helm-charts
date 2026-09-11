@@ -1,11 +1,11 @@
 {{/* Resolve the one emailgateway profile selected by the exact environment emitted by this chart. */}}
-{{- define "mnemoshare.emailGatewayV4" -}}
-{{- $raw := required "vendored tests/contracts/deployment/v4/contract.json is required" (.Files.Get "tests/contracts/deployment/v4/contract.json") -}}
+{{- define "mnemoshare.emailGateway" -}}
+{{- $raw := required "vendored tests/contracts/deployment/v1/contract.json is required" (.Files.Get "tests/contracts/deployment/v1/contract.json") -}}
 {{- $contract := fromJson $raw -}}
-{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v4" -}}{{- fail "vendored deployment contract is not v4" -}}{{- end -}}
+{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v1" -}}{{- fail "vendored deployment contract is not v4" -}}{{- end -}}
 {{- $found := dict -}}
 {{- range $contract.executables -}}{{- if eq .id "emailgateway" -}}{{- $_ := set $found "executable" . -}}{{- end -}}{{- end -}}
-{{- if not (hasKey $found "executable") -}}{{- fail "vendored deployment contract v4 has no emailgateway executable" -}}{{- end -}}
+{{- if not (hasKey $found "executable") -}}{{- fail "vendored deployment contract v1 has no emailgateway executable" -}}{{- end -}}
 {{- $executable := get $found "executable" -}}
 {{- $env := dict "GATEWAY_MODE" .Values.emailGateway.mode -}}
 {{- $relayMode := eq .Values.emailGateway.mode "relay" -}}
@@ -42,8 +42,8 @@
 {{- end -}}
 
 {{/* Contract-controlled names cannot be redefined through the legacy escape hatch. */}}
-{{- define "mnemoshare.validateEmailGatewayExtraEnvV4" -}}
-{{- $facts := include "mnemoshare.emailGatewayV4" . | fromJson -}}
+{{- define "mnemoshare.validateEmailGatewayExtraEnv" -}}
+{{- $facts := include "mnemoshare.emailGateway" . | fromJson -}}
 {{- $reserved := dict "SMTP_AUTH_REQUIRED" true -}}
 {{- $_ := set $reserved $facts.executable.profile_selector true -}}
 {{- range $facts.executable.profiles -}}

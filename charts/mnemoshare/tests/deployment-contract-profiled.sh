@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-contract_dir=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v4
-expected_commit=9606120d4d43b42d8ed87cd2ebaa2bf05a726979
-expected_fingerprint=e2bda370b73474f8b127807b03ac0a035075dfb955933bdfe51eb7209942734b
+contract_dir=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v1
+expected_commit=fbe8a553d041855f6763b19bf7c618e85e5c6402
+expected_fingerprint=0e907f6cdb54423774cbe102acf0b73c440cebb0e82172eeed42371360009256
 
 test "$(sed -n 's/^repository=//p' "${contract_dir}/UPSTREAM")" = https://github.com/MnemoShare/mnemoshare.git
 test "$(sed -n 's/^commit=//p' "${contract_dir}/UPSTREAM")" = "$expected_commit"
-test "$(sed -n 's/^path=//p' "${contract_dir}/UPSTREAM")" = contracts/deployment/v4
+test "$(sed -n 's/^path=//p' "${contract_dir}/UPSTREAM")" = contracts/deployment/v1
 test "$(sed -n 's/^sha256sums=//p' "${contract_dir}/UPSTREAM")" = "$(sha256sum "${contract_dir}/SHA256SUMS" | cut -d' ' -f1)"
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
 jq -e --arg fingerprint "$expected_fingerprint" '
-  .provenance.schema == "mnemoshare.deployment-contract.v4"
+  .provenance.schema == "mnemoshare.deployment-contract.v1"
   and .fingerprint == $fingerprint
   and ([.executables[] | select(.id == "emailgateway" and .path == "/usr/local/bin/email-gateway") ] | length == 1)
 ' "${contract_dir}/contract.json" >/dev/null
@@ -83,9 +83,9 @@ digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 base=(
   --set customerId=test
   --set image.digest="$digest"
-  --set deploymentContractV4.sourceCommit="$expected_commit"
-  --set deploymentContractV4.contractFingerprint="$expected_fingerprint"
-  --set deploymentContractV4.imageDigest="$digest"
+  --set deploymentContract.sourceCommit="$expected_commit"
+  --set deploymentContract.contractFingerprint="$expected_fingerprint"
+  --set deploymentContract.imageDigest="$digest"
   --set emailGateway.enabled=true
 )
 
@@ -156,9 +156,9 @@ expect_failure 'not canonically spelled as 25' --set emailGateway.mode=gateway -
 expect_failure 'invalid listener' --set emailGateway.mode=gateway --set emailGateway.listenPorts=25:bogus
 expect_failure 'collides with deployment-contract v4 probe port 8080' --set emailGateway.mode=gateway --set-string 'emailGateway.listenPorts=25:plain\,8080:plain'
 expect_failure 'may not override' --set emailGateway.extraEnv[0].name=HEALTH_PORT --set emailGateway.extraEnv[0].value=9999
-expect_failure 'sourceCommit must equal' --set deploymentContractV4.sourceCommit=deadbeef
-expect_failure 'must equal the global image.digest' --set deploymentContractV4.imageDigest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-expect_failure 'sourceCommit must equal' --set deploymentContractV4.sourceCommit=
+expect_failure 'sourceCommit must equal' --set deploymentContract.sourceCommit=deadbeef
+expect_failure 'must equal the global image.digest' --set deploymentContract.imageDigest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+expect_failure 'sourceCommit must equal' --set deploymentContract.sourceCommit=
 expect_failure 'image.digest pinned as sha256' --set image.digest=
 
 existing_claim=$(render_profile inbound-relay --set emailGateway.mode=inbound-relay --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.persistence.enabled=false --set emailGateway.relay.persistence.existingClaim=external-spool)
@@ -187,10 +187,10 @@ grep -Fq 'port: 8080' <<<"$networked"
 ! grep -Fq 'port: 8081' <<<"$networked"
 
 coexist=$(helm template coexist "$chart_dir" "${base[@]}" \
-  --set deploymentContractV2.sourceCommit=eb6da48f6f874514c07cd6bf1d6daffaf9c6b101 \
-  --set deploymentContractV2.contractFingerprint=0ce6b3e15a0db7de1ee0c4a6baab10f46c3dded5732110484fefc65dda248a31 \
-  --set deploymentContractV2.imageDigest="$digest" \
+  --set deploymentContract.sourceCommit=fbe8a553d041855f6763b19bf7c618e85e5c6402 \
+  --set deploymentContract.contractFingerprint=0e907f6cdb54423774cbe102acf0b73c440cebb0e82172eeed42371360009256 \
+  --set deploymentContract.imageDigest="$digest" \
   --set mcp.enabled=true --set mcp.apiKey.key=test)
 test "$(grep -Fc "image: \"mnemoshare/mnemoshare@${digest}\"" <<<"$coexist")" -ge 2
 
-echo 'deployment contract v4 consumer tests passed'
+echo 'deployment contract v1 consumer tests passed'

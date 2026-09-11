@@ -7,7 +7,7 @@
 {{- $cleanupName := printf "%s-format-migration-cleanup" $fullname }}
 {{- $targetImage := include "mnemoshare.applicationImage" (dict "root" . "name" "migration cleanup target") }}
 {{- $expectedEmailProfile := "" }}
-{{- if .Values.emailGateway.enabled }}{{- $facts := include "mnemoshare.emailGatewayV4" . | fromJson }}{{- $expectedEmailProfile = $facts.profile.id }}{{- end }}
+{{- if .Values.emailGateway.enabled }}{{- $facts := include "mnemoshare.emailGateway" . | fromJson }}{{- $expectedEmailProfile = $facts.profile.id }}{{- end }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:

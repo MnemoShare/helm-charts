@@ -2,16 +2,16 @@
 set -euo pipefail
 
 chart_dir=${1:-$(cd "$(dirname "$0")/.." && pwd)}
-contract_dir=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v2
-upstream=eb6da48f6f874514c07cd6bf1d6daffaf9c6b101
-fingerprint=0ce6b3e15a0db7de1ee0c4a6baab10f46c3dded5732110484fefc65dda248a31
+contract_dir=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v1
+upstream=fbe8a553d041855f6763b19bf7c618e85e5c6402
+fingerprint=0e907f6cdb54423774cbe102acf0b73c440cebb0e82172eeed42371360009256
 digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-identity=(--set "deploymentContractV2.sourceCommit=${upstream}" --set "deploymentContractV2.contractFingerprint=${fingerprint}" --set "deploymentContractV2.imageDigest=${digest}" --set "image.digest=${digest}")
+identity=(--set "deploymentContract.sourceCommit=${upstream}" --set "deploymentContract.contractFingerprint=${fingerprint}" --set "deploymentContract.imageDigest=${digest}" --set "image.digest=${digest}")
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
 test "$(sed -n 's/^commit=//p' "${contract_dir}/UPSTREAM")" = "$upstream"
-test "$(sed -n 's/^path=//p' "${contract_dir}/UPSTREAM")" = contracts/deployment/v2
+test "$(sed -n 's/^path=//p' "${contract_dir}/UPSTREAM")" = contracts/deployment/v1
 test "$(sed -n 's/^sha256sums=//p' "${contract_dir}/UPSTREAM")" = "$(sha256sum "${contract_dir}/SHA256SUMS" | cut -d' ' -f1)"
-jq -e '.provenance.schema == "mnemoshare.deployment-contract.v2" and (.processes | map(select(.id == "mcp-admin" and .persistence == "none" and .executable == "/usr/local/bin/mcp-admin" and .args == ["--transport=http","--http-addr=:9222","--log-level=info","--log-format=json"] and .probe.port == 9222)) | length == 1) and (.processes | map(select(.id == "sftp-gateway" and .persistence == "none" and .executable == "/usr/local/bin/sftp-gateway" and .probe.path == "/readyz" and .probe.port == 8090 and .liveness_probe.path == "/healthz")) | length == 1)' "${contract_dir}/contract.json" >/dev/null
+jq -e '.provenance.schema == "mnemoshare.deployment-contract.v1" and (.executables | map(select(.id == "mcp-admin" and .path == "/usr/local/bin/mcp-admin" and .default_profile == "default" and (.profiles | any(.id == "default" and .persistence == "none" and .args == ["--transport=http","--http-addr=:9222","--log-level=info","--log-format=json"] and .probe.port == 9222)))) | length == 1) and (.executables | map(select(.id == "sftp-gateway" and .path == "/usr/local/bin/sftp-gateway" and .default_profile == "default" and (.profiles | any(.id == "default" and .persistence == "none" and .probe.path == "/readyz" and .probe.port == 8090 and .liveness_probe.path == "/healthz")))) | length == 1)' "${contract_dir}/contract.json" >/dev/null
 
 render=$(helm template contract "$chart_dir" --set customerId=test "${identity[@]}" --set sftpGateway.enabled=true --set sftpGateway.hostKey.existingSecret=host-key --set encryption.key=test --set sftpGateway.licenseCapabilityEnabled=true --set mcp.enabled=true --set mcp.apiKey.key=mcp_test)
 source_manifest() {
@@ -67,13 +67,13 @@ expect_failure 'sftpGateway.image.repository=legacy/image' 'sftpGateway.image.re
 expect_failure 'sftpGateway.command[0]=legacy' 'sftpGateway.command is fixed'
 expect_failure 'mcp.image.tag=legacy' 'mcp.image.tag is retired'
 expect_failure 'mcp.image.digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'mcp.image.digest is retired'
-expect_failure 'deploymentContractV2.sourceCommit=deadbeef' 'deploymentContractV2.sourceCommit must equal vendored application commit'
-expect_failure 'deploymentContractV2.contractFingerprint=deadbeef' 'deploymentContractV2.contractFingerprint must equal vendored contract fingerprint'
-expect_failure 'image.digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'deploymentContractV2.imageDigest must equal the global image.digest'
+expect_failure 'deploymentContract.sourceCommit=deadbeef' 'deploymentContract.sourceCommit must equal vendored application commit'
+expect_failure 'deploymentContract.contractFingerprint=deadbeef' 'deploymentContract.contractFingerprint must equal vendored contract fingerprint'
+expect_failure 'image.digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'deploymentContract.imageDigest must equal the global image.digest'
 
 if output=$(helm template missing "$chart_dir" --set customerId=test "${identity[@]}" --set mcp.enabled=true 2>&1); then echo 'MCP rendered without API key binding' >&2; exit 1; fi
 grep -Fq 'mcp.enabled requires mcp.apiKey.existingSecret or mcp.apiKey.key' <<<"$output"
 if output=$(helm template unpinned "$chart_dir" --set customerId=test --set mcp.enabled=true --set mcp.apiKey.key=x 2>&1); then echo 'MCP rendered without immutable deployment identity' >&2; exit 1; fi
-grep -Fq 'deploymentContractV2.sourceCommit must equal vendored application commit' <<<"$output"
-if output=$(helm template missing-digest "$chart_dir" --set customerId=test --set "deploymentContractV2.sourceCommit=${upstream}" --set "deploymentContractV2.contractFingerprint=${fingerprint}" --set mcp.enabled=true --set mcp.apiKey.key=x 2>&1); then echo 'MCP rendered without immutable image digest binding' >&2; exit 1; fi
-grep -Fq 'deploymentContractV2.imageDigest is required' <<<"$output"
+grep -Fq 'deploymentContract.sourceCommit must equal vendored application commit' <<<"$output"
+if output=$(helm template missing-digest "$chart_dir" --set customerId=test --set "deploymentContract.sourceCommit=${upstream}" --set "deploymentContract.contractFingerprint=${fingerprint}" --set mcp.enabled=true --set mcp.apiKey.key=x 2>&1); then echo 'MCP rendered without immutable image digest binding' >&2; exit 1; fi
+grep -Fq 'deploymentContract.imageDigest is required' <<<"$output"

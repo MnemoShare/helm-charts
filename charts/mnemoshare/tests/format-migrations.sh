@@ -17,12 +17,9 @@ base=(
   --set ingress.enabled=false
   --set autoscaling.enabled=true
   --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  --set deploymentContractV2.sourceCommit=eb6da48f6f874514c07cd6bf1d6daffaf9c6b101
-  --set deploymentContractV2.contractFingerprint=0ce6b3e15a0db7de1ee0c4a6baab10f46c3dded5732110484fefc65dda248a31
-  --set deploymentContractV2.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  --set deploymentContractV4.sourceCommit=9606120d4d43b42d8ed87cd2ebaa2bf05a726979
-  --set deploymentContractV4.contractFingerprint=e2bda370b73474f8b127807b03ac0a035075dfb955933bdfe51eb7209942734b
-  --set deploymentContractV4.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  --set deploymentContract.sourceCommit=fbe8a553d041855f6763b19bf7c618e85e5c6402
+  --set deploymentContract.contractFingerprint=0e907f6cdb54423774cbe102acf0b73c440cebb0e82172eeed42371360009256
+  --set deploymentContract.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 )
 
 render=$(helm template test "$chart_dir" "${base[@]}" \
@@ -140,8 +137,8 @@ stateful_render=$(helm template test "$chart_dir" "${base[@]}" \
   --set redis.external.host=redis.example.com)
 assert_image_in_source "$stateful_render" 'templates/workflow-worker-statefulset.yaml'
 assert_has 'command: ["/usr/local/bin/mnemoshare-migrate"]'
-assert_has 'args: ["plan", "--contract", "embedded", "--expect-contract-fingerprint", "b6ee7213b661ee246d6446b691a28f0503fb85bc452340ebccb9d9f6308fa404", "--result", "/migration/result.json", "--output", "/migration/plan.json"]'
-assert_has 'verify --contract embedded --expect-contract-fingerprint "b6ee7213b661ee246d6446b691a28f0503fb85bc452340ebccb9d9f6308fa404" --expect-plan-digest "$(cat /migration/plan-digest)"'
+assert_has 'args: ["plan", "--contract", "embedded", "--expect-contract-fingerprint", "861e1d6871b2f3bc2cf5b8405208cc4542945006206462e5b3a7520881a7e668", "--result", "/migration/result.json", "--output", "/migration/plan.json"]'
+assert_has 'verify --contract embedded --expect-contract-fingerprint "861e1d6871b2f3bc2cf5b8405208cc4542945006206462e5b3a7520881a7e668" --expect-plan-digest "$(cat /migration/plan-digest)"'
 assert_has 'case "${decision}" in'
 assert_has 'selected_pods="$(kubectl get pods -l "${selector}" -o name)"'
 assert_has 'if [ -n "${selected_pods}" ]; then'
@@ -297,7 +294,7 @@ if decision_is_valid_value $'ordinary\nunterminated'; then
   exit 1
 fi
 assert_has 'exec /usr/local/bin/mnemoshare-migrate apply \'
-assert_has '--contract embedded --expect-contract-fingerprint "b6ee7213b661ee246d6446b691a28f0503fb85bc452340ebccb9d9f6308fa404" --expect-plan-digest "$(cat /migration/plan-digest)" \'
+assert_has '--contract embedded --expect-contract-fingerprint "861e1d6871b2f3bc2cf5b8405208cc4542945006206462e5b3a7520881a7e668" --expect-plan-digest "$(cat /migration/plan-digest)" \'
 assert_has '--exclusive --bootstrap-policy provision-untracked'
 assert_has '"helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded'
 if [ "$(grep -Ec '^[[:space:]]+"helm.sh/hook-delete-policy": before-hook-creation$' <<<"$render")" -lt 7 ]; then

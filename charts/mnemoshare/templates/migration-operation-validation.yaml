@@ -6,7 +6,7 @@
 {{- fail "migrationOperation.contractFingerprint must be a 64-character lowercase hex digest" }}
 {{- end }}
 {{- if ne $fingerprint (include "mnemoshare.migrationOperationExpectedContractFingerprint" .) }}
-{{- fail (printf "migrationOperation.contractFingerprint %s does not match the chart's vendored migration-operation/v2 contract %s" $fingerprint (include "mnemoshare.migrationOperationExpectedContractFingerprint" .)) }}
+{{- fail (printf "migrationOperation.contractFingerprint %s does not match the chart's vendored migration-operation/v1 contract %s" $fingerprint (include "mnemoshare.migrationOperationExpectedContractFingerprint" .)) }}
 {{- end }}
 {{- if not (has $phase (list "plan" "down" "apply" "verify" "up")) }}
 {{- fail "migrationOperation.phase must be one of plan, down, apply, verify, or up when migrationOperation.enabled=true" }}

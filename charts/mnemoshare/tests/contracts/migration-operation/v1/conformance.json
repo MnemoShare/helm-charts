@@ -2,6 +2,7 @@
   "contract": "mnemoshare.migration-operation.v1",
   "fingerprintAlgorithm": "SHA-256 over RFC 8785 JCS of the contract with fingerprint set to the empty string",
   "commands": [
+    "pre-1-reset-format-ledger --exclusive --confirm-before-first-1.0",
     "plan --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --output \u003cplan-file\u003e --result \u003cresult-file\u003e",
     "apply --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e --exclusive --bootstrap-policy provision-untracked",
     "verify --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e"
@@ -14,16 +15,11 @@
     "primary"
   ],
   "deploymentContractBytes": {
-    "v2/README.md": "787169fe49d505fd86f92374202e543d68fa38baaf633cc00a919325eef481b8",
-    "v2/SHA256SUMS": "f37856db7ea5d138d1de6903e9e3f99621f6e8726db601944bf0b7096e7cb934",
-    "v2/conformance.json": "ecf480bc7039fed2954242908766f050e07f031c08dfad09c87ef52aa72cb9aa",
-    "v2/contract.json": "06d185fb606dc0faf5aaf5c3fe06e75c3cafa46d6cea036836a3c83ea0adcdb7",
-    "v2/schema.json": "c1e3587496e09cf4d67f073e8b730d05e870b35f282d862b497ddae1a833af9c",
-    "v3/README.md": "dff4cad9dc8b075d1bb45d148819c3938220272a5dd2c2b02d52cfba03e640e9",
-    "v3/SHA256SUMS": "351bd9a15318925f677280a47e1d6949d02fbc1d97fa98a28915b31c7ed25ae1",
-    "v3/conformance.json": "9c6ca2d750df5ef60d234150637502144565a7dca2bd4310efef1187164afaf1",
-    "v3/contract.json": "ffe82615664c39b5ebd6c92ebe57f6c70a2b5259d5b8c84ef363b99b755e4055",
-    "v3/schema.json": "3cfe1154a91c30bb7d7b8b37c64366b26d5c04b756f2c9405bd6c943944fcce8"
+    "v1/README.md": "405f2d8e9902a40b6aee973f47c6869bba7cec9331b315c5d993b5d6c69f3288",
+    "v1/SHA256SUMS": "9b53f5590444ccf6fdccb30542dd82d3f8d5c2aab94606992891285c5e0106a1",
+    "v1/conformance.json": "f5d7fb3ee63b106b111c382bebc3c02c3e434b89ccd02b6e33072a3638dabf26",
+    "v1/contract.json": "7d4b5933d2987937be7665417f023d98a1adaa396451d3d02738ddbb6f19330b",
+    "v1/schema.json": "ad2dac55748f57d07e528f9bf55569a2e2f0bd04aaad31e3c80fba4c6222ffd0"
   },
   "lifecycle": [
     "plan-all",
