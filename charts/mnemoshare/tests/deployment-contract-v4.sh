@@ -2,8 +2,8 @@
 set -euo pipefail
 
 contract_dir=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v4
-expected_commit=3c28e2ff106c9d14aa9d2244d693f5c7f162a314
-expected_fingerprint=aa2dcc9517fc54cf080a29b28281eb325e35c36b0458e69ada8bd154b63e7286
+expected_commit=9606120d4d43b42d8ed87cd2ebaa2bf05a726979
+expected_fingerprint=e2bda370b73474f8b127807b03ac0a035075dfb955933bdfe51eb7209942734b
 
 test "$(sed -n 's/^repository=//p' "${contract_dir}/UPSTREAM")" = https://github.com/MnemoShare/mnemoshare.git
 test "$(sed -n 's/^commit=//p' "${contract_dir}/UPSTREAM")" = "$expected_commit"
