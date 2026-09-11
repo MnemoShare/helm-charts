@@ -2,9 +2,12 @@
 set -euo pipefail
 
 chart_dir=${1:-charts/mnemoshare}
-fingerprint=b6ee7213b661ee246d6446b691a28f0503fb85bc452340ebccb9d9f6308fa404
-source_fingerprint=1281ad540022103ae747a32a14fb80d7f1b12db53209fdad26f66a3bb14be5d2
 contract_dir="$chart_dir/tests/contracts/migration-operation/v2"
+contract_schema=$(jq -er '.provenance.schema | select(test("^mnemoshare\\.migration-operation\\.v[0-9]+$"))' "$contract_dir/contract.json")
+contract_version=${contract_schema##*.}
+test "$contract_version" = v2
+fingerprint=$(jq -er '.fingerprint | select(test("^[a-f0-9]{64}$"))' "$contract_dir/contract.json")
+source_fingerprint=$(jq -er '.provenance.sourceFingerprint | select(test("^[a-f0-9]{64}$"))' "$contract_dir/contract.json")
 target=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 plan=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 base=(
@@ -32,6 +35,8 @@ grep -Fxq "sourceFingerprint=$source_fingerprint" "$contract_dir/UPSTREAM"
 
 for phase in plan down apply verify up; do
   render=$(helm template ci "$chart_dir" "${base[@]}" --set migrationOperation.phase="$phase")
+  grep -Fq "mnemoshare.io/migration-operation-contract: \"$contract_version\"" <<<"$render"
+  grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
   case "$phase" in
     plan)
       grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
@@ -46,6 +51,7 @@ for phase in plan down apply verify up; do
     down)
       deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$render")
       grep -Fq 'replicas: 0' <<<"$deployment"
+      grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$deployment"
       ! grep -q 'kind: Job' <<<"$render"
       ;;
     apply)

@@ -2,7 +2,7 @@
 {{- $fullname := include "mnemoshare.fullname" . }}
 {{- $phase := .Values.migrationOperation.phase }}
 {{- $operationID := .Values.migrationOperation.operationId }}
-{{- $fingerprint := .Values.migrationOperation.contractFingerprint }}
+{{- $fingerprint := include "mnemoshare.migrationOperationExpectedContractFingerprint" . }}
 {{- $universe := .Values.migrationOperation.universe | default "primary" }}
 {{- $planDigest := .Values.migrationOperation.planDigest | default "pending" }}
 {{- $planFile := "/migration/primary-plan.json" }}
@@ -15,8 +15,6 @@ metadata:
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: migration-operation
-    mnemoshare.io/migration-operation-contract: v1
-    mnemoshare.io/migration-operation-contract-fingerprint: {{ $fingerprint | quote }}
     mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
     mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
     mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
@@ -34,8 +32,7 @@ spec:
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migration-operation
-        mnemoshare.io/migration-operation-contract: v1
-        mnemoshare.io/migration-operation-contract-fingerprint: {{ $fingerprint | quote }}
+        {{- include "mnemoshare.migrationOperationContractLabels" . | nindent 8 }}
         mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
         mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
         mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
