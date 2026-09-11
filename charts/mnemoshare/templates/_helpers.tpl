@@ -50,7 +50,7 @@ Create a default fully qualified app name.
 
 {{/* Bind v4 contract-governed peers to a declared immutable application identity. */}}
 {{- define "mnemoshare.requireDeploymentContractV4Identity" -}}
-{{- $expectedCommit := "eb6da48f6f874514c07cd6bf1d6daffaf9c6b101" -}}
+{{- $expectedCommit := "3c28e2ff106c9d14aa9d2244d693f5c7f162a314" -}}
 {{- if ne .Values.deploymentContractV4.sourceCommit $expectedCommit -}}{{- fail (printf "deploymentContractV4.sourceCommit must equal vendored application commit %s" $expectedCommit) -}}{{- end -}}
 {{- $raw := required "vendored deployment contract v4 is required" (.Files.Get "tests/contracts/deployment/v4/contract.json") -}}
 {{- $contract := fromJson $raw -}}

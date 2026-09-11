@@ -20,8 +20,8 @@ base=(
   --set deploymentContractV2.sourceCommit=eb6da48f6f874514c07cd6bf1d6daffaf9c6b101
   --set deploymentContractV2.contractFingerprint=0ce6b3e15a0db7de1ee0c4a6baab10f46c3dded5732110484fefc65dda248a31
   --set deploymentContractV2.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  --set deploymentContractV4.sourceCommit=eb6da48f6f874514c07cd6bf1d6daffaf9c6b101
-  --set deploymentContractV4.contractFingerprint=f42eb9987b37e8e02405c6ba3032eac5e73e853100e06e4e008c1a853c437aa6
+  --set deploymentContractV4.sourceCommit=3c28e2ff106c9d14aa9d2244d693f5c7f162a314
+  --set deploymentContractV4.contractFingerprint=aa2dcc9517fc54cf080a29b28281eb325e35c36b0458e69ada8bd154b63e7286
   --set deploymentContractV4.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 )
 
