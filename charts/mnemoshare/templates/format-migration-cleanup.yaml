@@ -130,8 +130,8 @@ spec:
                   [ "${ready:-0}" = "${desired}" ] || { echo "${resource} has not reached its target replica count" >&2; exit 1; }
                 done
               fi
-              job_uid="$(kubectl get job "${JOB_NAME}" -o jsonpath='{.metadata.uid}')"
-              owner_patch='{"metadata":{"ownerReferences":[{"apiVersion":"batch/v1","kind":"Job","name":"'"${JOB_NAME}"'","uid":"'"${job_uid}"'"}]}}'
+              job_uid="$(kubectl get job "{{ $cleanupName }}" -o jsonpath='{.metadata.uid}')"
+              owner_patch='{"metadata":{"ownerReferences":[{"apiVersion":"batch/v1","kind":"Job","name":"{{ $cleanupName }}","uid":"'"${job_uid}"'"}]}}'
               for resource in \
                 serviceaccount/{{ $cleanupName }} \
                 role.rbac.authorization.k8s.io/{{ $cleanupName }} \
@@ -148,9 +148,6 @@ spec:
               kubectl delete configmaps \
                 -l 'app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=format-migration-state' \
                 --ignore-not-found
-          env:
-            - name: JOB_NAME
-              value: {{ $cleanupName }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
       {{- with .Values.nodeSelector }}

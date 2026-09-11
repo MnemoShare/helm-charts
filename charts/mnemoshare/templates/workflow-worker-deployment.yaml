@@ -45,18 +45,12 @@ spec:
         imagePullPolicy: {{ .Values.workflowWorker.image.pullPolicy }}
         # Override command to run the compiled workflow worker binary.
         command:
-          {{- toYaml (.Values.workflowWorker.command | default (list "/usr/local/bin/worker")) | nindent 10 }}
+          {{- toYaml (.Values.workflowWorker.command | default (list "/usr/local/bin/workflow-worker")) | nindent 10 }}
         env:
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
           value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
-        {{- if .Values.ices.enabled }}
-        # A dedicated ICES pod hosts mail-monitoring (BEC poller + pub/sub
-        # subscriber + sweepers). ICES_STANDALONE tells this worker's google
-        # engine to drop mail-monitoring so it is hosted exactly once.
-        - name: ICES_STANDALONE
-          value: "true"
-        {{- end }}
         # Database Configuration (supports MongoDB and PostgreSQL for distributed workers)
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}
@@ -205,9 +199,6 @@ spec:
         - name: S3_USE_SSL
           value: {{ .Values.s3.useSSL | quote }}
         {{- end }}
-        # API Base URL (for uploading files to MnemoShare)
-        - name: API_BASE_URL
-          value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}/api/v1"
         # Logging
         - name: LOG_LEVEL
           value: {{ .Values.workflowWorker.logLevel | default "info" | quote }}
@@ -234,8 +225,6 @@ spec:
         # extraction, Presidio NER, AI DLP, KMS envelope flag) — MUST match
         # the api Deployment's surface or the background engine will silently
         # skip integration work that the api previously did in-process.
-        # See templates/_helpers.tpl::mnemoshare.integrationEnv
-        {{- include "mnemoshare.integrationEnv" . | nindent 8 }}
         # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
         {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
         # API callback + platform email + embedded mail-monitoring — the worker's

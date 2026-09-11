@@ -38,6 +38,20 @@ render=$(helm template test "$chart_dir" "${base[@]}" \
   --set mcp.enabled=true \
   --set mcp.apiKey.key=mcp_test)
 
+for source in deployment.yaml workflow-worker-deployment.yaml ices-deployment.yaml \
+  inbound-gateway-deployment.yaml email-gateway-deployment.yaml \
+  format-migration-job.yaml; do
+  if ! awk -v source="# Source: mnemoshare/templates/${source}" '
+      $0 == source { active=1; next }
+      active && /^---$/ { exit }
+      active && /name: ENVIRONMENT/ { found=1 }
+      END { exit found ? 0 : 1 }
+    ' <<<"$render"; then
+    echo "${source} omitted the production environment" >&2
+    exit 1
+  fi
+done
+
 upgrade_render=$(helm template test "$chart_dir" "${base[@]}" --is-upgrade)
 
 apply_script() {
@@ -186,12 +200,11 @@ for image_override in \
   fi
 done
 
-tag_render=$(helm template test "$chart_dir" "${base[@]}" \
+if helm template test "$chart_dir" "${base[@]}" \
   --set formatMigrations.mode=operator \
   --set image.tag=compat-tag \
-  --set image.digest=)
-if ! grep -Fq 'image: "mnemoshare/mnemoshare:compat-tag"' <<<"$tag_render"; then
-  echo 'operator mode did not preserve historical tag image rendering' >&2
+  --set image.digest= >/dev/null 2>&1; then
+  echo 'operator mode accepted an image without the canonical deployment digest' >&2
   exit 1
 fi
 

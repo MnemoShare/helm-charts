@@ -76,14 +76,7 @@ spec:
         # Helm releases are never the local development posture. Keep this
         # explicit so the application cannot activate development-only key
         # behavior merely because ENVIRONMENT was omitted.
-        - name: ENVIRONMENT
-          value: "production"
-        {{- if .Values.ices.enabled }}
-        # Standalone ICES hosts mail-monitoring; suppress the embedded
-        # mail-monitoring engine here so it is registered exactly once.
-        - name: ICES_STANDALONE
-          value: "true"
-        {{- end }}
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         {{- if not .Values.ices.enabled }}
         # No standalone ICES: the API pod's embedded mail-monitoring engine
         # needs the webhook/interval env when mailMonitoring.enabled.

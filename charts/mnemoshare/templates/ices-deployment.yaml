@@ -46,10 +46,11 @@ spec:
         # Dedicated email-security binary (workerboot). Hosts mail-monitoring:
         # BEC poller + Pub/Sub subscriber + mail-security sweepers. It pins its
         # own worker engine set internally, so no selection env is set here.
-        {{- $icesCommand := .Values.ices.command | default (list "/usr/local/bin/ices") }}
+        {{- $icesCommand := .Values.ices.command | default (list "/usr/local/bin/cloud-worker") }}
         command:
           {{- toYaml $icesCommand | nindent 10 }}
         env:
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
           value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
@@ -192,9 +193,6 @@ spec:
         - name: S3_USE_SSL
           value: {{ .Values.s3.useSSL | quote }}
         {{- end }}
-        # API Base URL (for reaching MnemoShare's internal API)
-        - name: API_BASE_URL
-          value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}/api/v1"
         # Logging
         - name: LOG_LEVEL
           value: {{ .Values.ices.logLevel | default "info" | quote }}
@@ -219,8 +217,6 @@ spec:
         {{- end }}
         # Cross-service integrations (rich-media thumbnails, Tika text
         # extraction, Presidio NER, AI DLP, KMS envelope flag) — MUST match
-        # the api/worker surface. See templates/_helpers.tpl::mnemoshare.integrationEnv
-        {{- include "mnemoshare.integrationEnv" . | nindent 8 }}
         # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
         {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
         # ICES hosts mail-monitoring when standalone — API callback + platform

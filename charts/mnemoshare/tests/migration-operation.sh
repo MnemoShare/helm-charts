@@ -39,6 +39,8 @@ for phase in plan down apply verify up; do
   grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
   case "$phase" in
     plan)
+      grep -Fq 'name: ENVIRONMENT' <<<"$render"
+      grep -Fq 'value: "production"' <<<"$render"
       grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
       grep -Fq "args:" <<<"$render"
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"
@@ -63,6 +65,8 @@ for phase in plan down apply verify up; do
       ! grep -q 'kind: Job' <<<"$render"
       ;;
     apply)
+      grep -Fq 'name: ENVIRONMENT' <<<"$render"
+      grep -Fq 'value: "production"' <<<"$render"
       grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
       grep -Fq -- '- "apply"' <<<"$render"
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"
@@ -71,6 +75,8 @@ for phase in plan down apply verify up; do
       grep -Fq -- '"provision-untracked"' <<<"$render"
       ;;
     verify)
+      grep -Fq 'name: ENVIRONMENT' <<<"$render"
+      grep -Fq 'value: "production"' <<<"$render"
       grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
       grep -Fq -- '- "verify"' <<<"$render"
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"

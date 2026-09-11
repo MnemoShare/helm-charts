@@ -1,4 +1,5 @@
 {{- define "mnemoshare.formatMigrationEnv" }}
+{{ include "mnemoshare.productionEnvironment" . }}
 - name: DB_DRIVER
   value: {{ .Values.database.driver | default "mongodb" | quote }}
 {{- if eq (.Values.database.driver | default "mongodb") "mongodb" }}
@@ -202,8 +203,8 @@ spec:
           command: ["/bin/sh", "-ec"]
           args:
             - |
-              job_uid="$(kubectl get job "${JOB_NAME}" -o jsonpath='{.metadata.uid}')"
-              owner_patch='{"metadata":{"ownerReferences":[{"apiVersion":"batch/v1","kind":"Job","name":"'"${JOB_NAME}"'","uid":"'"${job_uid}"'"}]}}'
+              job_uid="$(kubectl get job "{{ $fullname }}-format-migration" -o jsonpath='{.metadata.uid}')"
+              owner_patch='{"metadata":{"ownerReferences":[{"apiVersion":"batch/v1","kind":"Job","name":"{{ $fullname }}-format-migration","uid":"'"${job_uid}"'"}]}}'
               attach_owner_if_present() {
                 resource_name="$(kubectl get "$1" --ignore-not-found -o name)"
                 if [ -n "${resource_name}" ]; then
@@ -407,9 +408,6 @@ spec:
               done
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          env:
-            - name: JOB_NAME
-              value: {{ $fullname }}-format-migration
           volumeMounts:
             - name: migration-plan
               mountPath: /migration
@@ -465,9 +463,11 @@ spec:
           command: ["/bin/sh", "-ec"]
           args:
             - |
-              /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --expect-plan-digest "$(cat /migration/plan-digest)"
               {{- if $externalRelayUniverse }}
+              /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --expect-plan-digest "$(cat /migration/plan-digest)"
               exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --universe email-relay-mongo --expect-plan-digest "$(cat /migration/email-relay-plan-digest)"
+              {{- else }}
+              exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --expect-plan-digest "$(cat /migration/plan-digest)"
               {{- end }}
           env:
             {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
@@ -487,9 +487,6 @@ spec:
           args:
             - |
               echo 'migration verified; Helm must now apply the target writers while the old plane remains fenced'
-          env:
-            - name: JOB_NAME
-              value: {{ $fullname }}-format-migration
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:

@@ -157,8 +157,9 @@ expect_failure 'invalid listener' --set emailGateway.mode=gateway --set emailGat
 expect_failure 'collides with deployment-contract v4 probe port 8080' --set emailGateway.mode=gateway --set-string 'emailGateway.listenPorts=25:plain\,8080:plain'
 expect_failure 'may not override' --set emailGateway.extraEnv[0].name=HEALTH_PORT --set emailGateway.extraEnv[0].value=9999
 expect_failure 'sourceCommit must equal' --set deploymentContract.sourceCommit=deadbeef
-expect_failure 'must equal the global image.digest' --set deploymentContract.imageDigest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-expect_failure 'sourceCommit must equal' --set deploymentContract.sourceCommit=
+expect_failure 'must equal the application image digest selected for this operation' --set deploymentContract.imageDigest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+derived_identity=$(render_profile gateway --set deploymentContract.sourceCommit=)
+grep -Eq 'image: "mnemoshare/mnemoshare@sha256:[a-f0-9]{64}"' <<<"$derived_identity"
 expect_failure 'image.digest pinned as sha256' --set image.digest=
 
 existing_claim=$(render_profile inbound-relay --set emailGateway.mode=inbound-relay --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.persistence.enabled=false --set emailGateway.relay.persistence.existingClaim=external-spool)

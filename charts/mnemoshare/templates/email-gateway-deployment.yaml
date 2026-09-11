@@ -99,6 +99,7 @@ spec:
           containerPort: {{ $facts.profile.probe.port }}
           protocol: TCP
         env:
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         - name: GATEWAY_MODE
           value: {{ .Values.emailGateway.mode | quote }}
         {{- if $tlsSecret }}
@@ -288,9 +289,6 @@ spec:
           value: {{ .Values.emailGateway.relay.spoolSharedKey | quote }}
         {{- end }}
         {{- end }}
-        # Health port
-        - name: HEALTH_PORT
-          value: {{ $facts.profile.probe.port | quote }}
         # Encryption key for internal API secret derivation
         - name: ENCRYPTION_KEY
           valueFrom:

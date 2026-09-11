@@ -36,17 +36,38 @@ Create a default fully qualified app name.
 {{- define "mnemoshare.requireDeploymentContractIdentity" -}}
 {{- $expectedCommit := trim (required "vendored deployment contract provenance is required" (.Files.Get "tests/contracts/deployment/v1/UPSTREAM")) -}}
 {{- $expectedCommit = regexFind "(?m)^commit=([a-f0-9]{40})$" $expectedCommit | trimPrefix "commit=" -}}
-{{- if ne .Values.deploymentContract.sourceCommit $expectedCommit -}}{{- fail (printf "deploymentContract.sourceCommit must equal vendored application commit %s" $expectedCommit) -}}{{- end -}}
+{{- $sourceCommit := .Values.deploymentContract.sourceCommit | default $expectedCommit -}}
+{{- if ne $sourceCommit $expectedCommit -}}{{- fail (printf "deploymentContract.sourceCommit must equal vendored application commit %s" $expectedCommit) -}}{{- end -}}
 {{- $raw := required "vendored deployment contract is required" (.Files.Get "tests/contracts/deployment/v1/contract.json") -}}
 {{- $contract := fromJson $raw -}}
-{{- if ne .Values.deploymentContract.contractFingerprint $contract.fingerprint -}}{{- fail (printf "deploymentContract.contractFingerprint must equal vendored contract fingerprint %s" $contract.fingerprint) -}}{{- end -}}
-{{- $digest := required "deploymentContract.imageDigest is required for contract-governed peers" .Values.deploymentContract.imageDigest -}}
+{{- $fingerprint := .Values.deploymentContract.contractFingerprint | default $contract.fingerprint -}}
+{{- if ne $fingerprint $contract.fingerprint -}}{{- fail (printf "deploymentContract.contractFingerprint must equal vendored contract fingerprint %s" $contract.fingerprint) -}}{{- end -}}
+{{- $digest := include "mnemoshare.deploymentContractImageDigest" . -}}
 {{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}{{- fail "deploymentContract.imageDigest must be sha256:<64 lowercase hex>" -}}{{- end -}}
-{{- if ne $digest .Values.image.digest -}}{{- fail "deploymentContract.imageDigest must equal the global image.digest actually selected for contract-governed peers" -}}{{- end -}}
+{{- end -}}
+
+{{- define "mnemoshare.deploymentContractImageDigest" -}}
+{{- $selected := .Values.image.digest -}}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled -}}
+{{- $selected = required "migrationOperation.targetImage.digest is required when migrationOperation.enabled=true" .Values.migrationOperation.targetImage.digest -}}
+{{- end -}}
+{{- $declared := .Values.deploymentContract.imageDigest | default $selected -}}
+{{- if ne $declared $selected -}}{{- fail "deploymentContract.imageDigest must equal the application image digest selected for this operation" -}}{{- end -}}
+{{- $declared -}}
 {{- end -}}
 
 {{- define "mnemoshare.contractApplicationImage" -}}
-{{- printf "%s@%s" (required "image.repository is required" .Values.image.repository) .Values.deploymentContract.imageDigest -}}
+{{- $repository := required "image.repository is required" .Values.image.repository -}}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled -}}
+{{- $repository = required "migrationOperation.targetImage.repository is required when migrationOperation.enabled=true" .Values.migrationOperation.targetImage.repository -}}
+{{- end -}}
+{{- printf "%s@%s" $repository (include "mnemoshare.deploymentContractImageDigest" .) -}}
+{{- end -}}
+
+{{/* Helm-managed application processes are always production posture. */}}
+{{- define "mnemoshare.productionEnvironment" -}}
+- name: ENVIRONMENT
+  value: "production"
 {{- end -}}
 
 {{- define "mnemoshare.deploymentExecutable" -}}

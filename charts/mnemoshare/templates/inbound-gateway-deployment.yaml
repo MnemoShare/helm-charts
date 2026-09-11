@@ -53,14 +53,13 @@ spec:
           containerPort: 10070
           protocol: TCP
         env:
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # Leading colon is required — the binary passes these straight to
         # net.Listen, which rejects a bare port ("missing port in address").
         - name: CONTENT_FILTER_PORT
           value: ":10025"
         - name: SOCKETMAP_PORT
           value: ":10070"
-        - name: HEALTH_PORT
-          value: ":8080"
         - name: PROCESSING_WORKERS
           value: {{ .Values.inboundGateway.processingWorkers | quote }}
         - name: DELIVERY_WORKERS

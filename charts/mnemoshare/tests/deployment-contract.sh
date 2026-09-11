@@ -69,11 +69,15 @@ expect_failure 'mcp.image.tag=legacy' 'mcp.image.tag is retired'
 expect_failure 'mcp.image.digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'mcp.image.digest is retired'
 expect_failure 'deploymentContract.sourceCommit=deadbeef' 'deploymentContract.sourceCommit must equal vendored application commit'
 expect_failure 'deploymentContract.contractFingerprint=deadbeef' 'deploymentContract.contractFingerprint must equal vendored contract fingerprint'
-expect_failure 'image.digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'deploymentContract.imageDigest must equal the global image.digest'
+expect_failure 'image.digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'deploymentContract.imageDigest must equal the application image digest selected for this operation'
+
+# Contract identity is chart-wide, not conditional on an optional workload.
+if output=$(helm template bad-default "$chart_dir" --set customerId=test --set deploymentContract.sourceCommit=deadbeef 2>&1); then
+  echo 'default workload rendered with a foreign deployment contract identity' >&2; exit 1
+fi
+grep -Fq 'deploymentContract.sourceCommit must equal vendored application commit' <<<"$output"
 
 if output=$(helm template missing "$chart_dir" --set customerId=test "${identity[@]}" --set mcp.enabled=true 2>&1); then echo 'MCP rendered without API key binding' >&2; exit 1; fi
 grep -Fq 'mcp.enabled requires mcp.apiKey.existingSecret or mcp.apiKey.key' <<<"$output"
-if output=$(helm template unpinned "$chart_dir" --set customerId=test --set mcp.enabled=true --set mcp.apiKey.key=x 2>&1); then echo 'MCP rendered without immutable deployment identity' >&2; exit 1; fi
-grep -Fq 'deploymentContract.sourceCommit must equal vendored application commit' <<<"$output"
-if output=$(helm template missing-digest "$chart_dir" --set customerId=test --set "deploymentContract.sourceCommit=${upstream}" --set "deploymentContract.contractFingerprint=${fingerprint}" --set mcp.enabled=true --set mcp.apiKey.key=x 2>&1); then echo 'MCP rendered without immutable image digest binding' >&2; exit 1; fi
-grep -Fq 'deploymentContract.imageDigest is required' <<<"$output"
+derived=$(helm template derived "$chart_dir" --set customerId=test --set mcp.enabled=true --set mcp.apiKey.key=x)
+grep -Eq 'image: "mnemoshare/mnemoshare@sha256:[a-f0-9]{64}"' <<<"$derived"
