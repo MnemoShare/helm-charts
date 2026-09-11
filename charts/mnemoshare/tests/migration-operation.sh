@@ -23,7 +23,7 @@ base=(
 
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
 test "$(sed -n 's/^path=//p' "$contract_dir/UPSTREAM")" = contracts/migration-operation/v1
-test "$(sed -n 's/^commit=//p' "$contract_dir/UPSTREAM")" = 319d43edf553a924eda33e07c109bee796751fb
+test "$(sed -n 's/^commit=//p' "$contract_dir/UPSTREAM")" = 319d43edfd553a924eda33e07c109bee796751fb
 test "$(sed -n 's/^sha256sums=//p' "$contract_dir/UPSTREAM")" = "$(sha256sum "$contract_dir/SHA256SUMS" | cut -d' ' -f1)"
 grep -Fq "\"fingerprint\":\"$fingerprint\"" "$contract_dir/contract.json"
 grep -Fq "\"sourceFingerprint\":\"$source_fingerprint\"" "$contract_dir/contract.json"
