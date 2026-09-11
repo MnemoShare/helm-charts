@@ -15,14 +15,14 @@
   ],
   "deploymentContractBytes": {
     "v2/README.md": "787169fe49d505fd86f92374202e543d68fa38baaf633cc00a919325eef481b8",
-    "v2/SHA256SUMS": "f37856db7ea5d138d1de6903e9e3f99621f6e8726db601944bf0b7096e7cb934",
+    "v2/SHA256SUMS": "0e81b312bdebaeebe2a3a5fe032332a373844e98c06cf411b6952ec92cd5117c",
     "v2/conformance.json": "ecf480bc7039fed2954242908766f050e07f031c08dfad09c87ef52aa72cb9aa",
-    "v2/contract.json": "06d185fb606dc0faf5aaf5c3fe06e75c3cafa46d6cea036836a3c83ea0adcdb7",
+    "v2/contract.json": "1bc7c8b830021e7c718512bf5d9de71eb2ed3847fb39acdb8d480e0b5bd3f70c",
     "v2/schema.json": "c1e3587496e09cf4d67f073e8b730d05e870b35f282d862b497ddae1a833af9c",
     "v3/README.md": "dff4cad9dc8b075d1bb45d148819c3938220272a5dd2c2b02d52cfba03e640e9",
-    "v3/SHA256SUMS": "351bd9a15318925f677280a47e1d6949d02fbc1d97fa98a28915b31c7ed25ae1",
+    "v3/SHA256SUMS": "5ed7d2bbf558b178a6fef316e0b425a37ea32d05fa8568862d51d16d43bb63f7",
     "v3/conformance.json": "9c6ca2d750df5ef60d234150637502144565a7dca2bd4310efef1187164afaf1",
-    "v3/contract.json": "ffe82615664c39b5ebd6c92ebe57f6c70a2b5259d5b8c84ef363b99b755e4055",
+    "v3/contract.json": "cf87a145cb56e03f4b7fdd3dc34ed898bd78652688a215295238dae9a97ce073",
     "v3/schema.json": "3cfe1154a91c30bb7d7b8b37c64366b26d5c04b756f2c9405bd6c943944fcce8"
   },
   "lifecycle": [
