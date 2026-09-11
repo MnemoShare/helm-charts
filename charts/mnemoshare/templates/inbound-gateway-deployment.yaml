@@ -39,7 +39,7 @@ spec:
       - name: inbound-gateway
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: {{ include "mnemoshare.writerImage" (dict "root" . "component" .Values.image "name" "inbound-gateway") | quote }}
+        image: {{ include "mnemoshare.writerImage" (dict "root" . "name" "inbound-gateway") | quote }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command: ["/usr/local/bin/inbound-gateway"]
         ports:

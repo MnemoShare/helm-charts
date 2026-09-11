@@ -52,7 +52,7 @@ spec:
       - name: {{ .Chart.Name }}
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: {{ include "mnemoshare.writerImage" (dict "root" . "component" .Values.image "name" "api") | quote }}
+        image: {{ include "mnemoshare.writerImage" (dict "root" . "name" "api") | quote }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         ports:
         - name: http

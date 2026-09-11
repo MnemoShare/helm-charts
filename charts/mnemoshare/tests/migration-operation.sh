@@ -47,6 +47,12 @@ for phase in plan down apply verify up; do
       grep -Fq -- '- "plan"' <<<"$render"
       grep -Fq -- '- "--contract"' <<<"$render"
       grep -Fq -- '- "embedded"' <<<"$render"
+	  grep -Fq 'phase="$0"' <<<"$render"
+	  grep -Fq '/usr/local/bin/mnemoshare-migrate "$phase" "$@"' <<<"$render"
+	  if grep -Eq '^[[:space:]]+shift([[:space:]]|$)' <<<"$render"; then
+	    echo 'migration wrapper must not discard the first contract argument' >&2
+	    exit 1
+	  fi
       ;;
     down)
       deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$render")

@@ -58,9 +58,10 @@ spec:
           args:
             - |
               phase="$0"
-              shift
-              /usr/local/bin/mnemoshare-migrate "$@"
+              set +e
+              /usr/local/bin/mnemoshare-migrate "$phase" "$@"
               exit_code=$?
+              set -e
               if [ "$phase" = "plan" ] && [ -s {{ $resultFile | quote }} ]; then
                 tr -d '\r\n' < {{ $resultFile | quote }} | cut -c 1-4096 > /dev/termination-log
               else

@@ -88,7 +88,7 @@ spec:
       - name: email-gateway
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: {{ if and .Values.migrationOperation .Values.migrationOperation.enabled (eq .Values.migrationOperation.phase "up") }}{{ include "mnemoshare.writerImage" (dict "root" . "component" .Values.image "name" "email-gateway") | quote }}{{ else }}{{ include "mnemoshare.contractV4ApplicationImage" . | quote }}{{ end }}
+        image: {{ if and .Values.migrationOperation .Values.migrationOperation.enabled (eq .Values.migrationOperation.phase "up") }}{{ include "mnemoshare.writerImage" (dict "root" . "name" "email-gateway") | quote }}{{ else }}{{ include "mnemoshare.contractV4ApplicationImage" . | quote }}{{ end }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command: [{{ $facts.executable.path | quote }}]
         ports:

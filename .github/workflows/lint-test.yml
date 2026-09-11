@@ -105,6 +105,12 @@ jobs:
       - name: Validate deployment contract v3 updater
         run: bash charts/mnemoshare/tests/update-deployment-contract-v3-test.sh
 
+      - name: Validate deployment contract v4 consumer
+        run: bash charts/mnemoshare/tests/deployment-contract-v4.sh
+
+      - name: Validate migration operation v2 consumer
+        run: bash charts/mnemoshare/tests/migration-operation.sh
+
       - name: Validate chart templates (sftpGateway enabled)
         if: github.event_name == 'pull_request'
         run: |
