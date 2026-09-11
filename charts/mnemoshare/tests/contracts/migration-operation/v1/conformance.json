@@ -1,0 +1,38 @@
+{
+  "contract": "mnemoshare.migration-operation.v1",
+  "fingerprintAlgorithm": "SHA-256 over RFC 8785 JCS of the contract with fingerprint set to the empty string",
+  "commands": [
+    "plan --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --output \u003cplan-file\u003e --result \u003cresult-file\u003e",
+    "apply --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e --exclusive --bootstrap-policy provision-untracked",
+    "verify --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e"
+  ],
+  "schemaOwnership": "exclusive-operation",
+  "bootstrapPolicy": "provision-untracked",
+  "governedProcessCount": 10,
+  "universeIds": [
+    "email-relay-mongo",
+    "primary"
+  ],
+  "deploymentContractBytes": {
+    "v2/README.md": "787169fe49d505fd86f92374202e543d68fa38baaf633cc00a919325eef481b8",
+    "v2/SHA256SUMS": "f37856db7ea5d138d1de6903e9e3f99621f6e8726db601944bf0b7096e7cb934",
+    "v2/conformance.json": "ecf480bc7039fed2954242908766f050e07f031c08dfad09c87ef52aa72cb9aa",
+    "v2/contract.json": "06d185fb606dc0faf5aaf5c3fe06e75c3cafa46d6cea036836a3c83ea0adcdb7",
+    "v2/schema.json": "c1e3587496e09cf4d67f073e8b730d05e870b35f282d862b497ddae1a833af9c",
+    "v3/README.md": "dff4cad9dc8b075d1bb45d148819c3938220272a5dd2c2b02d52cfba03e640e9",
+    "v3/SHA256SUMS": "351bd9a15318925f677280a47e1d6949d02fbc1d97fa98a28915b31c7ed25ae1",
+    "v3/conformance.json": "9c6ca2d750df5ef60d234150637502144565a7dca2bd4310efef1187164afaf1",
+    "v3/contract.json": "ffe82615664c39b5ebd6c92ebe57f6c70a2b5259d5b8c84ef363b99b755e4055",
+    "v3/schema.json": "3cfe1154a91c30bb7d7b8b37c64366b26d5c04b756f2c9405bd6c943944fcce8"
+  },
+  "lifecycle": [
+    "plan-all",
+    "down",
+    "apply-verify-all",
+    "up"
+  ],
+  "planningModes": [
+    "ordinary",
+    "legacy-bootstrap"
+  ]
+}
