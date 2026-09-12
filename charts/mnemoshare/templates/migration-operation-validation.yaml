@@ -36,6 +36,9 @@
 {{- if ne (.Values.migrationOperation.planDigest | default "") (.Values.migrationOperation.verifiedPlanDigest | default "") }}
 {{- fail "migrationOperation.phase=up requires verifiedPlanDigest to equal planDigest after an external verify succeeded" }}
 {{- end }}
+{{- if and .Values.emailGateway.enabled (ne (.Values.migrationOperation.externalPlanDigest | default "") (.Values.migrationOperation.verifiedExternalPlanDigest | default "")) }}
+{{- fail "migrationOperation.phase=up requires verifiedExternalPlanDigest to equal externalPlanDigest for email-relay-mongo" }}
+{{- end }}
 {{- end }}
 {{- if and (eq $phase "down") .Values.emailGateway.enabled }}
 {{- if not (regexMatch "^[a-f0-9]{64}$" (.Values.migrationOperation.externalPlanDigest | default "")) }}

@@ -202,6 +202,7 @@ migrationOperation:
   # any writer is drained.
   externalPlanDigest: ""
   verifiedPlanDigest: ""
+  verifiedExternalPlanDigest: ""
   backoffLimit: 0
   # Bounds the uninstrumented plan and verify Jobs. Apply deliberately omits a
   # Kubernetes Job deadline and is governed by its canonical progress watchdog.

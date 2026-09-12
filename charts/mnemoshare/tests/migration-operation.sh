@@ -164,6 +164,11 @@ if helm template ci "$chart_dir" "${base[@]}" --set emailGateway.enabled=true --
   exit 1
 fi
 helm template ci "$chart_dir" "${base[@]}" --set emailGateway.enabled=true --set migrationOperation.phase=down --set migrationOperation.externalPlanDigest="$plan" >/dev/null
+if helm template ci "$chart_dir" "${base[@]}" --set emailGateway.enabled=true --set migrationOperation.phase=up --set migrationOperation.externalPlanDigest="$plan" >/dev/null 2>&1; then
+  echo 'up rendered without verified email-relay-mongo proof' >&2
+  exit 1
+fi
+helm template ci "$chart_dir" "${base[@]}" --set emailGateway.enabled=true --set migrationOperation.phase=up --set migrationOperation.externalPlanDigest="$plan" --set migrationOperation.verifiedExternalPlanDigest="$plan" >/dev/null
 
 # Names retain a digest of the complete identity. Long IDs that differ only
 # after the visible truncation therefore cannot select the same Job.
