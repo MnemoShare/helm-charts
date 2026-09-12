@@ -37,10 +37,9 @@ printf 'changed grammar\n' > "${app}/contracts/migration-operation/v1/schema.jso
 git -C "$app" add .
 git -C "$app" -c user.name=test -c user.email=test@example.com commit -q -m grammar
 grammar=$(git -C "$app" rev-parse HEAD)
-if "$updater" "$app" "$grammar"; then
-  echo 'updater replaced immutable v1 grammar' >&2
-  exit 1
-fi
+"$updater" "$app" "$grammar"
+test "$(cat "${destination}/schema.json")" = 'changed grammar'
+test "$(sed -n 's/^commit=//p' "${destination}/UPSTREAM")" = "$grammar"
 
 rm -rf "$destination"
 "$updater" "$app" "$commit"
@@ -72,6 +71,6 @@ rm "$destination"
 rm "${destination}/README.md"
 ln -s /dev/null "${destination}/README.md"
 if "$updater" "$app" "$commit"; then
-  echo 'updater accepted a symlink frozen grammar file' >&2
+  echo 'updater accepted a symlink canonical file' >&2
   exit 1
 fi

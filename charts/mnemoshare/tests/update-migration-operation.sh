@@ -38,17 +38,14 @@ EOF
 mkdir -p "$(dirname "$destination")"
 if [ -e "$destination" ] || [ -L "$destination" ]; then
   [ -d "$destination" ] && [ ! -L "$destination" ] || { echo "vendored migration-operation/v1 must be a real directory" >&2; exit 1; }
-  for frozen in README.md schema.json; do
-    [ -f "${destination}/${frozen}" ] && [ ! -L "${destination}/${frozen}" ] && cmp -s "${stage}/${frozen}" "${destination}/${frozen}" || {
-      echo "vendored migration-operation/v1 grammar differs; a new contract version is required" >&2
-      exit 1
-    }
-  done
+  # v1 is still unreleased, so its complete canonical bundle follows the exact
+  # pinned application commit. After the first v1 release this updater must be
+  # changed to freeze every artifact and require v2 for grammar changes.
   for entry in "$destination"/*; do
     [ -f "$entry" ] && [ ! -L "$entry" ] || { echo "vendored migration-operation/v1 contains a non-regular entry" >&2; exit 1; }
     case "$(basename "$entry")" in README.md|SHA256SUMS|schema.json|conformance.json|contract.json|UPSTREAM) ;; *) echo "vendored migration-operation/v1 contains an unmanaged entry" >&2; exit 1;; esac
   done
-  for mutable in conformance.json contract.json SHA256SUMS UPSTREAM; do
+  for mutable in README.md schema.json conformance.json contract.json SHA256SUMS UPSTREAM; do
     install -m 0644 "${stage}/${mutable}" "${destination}/${mutable}.new"
     mv "${destination}/${mutable}.new" "${destination}/${mutable}"
   done

@@ -150,6 +150,11 @@ decision-bound apply dispatch):
 /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint FINGERPRINT --expect-plan-digest DIGEST
 ```
 
+The vendored migration-operation v1 bundle is still unreleased and is refreshed
+in full from one exact application commit, including its README and schema.
+Once v1 is first released, every artifact freezes and grammar changes require
+a new contract version.
+
 The result must be exactly a `decision` plus a 64-character lowercase hexadecimal
 `planDigest`; extra fields, malformed digests, and unknown decisions fail closed
 before any drain. An ordinary plan does not drain, but

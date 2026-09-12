@@ -199,7 +199,9 @@ migrationOperation:
   planDigest: ""
   verifiedPlanDigest: ""
   backoffLimit: 0
-  activeDeadlineSeconds: 1800
+  # Must not be shorter than migration-operation/v1's 6h absolute progress
+  # deadline; validation rejects lower overrides.
+  activeDeadlineSeconds: 21600
 
 # MongoDB configuration (when database.driver = "mongodb")
 mongodb:
