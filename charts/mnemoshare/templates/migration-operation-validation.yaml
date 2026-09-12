@@ -17,9 +17,6 @@
 {{- if ne (.Values.migrationOperation.universe | default "primary") "primary" }}
 {{- fail "migrationOperation.universe must be primary; external universes are not present in this chart's v1 adapter" }}
 {{- end }}
-{{- if lt (int .Values.migrationOperation.activeDeadlineSeconds) 21600 }}
-{{- fail "migrationOperation.activeDeadlineSeconds must be at least the canonical 6h progress absolute deadline (21600 seconds)" }}
-{{- end }}
 {{- if eq .Values.database.driver "sqlite" }}
 {{- fail "migrationOperation.enabled is not supported with database.driver=sqlite until the controller provisions the application data volume" }}
 {{- end }}

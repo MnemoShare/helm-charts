@@ -43,7 +43,7 @@ for phase in plan down apply verify up; do
   grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
   case "$phase" in
     plan)
-      grep -Fq 'activeDeadlineSeconds: 21600' <<<"$render"
+      grep -Fq 'activeDeadlineSeconds: 1800' <<<"$render"
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
       grep -Fq 'value: "production"' <<<"$render"
       grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
@@ -72,7 +72,7 @@ for phase in plan down apply verify up; do
       ! grep -Fq '/var/run/mnemoshare-migration/status.json' <<<"$render"
       ;;
     apply)
-      grep -Fq 'activeDeadlineSeconds: 21600' <<<"$render"
+      ! grep -Fq 'activeDeadlineSeconds:' <<<"$render"
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
       grep -Fq 'value: "production"' <<<"$render"
       grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
@@ -96,7 +96,7 @@ for phase in plan down apply verify up; do
       grep -Fq 'if [ "$phase" = "apply" ]; then' <<<"$render"
       ;;
     verify)
-      grep -Fq 'activeDeadlineSeconds: 21600' <<<"$render"
+      grep -Fq 'activeDeadlineSeconds: 1800' <<<"$render"
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
       grep -Fq 'value: "production"' <<<"$render"
       grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
@@ -116,19 +116,9 @@ done
 # The full production values profile must preserve the same generated apply
 # command and probe; profile defaults cannot weaken the operation contract.
 full_render=$(helm template ci "$chart_dir" -f "$chart_dir/values-production.yaml" "${base[@]}" --set migrationOperation.phase=apply)
-grep -Fq 'activeDeadlineSeconds: 21600' <<<"$full_render"
+! grep -Fq 'activeDeadlineSeconds:' <<<"$full_render"
 grep -Fq -- '- "--status"' <<<"$full_render"
 grep -Fq -- '- "--termination-log"' <<<"$full_render"
 test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/var/run/mnemoshare-migration/status.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$full_render")" -eq 2
-
-deadline_error=$(mktemp)
-trap 'rm -f "$deadline_error"' EXIT
-if helm template short-deadline "$chart_dir" "${base[@]}" \
-  --set migrationOperation.phase=apply \
-  --set migrationOperation.activeDeadlineSeconds=21599 > /dev/null 2>"$deadline_error"; then
-  echo 'migration operation accepted an active deadline shorter than its progress absolute deadline' >&2
-  exit 1
-fi
-grep -Fq 'migrationOperation.activeDeadlineSeconds must be at least the canonical 6h progress absolute deadline (21600 seconds)' "$deadline_error"
 
 echo 'migration-operation render contract passed'

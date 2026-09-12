@@ -27,7 +27,9 @@ metadata:
     mnemoshare.io/migration-operation-result-file: {{ $resultFile | quote }}
 spec:
   backoffLimit: {{ .Values.migrationOperation.backoffLimit }}
-  activeDeadlineSeconds: {{ .Values.migrationOperation.activeDeadlineSeconds }}
+  {{- if ne $phase "apply" }}
+  activeDeadlineSeconds: {{ .Values.migrationOperation.uninstrumentedActiveDeadlineSeconds }}
+  {{- end }}
   template:
     metadata:
       labels:

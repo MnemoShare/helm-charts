@@ -199,9 +199,9 @@ migrationOperation:
   planDigest: ""
   verifiedPlanDigest: ""
   backoffLimit: 0
-  # Must not be shorter than migration-operation/v1's 6h absolute progress
-  # deadline; validation rejects lower overrides.
-  activeDeadlineSeconds: 21600
+  # Bounds the uninstrumented plan and verify Jobs. Apply deliberately omits a
+  # Kubernetes Job deadline and is governed by its canonical progress watchdog.
+  uninstrumentedActiveDeadlineSeconds: 1800
 
 # MongoDB configuration (when database.driver = "mongodb")
 mongodb:

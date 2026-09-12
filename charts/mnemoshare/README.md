@@ -165,6 +165,10 @@ actions without that flag.
 After a maintenance drain, failures intentionally leave the application plane
 down so a retry can continue forward with the same target image. Failed hook
 Jobs are retained for diagnosis.
+Apply has no Kubernetes `activeDeadlineSeconds`: the application-owned progress
+watchdog must write its canonical terminal status before the container exits.
+`migrationOperation.uninstrumentedActiveDeadlineSeconds` separately bounds the
+plan and verify Jobs, which do not publish progress snapshots.
 
 Target identity, sticky decision, plan digest, and replica census are captured
 in an immutable, target-keyed ConfigMap before the first scale-down. Retries
