@@ -10,6 +10,13 @@ fingerprint=$(jq -er '.fingerprint | select(test("^[a-f0-9]{64}$"))' "$contract_
 source_fingerprint=$(jq -er '.provenance.sourceFingerprint | select(test("^[a-f0-9]{64}$"))' "$contract_dir/contract.json")
 target=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 plan=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+relay_profile=(
+  --set emailGateway.enabled=true
+  --set emailGateway.mode=relay
+  --set emailGateway.smtpAuthRequired=false
+  --set emailGateway.relay.spoolSharedKey=spool
+  --set emailGateway.relay.db.existingSecret=relay-db
+)
 base=(
   --set customerId=ci-test
   --set formatMigrations.mode=operator
@@ -142,9 +149,7 @@ test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--fi
 # The relay universe uses its own durable files and credentials and passes the
 # exact closed universe identity to every command.
 for phase in plan apply verify; do
-  relay_render=$(helm template ci "$chart_dir" "${base[@]}" \
-    --set emailGateway.enabled=true \
-    --set emailGateway.relay.db.existingSecret=relay-db \
+  relay_render=$(helm template ci "$chart_dir" "${base[@]}" "${relay_profile[@]}" \
     --set migrationOperation.universe=email-relay-mongo \
     --set migrationOperation.phase="$phase")
   grep -Fq -- '- "--universe"' <<<"$relay_render"
@@ -159,16 +164,16 @@ done
 
 # A configured external universe must be planned before down; failure occurs
 # at render time, before the chart can emit a zero-replica workload.
-if helm template ci "$chart_dir" "${base[@]}" --set emailGateway.enabled=true --set migrationOperation.phase=down >/dev/null 2>&1; then
+if helm template ci "$chart_dir" "${base[@]}" "${relay_profile[@]}" --set migrationOperation.phase=down >/dev/null 2>&1; then
   echo 'down rendered without the email-relay-mongo plan proof' >&2
   exit 1
 fi
-helm template ci "$chart_dir" "${base[@]}" --set emailGateway.enabled=true --set migrationOperation.phase=down --set migrationOperation.externalPlanDigest="$plan" >/dev/null
-if helm template ci "$chart_dir" "${base[@]}" --set emailGateway.enabled=true --set migrationOperation.phase=up --set migrationOperation.externalPlanDigest="$plan" >/dev/null 2>&1; then
+helm template ci "$chart_dir" "${base[@]}" "${relay_profile[@]}" --set migrationOperation.phase=down --set migrationOperation.externalPlanDigest="$plan" >/dev/null
+if helm template ci "$chart_dir" "${base[@]}" "${relay_profile[@]}" --set migrationOperation.phase=up --set migrationOperation.externalPlanDigest="$plan" >/dev/null 2>&1; then
   echo 'up rendered without verified email-relay-mongo proof' >&2
   exit 1
 fi
-helm template ci "$chart_dir" "${base[@]}" --set emailGateway.enabled=true --set migrationOperation.phase=up --set migrationOperation.externalPlanDigest="$plan" --set migrationOperation.verifiedExternalPlanDigest="$plan" >/dev/null
+helm template ci "$chart_dir" "${base[@]}" "${relay_profile[@]}" --set migrationOperation.phase=up --set migrationOperation.externalPlanDigest="$plan" --set migrationOperation.verifiedExternalPlanDigest="$plan" >/dev/null
 
 # Names retain a digest of the complete identity. Long IDs that differ only
 # after the visible truncation therefore cannot select the same Job.

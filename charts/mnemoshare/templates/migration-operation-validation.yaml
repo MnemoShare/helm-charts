@@ -1,6 +1,13 @@
 {{- if .Values.migrationOperation.enabled }}
 {{- $phase := .Values.migrationOperation.phase | default "" }}
 {{- $fingerprint := .Values.migrationOperation.contractFingerprint | default "" }}
+{{- $hasRelayUniverse := false }}
+{{- if .Values.emailGateway.enabled }}
+{{- $emailFacts := include "mnemoshare.emailGateway" . | fromJson }}
+{{- range $emailFacts.profile.external_universes }}
+{{- if eq .id "email-relay-mongo" }}{{- $hasRelayUniverse = true }}{{- end }}
+{{- end }}
+{{- end }}
 {{- $_ := include "mnemoshare.migrationOperationTargetImage" . }}
 {{- if not (regexMatch "^[a-f0-9]{64}$" $fingerprint) }}
 {{- fail "migrationOperation.contractFingerprint must be a 64-character lowercase hex digest" }}
@@ -18,8 +25,8 @@
 {{- if not (has $universe (list "primary" "email-relay-mongo")) }}
 {{- fail "migrationOperation.universe must be one of the universes in the vendored v1 contract: primary or email-relay-mongo" }}
 {{- end }}
-{{- if and (eq $universe "email-relay-mongo") (not .Values.emailGateway.enabled) }}
-{{- fail "migrationOperation.universe=email-relay-mongo requires emailGateway.enabled=true" }}
+{{- if and (eq $universe "email-relay-mongo") (not $hasRelayUniverse) }}
+{{- fail "migrationOperation.universe=email-relay-mongo requires a configured emailGateway profile that declares that external universe" }}
 {{- end }}
 {{- if and (eq $universe "email-relay-mongo") (not .Values.emailGateway.relay.db.existingSecret) }}
 {{- fail "migrationOperation.universe=email-relay-mongo requires emailGateway.relay.db.existingSecret" }}
@@ -36,11 +43,11 @@
 {{- if ne (.Values.migrationOperation.planDigest | default "") (.Values.migrationOperation.verifiedPlanDigest | default "") }}
 {{- fail "migrationOperation.phase=up requires verifiedPlanDigest to equal planDigest after an external verify succeeded" }}
 {{- end }}
-{{- if and .Values.emailGateway.enabled (ne (.Values.migrationOperation.externalPlanDigest | default "") (.Values.migrationOperation.verifiedExternalPlanDigest | default "")) }}
+{{- if and $hasRelayUniverse (ne (.Values.migrationOperation.externalPlanDigest | default "") (.Values.migrationOperation.verifiedExternalPlanDigest | default "")) }}
 {{- fail "migrationOperation.phase=up requires verifiedExternalPlanDigest to equal externalPlanDigest for email-relay-mongo" }}
 {{- end }}
 {{- end }}
-{{- if and (eq $phase "down") .Values.emailGateway.enabled }}
+{{- if and (eq $phase "down") $hasRelayUniverse }}
 {{- if not (regexMatch "^[a-f0-9]{64}$" (.Values.migrationOperation.externalPlanDigest | default "")) }}
 {{- fail "migrationOperation.phase=down requires externalPlanDigest for email-relay-mongo before writers are drained" }}
 {{- end }}
