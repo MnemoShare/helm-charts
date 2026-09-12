@@ -197,6 +197,10 @@ migrationOperation:
     existingClaim: ""
   universe: primary
   planDigest: ""
+  # Required before down when the configured deployment has the governed
+  # email-relay-mongo universe. This proves every universe was planned before
+  # any writer is drained.
+  externalPlanDigest: ""
   verifiedPlanDigest: ""
   backoffLimit: 0
   # Bounds the uninstrumented plan and verify Jobs. Apply deliberately omits a

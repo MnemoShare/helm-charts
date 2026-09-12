@@ -14,8 +14,15 @@
 {{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" (.Values.migrationOperation.operationId | default "")) }}
 {{- fail "migrationOperation.operationId must be a DNS label; bump it for every retry because migration Jobs are retained" }}
 {{- end }}
-{{- if ne (.Values.migrationOperation.universe | default "primary") "primary" }}
-{{- fail "migrationOperation.universe must be primary; external universes are not present in this chart's v1 adapter" }}
+{{- $universe := .Values.migrationOperation.universe | default "primary" }}
+{{- if not (has $universe (list "primary" "email-relay-mongo")) }}
+{{- fail "migrationOperation.universe must be one of the universes in the vendored v1 contract: primary or email-relay-mongo" }}
+{{- end }}
+{{- if and (eq $universe "email-relay-mongo") (not .Values.emailGateway.enabled) }}
+{{- fail "migrationOperation.universe=email-relay-mongo requires emailGateway.enabled=true" }}
+{{- end }}
+{{- if and (eq $universe "email-relay-mongo") (not .Values.emailGateway.relay.db.existingSecret) }}
+{{- fail "migrationOperation.universe=email-relay-mongo requires emailGateway.relay.db.existingSecret" }}
 {{- end }}
 {{- if eq .Values.database.driver "sqlite" }}
 {{- fail "migrationOperation.enabled is not supported with database.driver=sqlite until the controller provisions the application data volume" }}
@@ -30,9 +37,17 @@
 {{- fail "migrationOperation.phase=up requires verifiedPlanDigest to equal planDigest after an external verify succeeded" }}
 {{- end }}
 {{- end }}
+{{- if and (eq $phase "down") .Values.emailGateway.enabled }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" (.Values.migrationOperation.externalPlanDigest | default "")) }}
+{{- fail "migrationOperation.phase=down requires externalPlanDigest for email-relay-mongo before writers are drained" }}
+{{- end }}
+{{- end }}
 {{- if has $phase (list "plan" "apply" "verify") }}
 {{- if not .Values.migrationOperation.transport.existingClaim }}
 {{- fail "migrationOperation.transport.existingClaim is required for plan, apply, and verify" }}
+{{- end }}
+{{- if or (gt (len .Values.migrationOperation.transport.existingClaim) 63) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" .Values.migrationOperation.transport.existingClaim)) }}
+{{- fail "migrationOperation.transport.existingClaim must be a DNS label no longer than 63 characters" }}
 {{- end }}
 {{- end }}
 {{- end }}

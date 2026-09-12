@@ -138,4 +138,45 @@ grep -Fq -- '- "--status"' <<<"$full_render"
 grep -Fq -- '- "--termination-log"' <<<"$full_render"
 test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/var/run/mnemoshare-migration/status/status.json", "--termination-log", "/dev/termination-log", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$full_render")" -eq 2
 
+# Every universe declared by the canonical contract has a concrete adapter.
+# The relay universe uses its own durable files and credentials and passes the
+# exact closed universe identity to every command.
+for phase in plan apply verify; do
+  relay_render=$(helm template ci "$chart_dir" "${base[@]}" \
+    --set emailGateway.enabled=true \
+    --set emailGateway.relay.db.existingSecret=relay-db \
+    --set migrationOperation.universe=email-relay-mongo \
+    --set migrationOperation.phase="$phase")
+  grep -Fq -- '- "--universe"' <<<"$relay_render"
+  grep -Fq -- '- "email-relay-mongo"' <<<"$relay_render"
+  grep -Fq '/migration/email-relay-plan.json' <<<"$relay_render"
+  grep -Fq 'name: RELAY_DB_URI' <<<"$relay_render"
+  grep -Fq 'name: relay-db' <<<"$relay_render"
+  grep -Fq 'key: relay-db-uri' <<<"$relay_render"
+  grep -Fq 'name: RELAY_DB_NAME' <<<"$relay_render"
+  ! grep -Fq '/migration/primary-plan.json' <<<"$relay_render"
+done
+
+# A configured external universe must be planned before down; failure occurs
+# at render time, before the chart can emit a zero-replica workload.
+if helm template ci "$chart_dir" "${base[@]}" --set emailGateway.enabled=true --set migrationOperation.phase=down >/dev/null 2>&1; then
+  echo 'down rendered without the email-relay-mongo plan proof' >&2
+  exit 1
+fi
+helm template ci "$chart_dir" "${base[@]}" --set emailGateway.enabled=true --set migrationOperation.phase=down --set migrationOperation.externalPlanDigest="$plan" >/dev/null
+
+# Names retain a digest of the complete identity. Long IDs that differ only
+# after the visible truncation therefore cannot select the same Job.
+long_a=$(printf 'a%.0s' {1..62})
+long_b="${long_a%?}b"
+name_a=$(helm template this-is-a-deliberately-long-release-name "$chart_dir" "${base[@]}" --set migrationOperation.phase=plan --set migrationOperation.operationId="$long_a" | awk '/^kind: Job$/{job=1} job && /^  name:/{print $2; exit}')
+name_b=$(helm template this-is-a-deliberately-long-release-name "$chart_dir" "${base[@]}" --set migrationOperation.phase=plan --set migrationOperation.operationId="$long_b" | awk '/^kind: Job$/{job=1} job && /^  name:/{print $2; exit}')
+test "$name_a" != "$name_b"
+test "${#name_a}" -le 63
+test "${#name_b}" -le 63
+if helm template ci "$chart_dir" "${base[@]}" --set migrationOperation.phase=plan --set migrationOperation.transport.existingClaim="$(printf 'p%.0s' {1..64})" >/dev/null 2>&1; then
+  echo 'migration transport PVC name longer than 63 characters rendered' >&2
+  exit 1
+fi
+
 echo 'migration-operation render contract passed'

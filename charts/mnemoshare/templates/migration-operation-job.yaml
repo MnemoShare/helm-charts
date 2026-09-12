@@ -5,11 +5,14 @@
 {{- $fingerprint := include "mnemoshare.migrationOperationExpectedContractFingerprint" . }}
 {{- $universe := .Values.migrationOperation.universe | default "primary" }}
 {{- $planDigest := .Values.migrationOperation.planDigest | default "pending" }}
-{{- $planFile := "/migration/primary-plan.json" }}
-{{- $resultFile := "/migration/primary-result.json" }}
+{{- $fileStem := ternary "primary" "email-relay" (eq $universe "primary") }}
+{{- $planFile := printf "/migration/%s-plan.json" $fileStem }}
+{{- $resultFile := printf "/migration/%s-result.json" $fileStem }}
 {{- $statusDirectory := "/var/run/mnemoshare-migration/status" }}
 {{- $statusFile := printf "%s/status.json" $statusDirectory }}
-{{- $jobName := printf "%s-migration-%s-%s" $fullname $phase $operationID | trunc 63 | trimSuffix "-" }}
+{{- $jobIdentity := printf "%s-migration-%s-%s-%s" $fullname $phase $universe $operationID }}
+{{- $jobHash := sha256sum $jobIdentity | trunc 10 }}
+{{- $jobName := printf "%s-%s" ($jobIdentity | trunc 52 | trimSuffix "-") $jobHash }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -91,6 +94,10 @@ spec:
             - "embedded"
             - "--expect-contract-fingerprint"
             - {{ $fingerprint | quote }}
+            {{- if ne $universe "primary" }}
+            - "--universe"
+            - {{ $universe | quote }}
+            {{- end }}
             {{- if eq $phase "plan" }}
             - "--output"
             - {{ $planFile | quote }}
@@ -112,7 +119,7 @@ spec:
             {{- end }}
             {{- end }}
           env:
-            {{- include "mnemoshare.migrationOperationEnv" . | nindent 12 }}
+            {{- include "mnemoshare.migrationOperationEnv" (dict "root" . "universe" $universe) | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:
@@ -157,29 +164,41 @@ spec:
 {{- end }}
 
 {{- define "mnemoshare.migrationOperationEnv" }}
-{{ include "mnemoshare.productionEnvironment" . }}
+{{- $root := .root }}
+{{- $universe := .universe }}
+{{ include "mnemoshare.productionEnvironment" $root }}
 - name: CUSTOMER_ID
-  value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
+  value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" $root.Values.customerId | quote }}
+{{- if eq $universe "email-relay-mongo" }}
+- name: RELAY_DB_URI
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "email-relay-mongo migration requires emailGateway.relay.db.existingSecret" $root.Values.emailGateway.relay.db.existingSecret }}
+      key: relay-db-uri
+- name: RELAY_DB_NAME
+  value: {{ $root.Values.emailGateway.relay.db.name | quote }}
+{{- else }}
 - name: DB_DRIVER
-  value: {{ .Values.database.driver | default "mongodb" | quote }}
-{{- if eq (.Values.database.driver | default "mongodb") "mongodb" }}
+  value: {{ $root.Values.database.driver | default "mongodb" | quote }}
+{{- if eq ($root.Values.database.driver | default "mongodb") "mongodb" }}
 - name: MONGODB_URI
   valueFrom:
     secretKeyRef:
-      name: {{ .Values.existingSecrets.mongodb | default (printf "%s-secrets" (include "mnemoshare.fullname" .)) }}
+      name: {{ $root.Values.existingSecrets.mongodb | default (printf "%s-secrets" (include "mnemoshare.fullname" $root)) }}
       key: mongodb-uri
 - name: MONGODB_DATABASE
-  value: {{ .Values.mongodb.external.database | quote }}
-{{- else if eq .Values.database.driver "postgres" }}
+  value: {{ $root.Values.mongodb.external.database | quote }}
+{{- else if eq $root.Values.database.driver "postgres" }}
 - name: POSTGRES_DSN
   valueFrom:
     secretKeyRef:
-      name: {{ .Values.existingSecrets.postgres | default (printf "%s-secrets" (include "mnemoshare.fullname" .)) }}
+      name: {{ $root.Values.existingSecrets.postgres | default (printf "%s-secrets" (include "mnemoshare.fullname" $root)) }}
       key: postgres-dsn
 {{- end }}
 - name: ENCRYPTION_KEY
   valueFrom:
     secretKeyRef:
-      name: {{ .Values.existingSecrets.encryption | default (printf "%s-secrets" (include "mnemoshare.fullname" .)) }}
+      name: {{ $root.Values.existingSecrets.encryption | default (printf "%s-secrets" (include "mnemoshare.fullname" $root)) }}
       key: encryption-key
+{{- end }}
 {{- end }}
