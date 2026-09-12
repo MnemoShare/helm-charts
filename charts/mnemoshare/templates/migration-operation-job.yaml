@@ -6,8 +6,9 @@
 {{- $universe := .Values.migrationOperation.universe | default "primary" }}
 {{- $planDigest := .Values.migrationOperation.planDigest | default "pending" }}
 {{- $fileStem := ternary "primary" "email-relay" (eq $universe "primary") }}
-{{- $planFile := printf "/migration/%s-plan.json" $fileStem }}
-{{- $resultFile := printf "/migration/%s-result.json" $fileStem }}
+{{- $artifactDirectory := "/migration/artifacts" }}
+{{- $planFile := printf "%s/%s-plan.json" $artifactDirectory $fileStem }}
+{{- $resultFile := printf "%s/%s-result.json" $artifactDirectory $fileStem }}
 {{- $statusDirectory := "/var/run/mnemoshare-migration/status" }}
 {{- $statusFile := printf "%s/status.json" $statusDirectory }}
 {{- $terminationFile := printf "%s/termination.json" $statusDirectory }}
@@ -69,11 +70,16 @@ spec:
               phase="$0"
               command="$phase"
               if [ "$phase" = "reset" ]; then command="pre-1-reset-format-ledger"; fi
+              # The PVC root is provisioner-owned. All plan/result atomic
+              # publication happens in this caller-owned same-filesystem
+              # parent, retained across plan/apply/verify reconciliations.
+              umask 077
+              mkdir -p {{ $artifactDirectory | quote }}
+              chmod 0700 {{ $artifactDirectory | quote }}
               if [ "$phase" = "apply" ] || [ "$phase" = "reset" ]; then
                 # The emptyDir mount is kubelet-owned. Create the status parent
                 # as the actual non-root caller so the binary can enforce its
                 # caller-owned, non-world-writable filesystem contract.
-                umask 077
                 mkdir -p {{ $statusDirectory | quote }}
                 chmod 0700 {{ $statusDirectory | quote }}
               fi

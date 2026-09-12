@@ -38,7 +38,11 @@ jq -e '
   .commands.reset.args[-8:] == ["--status", "<status-file>", "--termination-file", "<status-dir>/termination.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"] and
   .result.terminationFile.kubernetesTerminationMessagePath == "<status-dir>/termination.json" and
   .result.terminationFile.pathBinding == "equal-to-termination-file-argument" and
-  .result.statusFile.parentTrust == "caller-owned-not-group-or-world-writable"
+  .result.statusFile.parentTrust == "caller-owned-not-group-or-world-writable" and
+  .result.planFile.target == "same-parent-atomic-create-or-replace" and
+  .result.planFile.publication == "same-parent-temp-fsync-rename-fsync-parent" and
+  .result.resultFile.parentTrust == "caller-owned-owner-writable-not-world-writable" and
+  .result.resultFile.target == "same-parent-atomic-create-or-replace"
 ' "$contract_dir/contract.json" >/dev/null
 test "$(sed -n 's/^path=//p' "$contract_dir/UPSTREAM")" = contracts/migration-operation/v1
 grep -Eq '^commit=[0-9a-f]{40}$' "$contract_dir/UPSTREAM"
@@ -78,6 +82,10 @@ for phase in reset plan down apply verify up; do
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"
       grep -Fq -- '"--output"' <<<"$render"
       grep -Fq -- '"--result"' <<<"$render"
+      grep -Fq -- '- "/migration/artifacts/primary-plan.json"' <<<"$render"
+      grep -Fq -- '- "/migration/artifacts/primary-result.json"' <<<"$render"
+      grep -Fq 'mkdir -p "/migration/artifacts"' <<<"$render"
+      grep -Fq 'chmod 0700 "/migration/artifacts"' <<<"$render"
       grep -Fq -- '- "plan"' <<<"$render"
       grep -Fq -- '- "--contract"' <<<"$render"
       grep -Fq -- '- "embedded"' <<<"$render"
@@ -168,12 +176,12 @@ for phase in plan apply verify; do
     --set migrationOperation.phase="$phase")
   grep -Fq -- '- "--universe"' <<<"$relay_render"
   grep -Fq -- '- "email-relay-mongo"' <<<"$relay_render"
-  grep -Fq '/migration/email-relay-plan.json' <<<"$relay_render"
+  grep -Fq '/migration/artifacts/email-relay-plan.json' <<<"$relay_render"
   grep -Fq 'name: RELAY_DB_URI' <<<"$relay_render"
   grep -Fq 'name: relay-db' <<<"$relay_render"
   grep -Fq 'key: relay-db-uri' <<<"$relay_render"
   grep -Fq 'name: RELAY_DB_NAME' <<<"$relay_render"
-  ! grep -Fq '/migration/primary-plan.json' <<<"$relay_render"
+  ! grep -Fq '/migration/artifacts/primary-plan.json' <<<"$relay_render"
 done
 
 # A configured external universe must be planned before down; failure occurs
