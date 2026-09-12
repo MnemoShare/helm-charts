@@ -53,6 +53,7 @@ spec:
           containerPort: 10070
           protocol: TCP
         env:
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # cmd/inboundgateway builds its OWN dispatch keyspace to publish the
         # background virus scan for every inbound .eml artifact. With
         # CUSTOMER_ID unset that keyspace falls back to the literal "default"

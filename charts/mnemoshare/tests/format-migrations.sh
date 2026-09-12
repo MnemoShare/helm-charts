@@ -76,16 +76,24 @@ plan_and_verify_scripts() {
 
 install_apply=$(apply_script "$render")
 upgrade_apply=$(apply_script "$upgrade_render")
+assert_contract_static_args() {
+  local kind=$1 body=$2 arg
+  while IFS= read -r arg; do
+    [[ -n "$arg" ]] || continue
+    case "$arg" in
+      '<'*) continue;;
+    esac
+    if ! grep -Fq -- "$arg" <<<"$body"; then
+      echo "${kind} command is missing contract argument ${arg}" >&2
+      return 1
+    fi
+  done < <(jq -er ".commands.${kind}.args[]" "$chart_dir/tests/contracts/migration-operation/v1/contract.json")
+}
 for release_apply in "$install_apply" "$upgrade_apply"; do
-  if [ "$(grep -Fc -- '--exclusive --bootstrap-policy provision-untracked' <<<"$release_apply")" -ne 1 ]; then
-    echo 'every apply decision path must be exclusive and provision only untracked populations' >&2
-    exit 1
-  fi
-  if [ "$(grep -Fc -- '--bootstrap-policy' <<<"$release_apply")" -ne 1 ]; then
-    echo 'apply rendered an unexpected bootstrap policy occurrence' >&2
-    exit 1
-  fi
+  assert_contract_static_args apply "$release_apply"
 done
+assert_contract_static_args verify "$(plan_and_verify_scripts "$render")"
+assert_contract_static_args verify "$(plan_and_verify_scripts "$upgrade_render")"
 if grep -Fq -- '--bootstrap-policy' <<<"$(plan_and_verify_scripts "$render")" ||
    grep -Fq -- '--bootstrap-policy' <<<"$(plan_and_verify_scripts "$upgrade_render")"; then
   echo 'plan and verify must remain read-only and receive no bootstrap policy' >&2
@@ -155,7 +163,7 @@ stateful_render=$(helm template test "$chart_dir" "${base[@]}" \
 assert_image_in_source "$stateful_render" 'templates/workflow-worker-statefulset.yaml'
 assert_has 'command: ["/usr/local/bin/mnemoshare-migrate"]'
 assert_has "args: [\"plan\", \"--contract\", \"embedded\", \"--expect-contract-fingerprint\", \"${migration_fingerprint}\", \"--result\", \"/migration/result.json\", \"--output\", \"/migration/plan.json\"]"
-assert_has "verify --contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --expect-plan-digest \"\$(cat /migration/plan-digest)\""
+assert_has "verify --contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --plan /migration/plan.json --expect-plan-digest \"\$(cat /migration/plan-digest)\""
 assert_has 'case "${decision}" in'
 assert_has 'selected_pods="$(kubectl get pods -l "${selector}" -o name)"'
 assert_has 'if [ -n "${selected_pods}" ]; then'
@@ -310,8 +318,11 @@ if decision_is_valid_value $'ordinary\nunterminated'; then
   exit 1
 fi
 assert_has 'exec /usr/local/bin/mnemoshare-migrate apply \'
-assert_has "--contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --expect-plan-digest \"\$(cat /migration/plan-digest)\" \\"
+assert_has "--contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --plan \"/migration/plan.json\" --expect-plan-digest \"\$(cat /migration/plan-digest)\" \\"
 assert_has '--exclusive --bootstrap-policy provision-untracked'
+assert_has '--status "/var/run/mnemoshare-migration/status/status.json" --termination-file "/var/run/mnemoshare-migration/status/termination.json"'
+assert_has '- name: migration-status'
+assert_has 'mountPath: /var/run/mnemoshare-migration'
 assert_has '"helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded'
 if [ "$(grep -Ec '^[[:space:]]+"helm.sh/hook-delete-policy": before-hook-creation$' <<<"$render")" -lt 7 ]; then
   echo 'support hooks do not all use deterministic next-attempt cleanup' >&2
