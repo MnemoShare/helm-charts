@@ -59,7 +59,7 @@
         "progressSchema": {"const": "mnemoshare.migration-progress.v1"},
         "statusFlag": {"const": "--status"},
         "terminationLogFlag": {"const": "--termination-log"},
-        "statusFile": {"type":"object","additionalProperties":false,"required":["maxBytes","failureMaxBytes","fileMode","parentTrust","symlinks","durability","deadlineTerminalState"],"properties":{"maxBytes":{"const":4096},"failureMaxBytes":{"const":2048},"fileMode":{"const":"0600-caller-owned-regular-single-link"},"parentTrust":{"const":"caller-owned-not-world-writable"},"symlinks":{"const":"reject"},"durability":{"const":"fsync-file-rename-fsync-parent"},"deadlineTerminalState":{"const":"stalled"}}}
+        "statusFile": {"type":"object","additionalProperties":false,"required":["maxBytes","failureMaxBytes","fileMode","parentTrust","symlinks","durability","deadlineTerminalState","futureClockSkew","startupProgress"],"properties":{"maxBytes":{"const":4096},"failureMaxBytes":{"const":2048},"fileMode":{"const":"0600-caller-owned-regular-single-link"},"parentTrust":{"const":"caller-owned-not-world-writable"},"symlinks":{"const":"reject"},"durability":{"const":"fsync-file-rename-fsync-parent"},"deadlineTerminalState":{"const":"stalled"},"futureClockSkew":{"const":"30s"},"startupProgress":{"const":"before-plan-and-persistence-open"}}}
       }
     },
     "lifecycle": {

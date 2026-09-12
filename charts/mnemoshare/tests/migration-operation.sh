@@ -35,7 +35,9 @@ jq -e '
     "parentTrust": "caller-owned-not-world-writable",
     "symlinks": "reject",
     "durability": "fsync-file-rename-fsync-parent",
-    "deadlineTerminalState": "stalled"
+    "deadlineTerminalState": "stalled",
+    "futureClockSkew": "30s",
+    "startupProgress": "before-plan-and-persistence-open"
   }
 ' "$contract_dir/contract.json" >/dev/null
 test "$(sed -n 's/^path=//p' "$contract_dir/UPSTREAM")" = contracts/migration-operation/v1
