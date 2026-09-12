@@ -25,6 +25,10 @@ base=(
 )
 
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
+jq -e '
+  .commands.apply.args[-4:] == ["--status", "<status-file>", "--termination-log", "/dev/termination-log"] and
+  .commands.status.args == ["status", "--file", "<status-file>", "--max-inactivity", "5m", "--absolute-deadline", "6h"]
+' "$contract_dir/contract.json" >/dev/null
 test "$(sed -n 's/^path=//p' "$contract_dir/UPSTREAM")" = contracts/migration-operation/v1
 grep -Eq '^commit=[0-9a-f]{40}$' "$contract_dir/UPSTREAM"
 test "$(sed -n 's/^sha256sums=//p' "$contract_dir/UPSTREAM")" = "$(sha256sum "$contract_dir/SHA256SUMS" | cut -d' ' -f1)"
@@ -55,6 +59,7 @@ for phase in plan down apply verify up; do
 	    echo 'migration wrapper must not discard the first contract argument' >&2
 	    exit 1
 	  fi
+	  ! grep -Fq '/var/run/mnemoshare-migration/status.json' <<<"$render"
       ;;
     down)
       deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$render")
@@ -63,6 +68,7 @@ for phase in plan down apply verify up; do
       selector=$(awk '/^  selector:/{active=1; next} active && /^  template:/{exit} active{print}' <<<"$deployment")
       ! grep -q 'mnemoshare.io/migration-operation-contract' <<<"$selector"
       ! grep -q 'kind: Job' <<<"$render"
+      ! grep -Fq '/var/run/mnemoshare-migration/status.json' <<<"$render"
       ;;
     apply)
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
@@ -73,6 +79,19 @@ for phase in plan down apply verify up; do
       grep -Fq -- '"--exclusive"' <<<"$render"
       grep -Fq -- '"--bootstrap-policy"' <<<"$render"
       grep -Fq -- '"provision-untracked"' <<<"$render"
+      grep -Fq -- '- "--status"' <<<"$render"
+      grep -Fq -- '- "/var/run/mnemoshare-migration/status.json"' <<<"$render"
+      grep -Fq -- '- "--termination-log"' <<<"$render"
+      grep -Fq -- '- "/dev/termination-log"' <<<"$render"
+      grep -Fq 'name: migration-status' <<<"$render"
+      grep -Fq 'mountPath: /var/run/mnemoshare-migration' <<<"$render"
+      grep -Fq 'emptyDir: {}' <<<"$render"
+      grep -Fq 'startupProbe:' <<<"$render"
+      grep -Fq 'livenessProbe:' <<<"$render"
+      test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/var/run/mnemoshare-migration/status.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$render")" -eq 2
+      grep -Fq 'failureThreshold: 60' <<<"$render"
+      grep -Fq 'periodSeconds: 30' <<<"$render"
+      grep -Fq 'if [ "$phase" = "apply" ]; then' <<<"$render"
       ;;
     verify)
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
@@ -81,12 +100,21 @@ for phase in plan down apply verify up; do
       grep -Fq -- '- "verify"' <<<"$render"
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"
       grep -Fq -- '"--expect-plan-digest"' <<<"$render"
+      ! grep -Fq '/var/run/mnemoshare-migration/status.json' <<<"$render"
       ;;
     up)
       ! grep -q 'kind: Job' <<<"$render"
       grep -Fq "image: \"mnemoshare/mnemoshare@$target\"" <<<"$render"
+      ! grep -Fq '/var/run/mnemoshare-migration/status.json' <<<"$render"
       ;;
   esac
 done
+
+# The full production values profile must preserve the same generated apply
+# command and probe; profile defaults cannot weaken the operation contract.
+full_render=$(helm template ci "$chart_dir" -f "$chart_dir/values-production.yaml" "${base[@]}" --set migrationOperation.phase=apply)
+grep -Fq -- '- "--status"' <<<"$full_render"
+grep -Fq -- '- "--termination-log"' <<<"$full_render"
+test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/var/run/mnemoshare-migration/status.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$full_render")" -eq 2
 
 echo 'migration-operation render contract passed'

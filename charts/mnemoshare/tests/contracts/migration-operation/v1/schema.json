@@ -21,12 +21,13 @@
     "commands": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["reset", "plan", "apply", "verify"],
+      "required": ["reset", "plan", "apply", "verify", "status"],
       "properties": {
         "reset": {"$ref": "#/$defs/resetCommand"},
         "plan": {"$ref": "#/$defs/planCommand"},
         "apply": {"$ref": "#/$defs/applyCommand"},
-        "verify": {"$ref": "#/$defs/verifyCommand"}
+        "verify": {"$ref": "#/$defs/verifyCommand"},
+        "status": {"$ref": "#/$defs/statusCommand"}
       }
     },
     "planning": {
@@ -48,13 +49,16 @@
     "result": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "mediaType", "resultFlag", "planDigestField", "digestEncoding"],
+      "required": ["schema", "mediaType", "resultFlag", "planDigestField", "digestEncoding", "progressSchema", "statusFlag", "terminationLogFlag"],
       "properties": {
         "schema": {"const": "mnemoshare.migration-result.v1"},
         "mediaType": {"const": "application/json"},
         "resultFlag": {"const": "--result"},
         "planDigestField": {"const": "planDigest"},
-        "digestEncoding": {"const": "sha256-hex-lowercase"}
+        "digestEncoding": {"const": "sha256-hex-lowercase"},
+        "progressSchema": {"const": "mnemoshare.migration-progress.v1"},
+        "statusFlag": {"const": "--status"},
+        "terminationLogFlag": {"const": "--termination-log"}
       }
     },
     "lifecycle": {
@@ -91,7 +95,7 @@
       "additionalProperties": false,
       "properties": {
         "executable": {"const": "/usr/local/bin/mnemoshare-migrate"},
-        "args": {"const": ["apply", "--contract", "embedded", "--expect-contract-fingerprint", "<contract-fingerprint>", "--plan", "<plan-file>", "--expect-plan-digest", "<plan-digest>", "--exclusive", "--bootstrap-policy", "provision-untracked"]}
+        "args": {"const": ["apply", "--contract", "embedded", "--expect-contract-fingerprint", "<contract-fingerprint>", "--plan", "<plan-file>", "--expect-plan-digest", "<plan-digest>", "--exclusive", "--bootstrap-policy", "provision-untracked", "--status", "<status-file>", "--termination-log", "/dev/termination-log"]}
       },
       "required": ["executable", "args"]
     },
@@ -101,6 +105,15 @@
       "properties": {
         "executable": {"const": "/usr/local/bin/mnemoshare-migrate"},
         "args": {"const": ["verify", "--contract", "embedded", "--expect-contract-fingerprint", "<contract-fingerprint>", "--plan", "<plan-file>", "--expect-plan-digest", "<plan-digest>"]}
+      },
+      "required": ["executable", "args"]
+    },
+    "statusCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "executable": {"const": "/usr/local/bin/mnemoshare-migrate"},
+        "args": {"const": ["status", "--file", "<status-file>", "--max-inactivity", "5m", "--absolute-deadline", "6h"]}
       },
       "required": ["executable", "args"]
     }

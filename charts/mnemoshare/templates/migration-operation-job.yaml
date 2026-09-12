@@ -7,6 +7,7 @@
 {{- $planDigest := .Values.migrationOperation.planDigest | default "pending" }}
 {{- $planFile := "/migration/primary-plan.json" }}
 {{- $resultFile := "/migration/primary-result.json" }}
+{{- $statusFile := "/var/run/mnemoshare-migration/status.json" }}
 {{- $jobName := printf "%s-migration-%s-%s" $fullname $phase $operationID | trunc 63 | trimSuffix "-" }}
 apiVersion: batch/v1
 kind: Job
@@ -62,7 +63,12 @@ spec:
               /usr/local/bin/mnemoshare-migrate "$phase" "$@"
               exit_code=$?
               set -e
-              if [ "$phase" = "plan" ] && [ -s {{ $resultFile | quote }} ]; then
+              if [ "$phase" = "apply" ]; then
+                # The migrate binary owns the typed terminal snapshot. Keeping
+                # it intact lets the deployment supervisor observe the last
+                # truthful checkpoint when apply succeeds or fails.
+                :
+              elif [ "$phase" = "plan" ] && [ -s {{ $resultFile | quote }} ]; then
                 tr -d '\r\n' < {{ $resultFile | quote }} | cut -c 1-4096 > /dev/termination-log
               else
                 if [ "$exit_code" -eq 0 ]; then outcome=success; else outcome=failure; fi
@@ -88,6 +94,10 @@ spec:
             - "--exclusive"
             - "--bootstrap-policy"
             - "provision-untracked"
+            - "--status"
+            - {{ $statusFile | quote }}
+            - "--termination-log"
+            - "/dev/termination-log"
             {{- end }}
             {{- end }}
           env:
@@ -97,10 +107,30 @@ spec:
           volumeMounts:
             - name: migration-transport
               mountPath: /migration
+            {{- if eq $phase "apply" }}
+            - name: migration-status
+              mountPath: /var/run/mnemoshare-migration
+            {{- end }}
+          {{- if eq $phase "apply" }}
+          startupProbe:
+            exec:
+              command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", {{ $statusFile | quote }}, "--max-inactivity", "5m", "--absolute-deadline", "6h"]
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            exec:
+              command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", {{ $statusFile | quote }}, "--max-inactivity", "5m", "--absolute-deadline", "6h"]
+            periodSeconds: 30
+            failureThreshold: 1
+          {{- end }}
       volumes:
         - name: migration-transport
           persistentVolumeClaim:
             claimName: {{ .Values.migrationOperation.transport.existingClaim | quote }}
+        {{- if eq $phase "apply" }}
+        - name: migration-status
+          emptyDir: {}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
