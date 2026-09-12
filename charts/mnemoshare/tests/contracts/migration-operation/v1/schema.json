@@ -49,7 +49,7 @@
     "result": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "mediaType", "resultFlag", "planDigestField", "digestEncoding", "progressSchema", "statusFlag", "terminationLogFlag"],
+      "required": ["schema", "mediaType", "resultFlag", "planDigestField", "digestEncoding", "progressSchema", "statusFlag", "terminationLogFlag", "statusFile"],
       "properties": {
         "schema": {"const": "mnemoshare.migration-result.v1"},
         "mediaType": {"const": "application/json"},
@@ -58,7 +58,8 @@
         "digestEncoding": {"const": "sha256-hex-lowercase"},
         "progressSchema": {"const": "mnemoshare.migration-progress.v1"},
         "statusFlag": {"const": "--status"},
-        "terminationLogFlag": {"const": "--termination-log"}
+        "terminationLogFlag": {"const": "--termination-log"},
+        "statusFile": {"type":"object","additionalProperties":false,"required":["maxBytes","failureMaxBytes","fileMode","parentTrust","symlinks","durability","deadlineTerminalState"],"properties":{"maxBytes":{"const":4096},"failureMaxBytes":{"const":2048},"fileMode":{"const":"0600-caller-owned-regular-single-link"},"parentTrust":{"const":"caller-owned-not-world-writable"},"symlinks":{"const":"reject"},"durability":{"const":"fsync-file-rename-fsync-parent"},"deadlineTerminalState":{"const":"stalled"}}}
       }
     },
     "lifecycle": {
@@ -113,7 +114,7 @@
       "additionalProperties": false,
       "properties": {
         "executable": {"const": "/usr/local/bin/mnemoshare-migrate"},
-        "args": {"const": ["status", "--file", "<status-file>", "--max-inactivity", "5m", "--absolute-deadline", "6h"]}
+        "args": {"const": ["status", "--file", "<status-file>", "--termination-log", "/dev/termination-log", "--max-inactivity", "5m", "--absolute-deadline", "6h"]}
       },
       "required": ["executable", "args"]
     }

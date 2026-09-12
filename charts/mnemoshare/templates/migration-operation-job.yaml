@@ -7,7 +7,8 @@
 {{- $planDigest := .Values.migrationOperation.planDigest | default "pending" }}
 {{- $planFile := "/migration/primary-plan.json" }}
 {{- $resultFile := "/migration/primary-result.json" }}
-{{- $statusFile := "/var/run/mnemoshare-migration/status.json" }}
+{{- $statusDirectory := "/var/run/mnemoshare-migration/status" }}
+{{- $statusFile := printf "%s/status.json" $statusDirectory }}
 {{- $jobName := printf "%s-migration-%s-%s" $fullname $phase $operationID | trunc 63 | trimSuffix "-" }}
 apiVersion: batch/v1
 kind: Job
@@ -61,6 +62,14 @@ spec:
           args:
             - |
               phase="$0"
+              if [ "$phase" = "apply" ]; then
+                # The emptyDir mount is kubelet-owned. Create the status parent
+                # as the actual non-root caller so the binary can enforce its
+                # caller-owned, non-world-writable filesystem contract.
+                umask 077
+                mkdir -p {{ $statusDirectory | quote }}
+                chmod 0700 {{ $statusDirectory | quote }}
+              fi
               set +e
               /usr/local/bin/mnemoshare-migrate "$phase" "$@"
               exit_code=$?
@@ -116,12 +125,12 @@ spec:
           {{- if eq $phase "apply" }}
           startupProbe:
             exec:
-              command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", {{ $statusFile | quote }}, "--max-inactivity", "5m", "--absolute-deadline", "6h"]
+              command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", {{ $statusFile | quote }}, "--termination-log", "/dev/termination-log", "--max-inactivity", "5m", "--absolute-deadline", "6h"]
             periodSeconds: 5
             failureThreshold: 60
           livenessProbe:
             exec:
-              command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", {{ $statusFile | quote }}, "--max-inactivity", "5m", "--absolute-deadline", "6h"]
+              command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", {{ $statusFile | quote }}, "--termination-log", "/dev/termination-log", "--max-inactivity", "5m", "--absolute-deadline", "6h"]
             periodSeconds: 30
             failureThreshold: 1
           {{- end }}

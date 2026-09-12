@@ -6,7 +6,7 @@
     "plan --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --output \u003cplan-file\u003e --result \u003cresult-file\u003e",
     "apply --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e --exclusive --bootstrap-policy provision-untracked --status \u003cstatus-file\u003e --termination-log /dev/termination-log",
     "verify --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e",
-    "status --file \u003cstatus-file\u003e --max-inactivity 5m --absolute-deadline 6h"
+    "status --file \u003cstatus-file\u003e --termination-log /dev/termination-log --max-inactivity 5m --absolute-deadline 6h"
   ],
   "schemaOwnership": "exclusive-operation",
   "bootstrapPolicy": "provision-untracked",
