@@ -37,22 +37,28 @@
 {{- if eq .Values.database.driver "sqlite" }}
 {{- fail "migrationOperation.enabled is not supported with database.driver=sqlite until the controller provisions the application data volume" }}
 {{- end }}
-{{- if has $phase (list "apply" "verify" "up") }}
+{{- if has $phase (list "down" "apply" "verify" "up") }}
 {{- if not (regexMatch "^[a-f0-9]{64}$" (.Values.migrationOperation.planDigest | default "")) }}
-{{- fail "migrationOperation.planDigest must be a 64-character lowercase hex digest for apply, verify, and up" }}
+{{- fail "migrationOperation.planDigest must be a 64-character lowercase hex digest before down, apply, verify, or up" }}
 {{- end }}
 {{- end }}
 {{- if eq $phase "up" }}
 {{- if ne (.Values.migrationOperation.planDigest | default "") (.Values.migrationOperation.verifiedPlanDigest | default "") }}
 {{- fail "migrationOperation.phase=up requires verifiedPlanDigest to equal planDigest after an external verify succeeded" }}
 {{- end }}
-{{- if and $hasRelayUniverse (ne (.Values.migrationOperation.externalPlanDigest | default "") (.Values.migrationOperation.verifiedExternalPlanDigest | default "")) }}
+{{- if and $hasRelayUniverse (not (regexMatch "^[a-f0-9]{64}$" (.Values.migrationOperation.externalPlanDigest | default ""))) }}
+{{- fail "migrationOperation.phase=up requires a valid externalPlanDigest for email-relay-mongo" }}
+{{- end }}
+{{- if and $hasRelayUniverse (not (regexMatch "^[a-f0-9]{64}$" (.Values.migrationOperation.verifiedExternalPlanDigest | default ""))) }}
+{{- fail "migrationOperation.phase=up requires a valid verifiedExternalPlanDigest for email-relay-mongo" }}
+{{- end }}
+{{- if and $hasRelayUniverse (ne .Values.migrationOperation.externalPlanDigest .Values.migrationOperation.verifiedExternalPlanDigest) }}
 {{- fail "migrationOperation.phase=up requires verifiedExternalPlanDigest to equal externalPlanDigest for email-relay-mongo" }}
 {{- end }}
 {{- end }}
-{{- if and (eq $phase "down") $hasRelayUniverse }}
+{{- if and (or (eq $phase "down") (and (eq $phase "apply") (eq $universe "primary"))) $hasRelayUniverse }}
 {{- if not (regexMatch "^[a-f0-9]{64}$" (.Values.migrationOperation.externalPlanDigest | default "")) }}
-{{- fail "migrationOperation.phase=down requires externalPlanDigest for email-relay-mongo before writers are drained" }}
+{{- fail "migrationOperation.phase=down or primary apply requires externalPlanDigest for email-relay-mongo before writers are drained or migration proceeds" }}
 {{- end }}
 {{- end }}
 {{- if has $phase (list "reset" "plan" "apply" "verify") }}

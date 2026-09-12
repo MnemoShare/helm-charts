@@ -186,11 +186,23 @@ done
 
 # A configured external universe must be planned before down; failure occurs
 # at render time, before the chart can emit a zero-replica workload.
+if helm template ci "$chart_dir" "${base[@]}" --set migrationOperation.phase=down --set-string migrationOperation.planDigest= >/dev/null 2>&1; then
+  echo 'down rendered without the primary plan proof' >&2
+  exit 1
+fi
 if helm template ci "$chart_dir" "${base[@]}" "${relay_profile[@]}" --set migrationOperation.phase=down >/dev/null 2>&1; then
   echo 'down rendered without the email-relay-mongo plan proof' >&2
   exit 1
 fi
 helm template ci "$chart_dir" "${base[@]}" "${relay_profile[@]}" --set migrationOperation.phase=down --set migrationOperation.externalPlanDigest="$plan" >/dev/null
+if helm template ci "$chart_dir" "${base[@]}" "${relay_profile[@]}" --set migrationOperation.phase=apply >/dev/null 2>&1; then
+  echo 'primary apply rendered without the email-relay-mongo plan proof' >&2
+  exit 1
+fi
+if helm template ci "$chart_dir" "${base[@]}" "${relay_profile[@]}" --set migrationOperation.phase=up >/dev/null 2>&1; then
+  echo 'up rendered with absent email-relay-mongo plan and verification proofs' >&2
+  exit 1
+fi
 if helm template ci "$chart_dir" "${base[@]}" "${relay_profile[@]}" --set migrationOperation.phase=up --set migrationOperation.externalPlanDigest="$plan" >/dev/null 2>&1; then
   echo 'up rendered without verified email-relay-mongo proof' >&2
   exit 1
