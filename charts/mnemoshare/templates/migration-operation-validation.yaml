@@ -15,8 +15,8 @@
 {{- if ne $fingerprint (include "mnemoshare.migrationOperationExpectedContractFingerprint" .) }}
 {{- fail (printf "migrationOperation.contractFingerprint %s does not match the chart's vendored migration-operation/v1 contract %s" $fingerprint (include "mnemoshare.migrationOperationExpectedContractFingerprint" .)) }}
 {{- end }}
-{{- if not (has $phase (list "plan" "down" "apply" "verify" "up")) }}
-{{- fail "migrationOperation.phase must be one of plan, down, apply, verify, or up when migrationOperation.enabled=true" }}
+{{- if not (has $phase (list "reset" "plan" "down" "apply" "verify" "up")) }}
+{{- fail "migrationOperation.phase must be one of reset, plan, down, apply, verify, or up when migrationOperation.enabled=true" }}
 {{- end }}
 {{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" (.Values.migrationOperation.operationId | default "")) }}
 {{- fail "migrationOperation.operationId must be a DNS label; bump it for every retry because migration Jobs are retained" }}
@@ -24,6 +24,9 @@
 {{- $universe := .Values.migrationOperation.universe | default "primary" }}
 {{- if not (has $universe (list "primary" "email-relay-mongo")) }}
 {{- fail "migrationOperation.universe must be one of the universes in the vendored v1 contract: primary or email-relay-mongo" }}
+{{- end }}
+{{- if and (eq $phase "reset") (ne $universe "primary") }}
+{{- fail "migrationOperation.phase=reset is the one-time primary format-ledger reset and does not accept an external universe" }}
 {{- end }}
 {{- if and (eq $universe "email-relay-mongo") (not $hasRelayUniverse) }}
 {{- fail "migrationOperation.universe=email-relay-mongo requires a configured emailGateway profile that declares that external universe" }}
@@ -52,7 +55,7 @@
 {{- fail "migrationOperation.phase=down requires externalPlanDigest for email-relay-mongo before writers are drained" }}
 {{- end }}
 {{- end }}
-{{- if has $phase (list "plan" "apply" "verify") }}
+{{- if has $phase (list "reset" "plan" "apply" "verify") }}
 {{- if not .Values.migrationOperation.transport.existingClaim }}
 {{- fail "migrationOperation.transport.existingClaim is required for plan, apply, and verify" }}
 {{- end }}

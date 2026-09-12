@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mnemoshare.com/contracts/migration-operation/v1/progress-schema.json",
+  "title": "MnemoShare migration progress snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "sequence", "state", "startedAt", "lastActivity"],
+  "properties": {
+    "schema": {"const": "mnemoshare.migration-progress.v1"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "state": {"enum": ["starting", "running", "waiting", "stalled", "completed", "failed"]},
+    "checkpoint": {"type": "string", "minLength": 1, "x-mnemoshare-maxUtf8Bytes": 512},
+    "waitingReason": {"type": "string", "minLength": 1, "x-mnemoshare-maxUtf8Bytes": 512},
+    "failure": {"type": "string", "minLength": 1, "x-mnemoshare-maxUtf8Bytes": 2048},
+    "startedAt": {"type": "string", "format": "date-time"},
+    "lastActivity": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {"if": {"properties": {"state": {"const": "running"}}, "required": ["state"]}, "then": {"required": ["checkpoint"], "not": {"anyOf": [{"required": ["waitingReason"]}, {"required": ["failure"]}]}}},
+    {"if": {"properties": {"state": {"const": "waiting"}}, "required": ["state"]}, "then": {"required": ["waitingReason"], "not": {"anyOf": [{"required": ["checkpoint"]}, {"required": ["failure"]}]}}},
+    {"if": {"properties": {"state": {"enum": ["stalled", "failed"]}}, "required": ["state"]}, "then": {"required": ["failure"], "not": {"anyOf": [{"required": ["checkpoint"]}, {"required": ["waitingReason"]}]}}},
+    {"if": {"properties": {"state": {"enum": ["starting", "completed"]}}, "required": ["state"]}, "then": {"not": {"anyOf": [{"required": ["checkpoint"]}, {"required": ["waitingReason"]}, {"required": ["failure"]}]}}}
+  ]
+}

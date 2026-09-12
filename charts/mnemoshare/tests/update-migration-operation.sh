@@ -18,7 +18,8 @@ fi
 
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
-for name in README.md SHA256SUMS schema.json conformance.json contract.json; do
+canonical=(README.md SHA256SUMS schema.json conformance.json contract.json progress-schema.json progress-conformance.json)
+for name in "${canonical[@]}"; do
   git -C "$app_tree" show "${app_commit}:${source_path}/${name}" > "${stage}/${name}"
 done
 (cd "$stage" && sha256sum -c SHA256SUMS)
@@ -43,9 +44,9 @@ if [ -e "$destination" ] || [ -L "$destination" ]; then
   # changed to freeze every artifact and require v2 for grammar changes.
   for entry in "$destination"/*; do
     [ -f "$entry" ] && [ ! -L "$entry" ] || { echo "vendored migration-operation/v1 contains a non-regular entry" >&2; exit 1; }
-    case "$(basename "$entry")" in README.md|SHA256SUMS|schema.json|conformance.json|contract.json|UPSTREAM) ;; *) echo "vendored migration-operation/v1 contains an unmanaged entry" >&2; exit 1;; esac
+    case "$(basename "$entry")" in README.md|SHA256SUMS|schema.json|conformance.json|contract.json|progress-schema.json|progress-conformance.json|UPSTREAM) ;; *) echo "vendored migration-operation/v1 contains an unmanaged entry" >&2; exit 1;; esac
   done
-  for mutable in README.md schema.json conformance.json contract.json SHA256SUMS UPSTREAM; do
+  for mutable in "${canonical[@]}" UPSTREAM; do
     install -m 0644 "${stage}/${mutable}" "${destination}/${mutable}.new"
     mv "${destination}/${mutable}.new" "${destination}/${mutable}"
   done

@@ -9,7 +9,7 @@ app=${root}/app
 consumer=${root}/consumer
 mkdir -p "${app}/contracts/migration-operation/v1" "${consumer}/charts/mnemoshare/tests"
 cp "$test_dir/update-migration-operation.sh" "${consumer}/charts/mnemoshare/tests/"
-cp "$fixture"/{README.md,SHA256SUMS,schema.json,conformance.json,contract.json} "${app}/contracts/migration-operation/v1/"
+cp "$fixture"/{README.md,SHA256SUMS,schema.json,conformance.json,contract.json,progress-schema.json,progress-conformance.json} "${app}/contracts/migration-operation/v1/"
 git -C "$app" init -q
 git -C "$app" add .
 git -C "$app" -c user.name=test -c user.email=test@example.com commit -q -m fixture
