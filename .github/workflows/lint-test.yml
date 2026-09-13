@@ -50,7 +50,7 @@ jobs:
         uses: helm/chart-testing-action@v2.6.1
 
       - name: Install deployment contract schema validator
-        run: python -m pip install jsonschema==4.25.1
+        run: python -m pip install jsonschema==4.25.1 pyyaml==6.0.2
 
       - name: Add Helm repositories
         run: |
@@ -132,6 +132,16 @@ jobs:
 
       - name: Validate migration operation v1 consumer
         run: bash charts/mnemoshare/tests/migration-operation.sh
+
+      - name: Build application image for in-image migration execution
+        if: github.event_name == 'pull_request'
+        run: docker build --file application/Dockerfile --tag mnemoshare-chart-migration-ci:${GITHUB_SHA} application
+
+      - name: Execute rendered migration Jobs inside application image
+        if: github.event_name == 'pull_request'
+        env:
+          MIGRATION_IMAGE: mnemoshare-chart-migration-ci:${{ github.sha }}
+        run: bash charts/mnemoshare/tests/migration-image-execution.sh
 
       - name: Validate migration operation v1 updater
         run: bash charts/mnemoshare/tests/update-migration-operation-test.sh
