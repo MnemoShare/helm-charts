@@ -38,7 +38,7 @@ jobs:
           repository: MnemoShare/mnemoshare
           # Keep the checker on the exact application revision represented by
           # the vendored migration/deployment contracts in this chart.
-          ref: 05716c69e33eb912325fd0b4c5171007a6d80c35
+          ref: 4f3f852cb3507febad82720debe8fb87f3a57757
           path: application
 
       - name: Set up Go
@@ -88,6 +88,32 @@ jobs:
             exit 1
           fi
           echo "✓ Default-path chart templates rendered successfully"
+
+      - name: Validate dev-shaped chart render against application contract
+        if: github.event_name == 'pull_request'
+        run: |
+          # Keep one render close to the development topology: automatic
+          # migration orchestration, an enabled workflow worker, and an
+          # external Redis endpoint. This is intentionally separate from the
+          # minimal default render so a CI-only profile cannot hide dead env.
+          helm template dev charts/mnemoshare \
+            --set customerId=ci-test \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set mongodb.external.enabled=true \
+            --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
+            --set s3.bucket=test --set s3.accessKey=test --set s3.secretKey=test \
+            --set-string jwt.ecPrivateKey=test \
+            --set encryption.key=test-encryption-key-exactly-32by \
+            --set license.key=test --set appUrl=https://dev.example.com \
+            --set ingress.enabled=false \
+            --set formatMigrations.mode=automatic \
+            --set workflowWorker.enabled=true \
+            --set redis.mode=external \
+            --set redis.external.host=redis.example.com \
+            --set redis.external.password=test \
+            > /tmp/mnemoshare-dev-shaped.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-dev-shaped.yaml)
+          echo "✓ Dev-shaped chart render passed the application contract"
 
       - name: Validate format migration orchestration
         run: bash charts/mnemoshare/tests/format-migrations.sh

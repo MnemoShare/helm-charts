@@ -9,7 +9,7 @@
 {{- $artifactDirectory := "/migration/artifacts" }}
 {{- $planFile := printf "%s/%s-plan.json" $artifactDirectory $fileStem }}
 {{- $resultFile := printf "%s/%s-result.json" $artifactDirectory $fileStem }}
-{{- $statusDirectory := "/var/run/mnemoshare-migration/status" }}
+{{- $statusDirectory := "/run/mnemoshare-migration/status" }}
 {{- $statusFile := printf "%s/status.json" $statusDirectory }}
 {{- $terminationFile := printf "%s/termination.json" $statusDirectory }}
 {{- $instrumented := has $phase (list "apply" "reset") }}
@@ -84,6 +84,9 @@ spec:
                 chmod 0700 {{ $statusDirectory | quote }}
               fi
               set +e
+              if [ "$phase" = "plan" ]; then
+                exec /usr/local/bin/mnemoshare-migrate "$command" "$@"
+              fi
               /usr/local/bin/mnemoshare-migrate "$command" "$@"
               exit_code=$?
               set -e
@@ -153,7 +156,7 @@ spec:
               mountPath: /migration
             {{- if $instrumented }}
             - name: migration-status
-              mountPath: /var/run/mnemoshare-migration
+              mountPath: /run/mnemoshare-migration
             {{- end }}
           {{- if $instrumented }}
           startupProbe:

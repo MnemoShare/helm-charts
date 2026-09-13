@@ -161,9 +161,11 @@ stateful_render=$(helm template test "$chart_dir" "${base[@]}" \
   --set redis.external.enabled=true \
   --set redis.external.host=redis.example.com)
 assert_image_in_source "$stateful_render" 'templates/workflow-worker-statefulset.yaml'
-assert_has 'command: ["/usr/local/bin/mnemoshare-migrate"]'
-assert_has "args: [\"plan\", \"--contract\", \"embedded\", \"--expect-contract-fingerprint\", \"${migration_fingerprint}\", \"--output\", \"/migration/plan.json\", \"--result\", \"/migration/result.json\"]"
-assert_has "verify --contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --plan /migration/plan.json --expect-plan-digest \"\$(cat /migration/plan-digest)\""
+assert_has 'command: ["/bin/sh", "-ec"]'
+assert_has 'mkdir -p "/migration/artifacts"'
+assert_has 'chmod 0700 "/migration/artifacts"'
+assert_has "exec /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --output \"/migration/artifacts/plan.json\" --result \"/migration/artifacts/result.json\""
+assert_has "verify --contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --plan /migration/artifacts/plan.json --expect-plan-digest \"\$(cat /migration/artifacts/plan-digest)\""
 assert_has 'case "${decision}" in'
 assert_has 'selected_pods="$(kubectl get pods -l "${selector}" -o name)"'
 assert_has 'if [ -n "${selected_pods}" ]; then'
@@ -299,8 +301,8 @@ for custom_fragment in 'port: 27018' 'port: 6443'; do
     exit 1
   fi
 done
-assert_has 'jq --stream -c . /migration/result.json > /migration/result-events.jsonl'
-assert_has 'jq --slurp -e -f /migration/migration-result-v1.jq /migration/result-events.jsonl'
+assert_has 'jq --stream -c . /migration/artifacts/result.json > /migration/artifacts/result-events.jsonl'
+assert_has 'jq --slurp -e -f /migration/artifacts/migration-result-v1.jq /migration/artifacts/result-events.jsonl'
 
 decision_is_valid_value() {
   local candidate=$1
@@ -318,11 +320,13 @@ if decision_is_valid_value $'ordinary\nunterminated'; then
   exit 1
 fi
 assert_has 'exec /usr/local/bin/mnemoshare-migrate apply \'
-assert_has "--contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --plan \"/migration/plan.json\" --expect-plan-digest \"\$(cat /migration/plan-digest)\" \\"
+assert_has "--contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --plan \"/migration/artifacts/plan.json\" --expect-plan-digest \"\$(cat /migration/artifacts/plan-digest)\" \\"
 assert_has '--exclusive --bootstrap-policy provision-untracked'
-assert_has '--status "/var/run/mnemoshare-migration/status/status.json" --termination-file "/var/run/mnemoshare-migration/status/termination.json"'
+assert_has 'mkdir -p "/run/mnemoshare-migration/status"'
+assert_has 'chmod 0700 "/run/mnemoshare-migration/status"'
+assert_has '--status "/run/mnemoshare-migration/status/status.json" --termination-file "/run/mnemoshare-migration/status/termination.json"'
 assert_has '- name: migration-status'
-assert_has 'mountPath: /var/run/mnemoshare-migration'
+assert_has 'mountPath: /run/mnemoshare-migration'
 assert_has '"helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded'
 if [ "$(grep -Ec '^[[:space:]]+"helm.sh/hook-delete-policy": before-hook-creation$' <<<"$render")" -lt 7 ]; then
   echo 'support hooks do not all use deterministic next-attempt cleanup' >&2

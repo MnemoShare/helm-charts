@@ -65,12 +65,12 @@ for phase in reset plan down apply verify up; do
       grep -Fq -- '- "--confirm-before-first-1.0"' <<<"$render"
       grep -Fq -- '- "--status"' <<<"$render"
       grep -Fq -- '- "--termination-file"' <<<"$render"
-      grep -Fq -- '- "/var/run/mnemoshare-migration/status/termination.json"' <<<"$render"
-      grep -Fq 'terminationMessagePath: "/var/run/mnemoshare-migration/status/termination.json"' <<<"$render"
+      grep -Fq -- '- "/run/mnemoshare-migration/status/termination.json"' <<<"$render"
+      grep -Fq 'terminationMessagePath: "/run/mnemoshare-migration/status/termination.json"' <<<"$render"
       grep -Fq 'name: migration-status' <<<"$render"
       grep -Fq 'startupProbe:' <<<"$render"
       grep -Fq 'livenessProbe:' <<<"$render"
-      test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/var/run/mnemoshare-migration/status/status.json", "--termination-file", "/var/run/mnemoshare-migration/status/termination.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$render")" -eq 2
+      test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/run/mnemoshare-migration/status/status.json", "--termination-file", "/run/mnemoshare-migration/status/termination.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$render")" -eq 2
       ! grep -Fq -- '- "--contract"' <<<"$render"
       ;;
     plan)
@@ -90,12 +90,13 @@ for phase in reset plan down apply verify up; do
       grep -Fq -- '- "--contract"' <<<"$render"
       grep -Fq -- '- "embedded"' <<<"$render"
 	  grep -Fq 'phase="$0"' <<<"$render"
+	  grep -Fq 'exec /usr/local/bin/mnemoshare-migrate "$command" "$@"' <<<"$render"
 	  grep -Fq '/usr/local/bin/mnemoshare-migrate "$command" "$@"' <<<"$render"
 	  if grep -Eq '^[[:space:]]+shift([[:space:]]|$)' <<<"$render"; then
 	    echo 'migration wrapper must not discard the first contract argument' >&2
 	    exit 1
 	  fi
-	  ! grep -Fq '/var/run/mnemoshare-migration/' <<<"$render"
+	  ! grep -Fq '/run/mnemoshare-migration/' <<<"$render"
       ;;
     down)
       deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$render")
@@ -104,7 +105,7 @@ for phase in reset plan down apply verify up; do
       selector=$(awk '/^  selector:/{active=1; next} active && /^  template:/{exit} active{print}' <<<"$deployment")
       ! grep -q 'mnemoshare.io/migration-operation-contract' <<<"$selector"
       ! grep -q 'kind: Job' <<<"$render"
-      ! grep -Fq '/var/run/mnemoshare-migration/' <<<"$render"
+      ! grep -Fq '/run/mnemoshare-migration/' <<<"$render"
       ;;
     apply)
       ! grep -Fq 'activeDeadlineSeconds:' <<<"$render"
@@ -117,21 +118,21 @@ for phase in reset plan down apply verify up; do
       grep -Fq -- '"--bootstrap-policy"' <<<"$render"
       grep -Fq -- '"provision-untracked"' <<<"$render"
       grep -Fq -- '- "--status"' <<<"$render"
-      grep -Fq -- '- "/var/run/mnemoshare-migration/status/status.json"' <<<"$render"
+      grep -Fq -- '- "/run/mnemoshare-migration/status/status.json"' <<<"$render"
       grep -Fq -- '- "--termination-file"' <<<"$render"
-      grep -Fq -- '- "/var/run/mnemoshare-migration/status/termination.json"' <<<"$render"
+      grep -Fq -- '- "/run/mnemoshare-migration/status/termination.json"' <<<"$render"
       grep -Fq 'name: migration-status' <<<"$render"
-      grep -Fq 'mountPath: /var/run/mnemoshare-migration' <<<"$render"
+      grep -Fq 'mountPath: /run/mnemoshare-migration' <<<"$render"
       grep -Fq 'emptyDir: {}' <<<"$render"
       grep -Fq 'fsGroup: 1000' <<<"$render"
       grep -Fq 'runAsNonRoot: true' <<<"$render"
       grep -Fq 'runAsUser: 1000' <<<"$render"
       grep -Fq 'umask 077' <<<"$render"
-      grep -Fq 'mkdir -p "/var/run/mnemoshare-migration/status"' <<<"$render"
-      grep -Fq 'chmod 0700 "/var/run/mnemoshare-migration/status"' <<<"$render"
+      grep -Fq 'mkdir -p "/run/mnemoshare-migration/status"' <<<"$render"
+      grep -Fq 'chmod 0700 "/run/mnemoshare-migration/status"' <<<"$render"
       grep -Fq 'startupProbe:' <<<"$render"
       grep -Fq 'livenessProbe:' <<<"$render"
-      test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/var/run/mnemoshare-migration/status/status.json", "--termination-file", "/var/run/mnemoshare-migration/status/termination.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$render")" -eq 2
+      test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/run/mnemoshare-migration/status/status.json", "--termination-file", "/run/mnemoshare-migration/status/termination.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$render")" -eq 2
       grep -Fq 'failureThreshold: 60' <<<"$render"
       grep -Fq 'periodSeconds: 30' <<<"$render"
       grep -Fq 'if [ "$phase" = "apply" ] || [ "$phase" = "reset" ]; then' <<<"$render"
@@ -144,12 +145,12 @@ for phase in reset plan down apply verify up; do
       grep -Fq -- '- "verify"' <<<"$render"
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"
       grep -Fq -- '"--expect-plan-digest"' <<<"$render"
-      ! grep -Fq '/var/run/mnemoshare-migration/' <<<"$render"
+      ! grep -Fq '/run/mnemoshare-migration/' <<<"$render"
       ;;
     up)
       ! grep -q 'kind: Job' <<<"$render"
       grep -Fq "image: \"mnemoshare/mnemoshare@$target\"" <<<"$render"
-      ! grep -Fq '/var/run/mnemoshare-migration/' <<<"$render"
+      ! grep -Fq '/run/mnemoshare-migration/' <<<"$render"
       ;;
   esac
 done
@@ -165,7 +166,7 @@ full_render=$(helm template ci "$chart_dir" -f "$chart_dir/values-production.yam
 ! grep -Fq 'activeDeadlineSeconds:' <<<"$full_render"
 grep -Fq -- '- "--status"' <<<"$full_render"
 grep -Fq -- '- "--termination-file"' <<<"$full_render"
-test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/var/run/mnemoshare-migration/status/status.json", "--termination-file", "/var/run/mnemoshare-migration/status/termination.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$full_render")" -eq 2
+test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/run/mnemoshare-migration/status/status.json", "--termination-file", "/run/mnemoshare-migration/status/termination.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$full_render")" -eq 2
 
 # Every universe declared by the canonical contract has a concrete adapter.
 # The relay universe uses its own durable files and credentials and passes the

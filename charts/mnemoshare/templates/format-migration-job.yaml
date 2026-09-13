@@ -38,7 +38,8 @@
 {{- $fullname := include "mnemoshare.fullname" . }}
 {{- $migrationImage := include "mnemoshare.applicationImage" (dict "root" . "name" "migration") }}
 {{- $migrationContractFingerprint := include "mnemoshare.migrationOperationExpectedContractFingerprint" . }}
-{{- $statusDirectory := "/var/run/mnemoshare-migration/status" }}
+{{- $artifactDirectory := "/migration/artifacts" }}
+{{- $statusDirectory := "/run/mnemoshare-migration/status" }}
 {{- $statusFile := printf "%s/status.json" $statusDirectory }}
 {{- $terminationFile := printf "%s/termination.json" $statusDirectory }}
 {{- $externalRelayUniverse := false }}
@@ -175,8 +176,13 @@ spec:
         - name: plan-before-drain
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["/usr/local/bin/mnemoshare-migrate"]
-          args: ["plan", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--output", "/migration/plan.json", "--result", "/migration/result.json"]
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              umask 077
+              mkdir -p {{ $artifactDirectory | quote }}
+              chmod 0700 {{ $artifactDirectory | quote }}
+              exec /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint {{ $migrationContractFingerprint | quote }} --output {{ printf "%s/plan.json" $artifactDirectory | quote }} --result {{ printf "%s/result.json" $artifactDirectory | quote }}
           env:
             {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
           securityContext:
@@ -188,8 +194,13 @@ spec:
         - name: plan-email-relay-mongo-before-drain
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["/usr/local/bin/mnemoshare-migrate"]
-          args: ["plan", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--universe", "email-relay-mongo", "--output", "/migration/email-relay-plan.json", "--result", "/migration/email-relay-result.json"]
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              umask 077
+              mkdir -p {{ $artifactDirectory | quote }}
+              chmod 0700 {{ $artifactDirectory | quote }}
+              exec /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint {{ $migrationContractFingerprint | quote }} --universe email-relay-mongo --output {{ printf "%s/email-relay-plan.json" $artifactDirectory | quote }} --result {{ printf "%s/email-relay-result.json" $artifactDirectory | quote }}
           env:
             {{- include "mnemoshare.emailRelayMigrationEnv" . | nindent 12 }}
           securityContext:
@@ -223,22 +234,22 @@ spec:
               operation={{ if .Release.IsInstall }}install{{ else }}upgrade{{ end }}
               state_name={{ printf "%s-format-state-%s" $fullname (include "mnemoshare.formatMigrationTargetSuffix" .) | quote }}
               state_resource="configmap/${state_name}"
-              cat > /migration/migration-result-v1.jq <<'MNEMOSHARE_MIGRATION_RESULT_V1'
+              cat > {{ $artifactDirectory }}/migration-result-v1.jq <<'MNEMOSHARE_MIGRATION_RESULT_V1'
 {{ .Files.Get "files/migration-result-v1.jq" | trimSuffix "\n" | nindent 14 }}
               MNEMOSHARE_MIGRATION_RESULT_V1
-              jq --stream -c . /migration/result.json > /migration/result-events.jsonl
-              jq --slurp -e -f /migration/migration-result-v1.jq /migration/result-events.jsonl > /migration/validated-result.json
-              decision="$(jq -r .decision /migration/validated-result.json)"
+              jq --stream -c . {{ $artifactDirectory }}/result.json > {{ $artifactDirectory }}/result-events.jsonl
+              jq --slurp -e -f {{ $artifactDirectory }}/migration-result-v1.jq {{ $artifactDirectory }}/result-events.jsonl > {{ $artifactDirectory }}/validated-result.json
+              decision="$(jq -r .decision {{ $artifactDirectory }}/validated-result.json)"
               primary_decision="${decision}"
-              plan_digest="$(jq -r .planDigest /migration/validated-result.json)"
+              plan_digest="$(jq -r .planDigest {{ $artifactDirectory }}/validated-result.json)"
               external_universe={{ $externalRelayUniverse | quote }}
               external_plan_digest=""
               if [ "${external_universe}" = true ]; then
-                jq --stream -c . /migration/email-relay-result.json > /migration/email-relay-result-events.jsonl
-                jq --slurp -e -f /migration/migration-result-v1.jq /migration/email-relay-result-events.jsonl > /migration/email-relay-validated-result.json
-                external_plan_digest="$(jq -r .planDigest /migration/email-relay-validated-result.json)"
+                jq --stream -c . {{ $artifactDirectory }}/email-relay-result.json > {{ $artifactDirectory }}/email-relay-result-events.jsonl
+                jq --slurp -e -f {{ $artifactDirectory }}/migration-result-v1.jq {{ $artifactDirectory }}/email-relay-result-events.jsonl > {{ $artifactDirectory }}/email-relay-validated-result.json
+                external_plan_digest="$(jq -r .planDigest {{ $artifactDirectory }}/email-relay-validated-result.json)"
                 printf %s "${external_plan_digest}" | grep -Eq '^[a-f0-9]{64}$' || { echo 'invalid email-relay-mongo plan digest' >&2; exit 1; }
-                printf %s "${external_plan_digest}" > /migration/email-relay-plan-digest
+                printf %s "${external_plan_digest}" > {{ $artifactDirectory }}/email-relay-plan-digest
                 # Named universes always require exclusive apply, including an
                 # otherwise ordinary plan.
                 decision=maintenance
@@ -361,7 +372,7 @@ spec:
                 exit 1
               fi
               printf %s "${decision}" > /migration/decision
-              printf %s "${plan_digest}" > /migration/plan-digest
+              printf %s "${plan_digest}" > {{ $artifactDirectory }}/plan-digest
               case "${decision}" in
                 ordinary)
                   echo "format migration plan is ordinary; leaving the application plane running"
@@ -420,6 +431,9 @@ spec:
           command: ["/bin/sh", "-ec"]
           args:
             - |
+              umask 077
+              mkdir -p {{ $statusDirectory | quote }}
+              chmod 0700 {{ $statusDirectory | quote }}
               if printf %s ordinary | cmp -s - /migration/decision || \
                  printf 'ordinary\n' | cmp -s - /migration/decision; then
                 decision=ordinary
@@ -434,16 +448,16 @@ spec:
                 ordinary|maintenance)
                   {{- if $externalRelayUniverse }}
                   /usr/local/bin/mnemoshare-migrate apply \
-                    --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan "/migration/plan.json" --expect-plan-digest "$(cat /migration/plan-digest)" \
+                    --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan "{{ $artifactDirectory }}/plan.json" --expect-plan-digest "$(cat {{ $artifactDirectory }}/plan-digest)" \
                     --exclusive --bootstrap-policy provision-untracked \
                     --status {{ $statusFile | quote }} --termination-file {{ $terminationFile | quote }}
                   exec /usr/local/bin/mnemoshare-migrate apply \
-                    --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --universe email-relay-mongo --plan "/migration/email-relay-plan.json" --expect-plan-digest "$(cat /migration/email-relay-plan-digest)" \
+                    --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --universe email-relay-mongo --plan "{{ $artifactDirectory }}/email-relay-plan.json" --expect-plan-digest "$(cat {{ $artifactDirectory }}/email-relay-plan-digest)" \
                     --exclusive --bootstrap-policy provision-untracked \
                     --status {{ $statusFile | quote }} --termination-file {{ $terminationFile | quote }}
                   {{- else }}
                   exec /usr/local/bin/mnemoshare-migrate apply \
-                    --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan "/migration/plan.json" --expect-plan-digest "$(cat /migration/plan-digest)" \
+                    --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan "{{ $artifactDirectory }}/plan.json" --expect-plan-digest "$(cat {{ $artifactDirectory }}/plan-digest)" \
                     --exclusive --bootstrap-policy provision-untracked \
                     --status {{ $statusFile | quote }} --termination-file {{ $terminationFile | quote }}
                   {{- end }}
@@ -465,7 +479,7 @@ spec:
             - name: migration-plan
               mountPath: /migration
             - name: migration-status
-              mountPath: /var/run/mnemoshare-migration
+              mountPath: /run/mnemoshare-migration
         - name: verify
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -473,10 +487,10 @@ spec:
           args:
             - |
               {{- if $externalRelayUniverse }}
-              /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan /migration/plan.json --expect-plan-digest "$(cat /migration/plan-digest)"
-              exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --universe email-relay-mongo --plan /migration/email-relay-plan.json --expect-plan-digest "$(cat /migration/email-relay-plan-digest)"
+              /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan {{ $artifactDirectory }}/plan.json --expect-plan-digest "$(cat {{ $artifactDirectory }}/plan-digest)"
+              exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --universe email-relay-mongo --plan {{ $artifactDirectory }}/email-relay-plan.json --expect-plan-digest "$(cat {{ $artifactDirectory }}/email-relay-plan-digest)"
               {{- else }}
-              exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan /migration/plan.json --expect-plan-digest "$(cat /migration/plan-digest)"
+              exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan {{ $artifactDirectory }}/plan.json --expect-plan-digest "$(cat {{ $artifactDirectory }}/plan-digest)"
               {{- end }}
           env:
             {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
