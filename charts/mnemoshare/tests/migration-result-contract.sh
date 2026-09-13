@@ -5,7 +5,7 @@ chart_dir=${1:-charts/mnemoshare}
 test_dir=$(cd "$(dirname "$0")" && pwd)
 contract_dir=${test_dir}/contracts/migration-result/v1
 parser=${chart_dir}/files/migration-result-v1.jq
-upstream_commit=e7537fb07d52491b70f9f4f2d2270d1bda29a763
+upstream_commit=06f575fd75e33b1f306a093f045ae9cfe74df56b
 jq_bin=${JQ:-jq}
 
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
