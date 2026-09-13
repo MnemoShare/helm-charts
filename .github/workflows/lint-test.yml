@@ -157,9 +157,14 @@ jobs:
 
           operation=charts/mnemoshare/tests/contracts/migration-operation/v1
           operation_fingerprint=$(jq -r .fingerprint "$operation/contract.json")
+          # The checker requires the rendered migration image to equal the
+          # governed writer image. Automatic mode makes this CI fixture a
+          # target-image-consistent operation render; operator mode is
+          # intentionally tested by the chart consumer, where old writers
+          # may coexist with an externally supplied target image.
           helm template operation charts/mnemoshare \
             --set customerId=ci-test \
-            --set formatMigrations.mode=operator \
+            --set formatMigrations.mode=automatic \
             --set image.digest="$digest" \
             --set migrationOperation.enabled=true \
             --set migrationOperation.phase=plan \
