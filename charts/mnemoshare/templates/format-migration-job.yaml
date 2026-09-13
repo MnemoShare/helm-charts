@@ -176,7 +176,7 @@ spec:
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/usr/local/bin/mnemoshare-migrate"]
-          args: ["plan", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--result", "/migration/result.json", "--output", "/migration/plan.json"]
+          args: ["plan", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--output", "/migration/plan.json", "--result", "/migration/result.json"]
           env:
             {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
           securityContext:
@@ -189,7 +189,7 @@ spec:
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/usr/local/bin/mnemoshare-migrate"]
-          args: ["plan", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--universe", "email-relay-mongo", "--result", "/migration/email-relay-result.json", "--output", "/migration/email-relay-plan.json"]
+          args: ["plan", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--universe", "email-relay-mongo", "--output", "/migration/email-relay-plan.json", "--result", "/migration/email-relay-result.json"]
           env:
             {{- include "mnemoshare.emailRelayMigrationEnv" . | nindent 12 }}
           securityContext:

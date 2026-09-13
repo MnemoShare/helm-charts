@@ -162,7 +162,7 @@ stateful_render=$(helm template test "$chart_dir" "${base[@]}" \
   --set redis.external.host=redis.example.com)
 assert_image_in_source "$stateful_render" 'templates/workflow-worker-statefulset.yaml'
 assert_has 'command: ["/usr/local/bin/mnemoshare-migrate"]'
-assert_has "args: [\"plan\", \"--contract\", \"embedded\", \"--expect-contract-fingerprint\", \"${migration_fingerprint}\", \"--result\", \"/migration/result.json\", \"--output\", \"/migration/plan.json\"]"
+assert_has "args: [\"plan\", \"--contract\", \"embedded\", \"--expect-contract-fingerprint\", \"${migration_fingerprint}\", \"--output\", \"/migration/plan.json\", \"--result\", \"/migration/result.json\"]"
 assert_has "verify --contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --plan /migration/plan.json --expect-plan-digest \"\$(cat /migration/plan-digest)\""
 assert_has 'case "${decision}" in'
 assert_has 'selected_pods="$(kubectl get pods -l "${selector}" -o name)"'

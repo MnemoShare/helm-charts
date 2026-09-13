@@ -107,6 +107,8 @@ render_profile() {
 }
 
 gateway=$(render_profile gateway --set emailGateway.mode=gateway)
+tagged=$(render_profile gateway --set emailGateway.mode=gateway --set image.tag=dev-abc)
+grep -Fq "image: \"mnemoshare/mnemoshare@${digest}\"" <<<"$tagged"
 api_deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1;next} active&&/^---$/{exit} active{print}' <<<"$gateway")
 grep -A1 -F 'name: ENVIRONMENT' <<<"$api_deployment" | grep -Fq 'value: "production"'
 ! grep -Fq -- '--universe email-relay-mongo' <<<"$gateway"
@@ -130,8 +132,10 @@ grep -Fq 'stored_external_digest="$(kubectl get "${state_resource}" -o jsonpath=
 grep -Fq 'replanned email-relay-mongo digest drifted from durable target plan' <<<"$tokens"
 grep -Fq 'fresh install with an empty writer census found existing application pods' <<<"$tokens"
 grep -Fq 'app.kubernetes.io/component in (api,workflow-worker,ices,inbound-gateway,email-gateway,sftp-gateway,mcp)' <<<"$tokens"
-primary_apply_line=$(grep -n -- '--expect-plan-digest "$(cat /migration/plan-digest)"' <<<"$tokens" | tail -1 | cut -d: -f1)
-relay_apply_line=$(grep -n -- '--universe email-relay-mongo --expect-plan-digest "$(cat /migration/email-relay-plan-digest)"' <<<"$tokens" | tail -1 | cut -d: -f1)
+primary_apply_line=$(grep -n -m1 -- '/usr/local/bin/mnemoshare-migrate apply' <<<"$tokens" | cut -d: -f1)
+relay_apply_line=$(grep -n -m1 -- '--universe email-relay-mongo --plan' <<<"$tokens" | cut -d: -f1)
+test -n "$primary_apply_line"
+test -n "$relay_apply_line"
 test "$primary_apply_line" -lt "$relay_apply_line"
 
 expect_failure() {
