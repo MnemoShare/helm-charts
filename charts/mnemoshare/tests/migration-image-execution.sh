@@ -75,9 +75,9 @@ docker_prepare_volumes() {
     --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777 \
     -v "$volume_root:/migration" -v "$status_root:/run/mnemoshare-migration" \
     --entrypoint /bin/sh "$image" -ec \
-    'chown 0:0 /migration /run/mnemoshare-migration && chmod 2777 /migration /run/mnemoshare-migration'
-  test "$(stat -c '%u:%g:%a' "$volume_root")" = 0:0:2777
-  test "$(stat -c '%u:%g:%a' "$status_root")" = 0:0:2777
+    'chown 0:1000 /migration /run/mnemoshare-migration && chmod 2770 /migration /run/mnemoshare-migration'
+  test "$(stat -c '%u:%g:%a' "$volume_root")" = 0:1000:2770
+  test "$(stat -c '%u:%g:%a' "$status_root")" = 0:1000:2770
 }
 
 docker_run() {
@@ -87,7 +87,7 @@ docker_run() {
   local -a command=(docker run --rm --read-only --user 1000:1000 \
     --cap-drop=ALL --security-opt=no-new-privileges \
     --env ENVIRONMENT=production --env CUSTOMER_ID=ci-test \
-    --env DB_DRIVER=sqlite --env SQLITE_PATH=/migration/sqlite.db \
+    --env DB_DRIVER=sqlite --env SQLITE_PATH=/migration/database/sqlite.db \
     --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777,uid=0,gid=0 \
     -v "$volume_root:/migration" -v "$status_root:/run/mnemoshare-migration" \
     --entrypoint /bin/sh "$image" -ec "$script" "$@")
@@ -101,9 +101,11 @@ docker_run() {
 new_volume_root() {
   local root
   root=$(mktemp -d "$tmp/volume.XXXXXX")
-  mkdir -p "$root/migration" "$root/status"
-  chmod 2777 "$root/migration" "$root/status"
+  mkdir -p "$root/migration/database" "$root/status"
+  chmod 2770 "$root/migration" "$root/status"
   docker_prepare_volumes "$root/migration" "$root/status"
+  chown 1000:1000 "$root/migration/database"
+  chmod 0700 "$root/migration/database"
   printf '%s\n' "$root"
 }
 
