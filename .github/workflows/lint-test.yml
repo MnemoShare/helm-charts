@@ -38,7 +38,7 @@ jobs:
           repository: MnemoShare/mnemoshare
           # Keep the checker on the exact application revision represented by
           # the vendored migration/deployment contracts in this chart.
-          ref: 2f8575f69a1a7697be9227ea48a10523448c21b0
+          ref: 3a51befb394de02800ed124823f892cf314da115
           path: application
 
       - name: Set up Go
