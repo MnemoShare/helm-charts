@@ -23,6 +23,11 @@ before=$(find "$destination" -type f -printf '%f\n' | sort | while read -r name;
 after=$(find "$destination" -type f -printf '%f\n' | sort | while read -r name; do sha256sum "${destination}/${name}"; done)
 test "$before" = "$after"
 
+git -C "$app" commit -q --allow-empty -m repin
+repin=$(git -C "$app" rev-parse HEAD)
+"$updater" "$app" "$repin"
+test "$(sed -n 's/^commit=//p' "${destination}/UPSTREAM")" = "$repin"
+
 printf 'changed\n' > "${destination}/schema.json"
 changed_before=$(find "$destination" -type f -printf '%f\n' | sort | while read -r name; do sha256sum "${destination}/${name}"; done)
 if "$updater" "$app" "$commit"; then
