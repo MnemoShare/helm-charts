@@ -1,16 +1,49 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+# Command substitutions inherit errexit, and the ERR trap names the failing
+# command, its line and its call stack: a provisioning or assertion failure
+# fails here, at its own line, instead of being swallowed and surfacing later
+# inside a container.
+shopt -s inherit_errexit
+on_error() {
+  local rc=$? i stack=""
+  for ((i = 1; i < ${#FUNCNAME[@]}; i++)); do
+    stack+="${stack:+ < }${FUNCNAME[i]}:${BASH_LINENO[i - 1]}"
+  done
+  echo "${BASH_SOURCE[0]##*/}: line ${BASH_LINENO[0]}: $BASH_COMMAND failed (rc $rc; $stack)" >&2
+}
+trap on_error ERR
 
 # This is deliberately an execution test, not a rendered-token test. The
 # caller supplies an image built from the exact application checkout selected
 # by CI; the rendered shell argv is then run by that image as uid 1000.
+#
+# The runner uid is not assumed to be 1000 or root (a CI runner is neither).
+# It only renders, extracts, and starts containers; every read, write and
+# removal inside a volume tree happens inside the image as uid 1000 or root,
+# because after normalization the mount roots are root-owned setgid and their
+# content is uid-1000 0700/0600, which no other uid can reach.
 image=${MIGRATION_IMAGE:?MIGRATION_IMAGE must name the application image to execute}
 chart_dir=${1:-charts/mnemoshare}
 contract_dir="$chart_dir/tests/contracts/migration-operation/v1"
 fingerprint=$(jq -er '.fingerprint | select(test("^[a-f0-9]{64}$"))' "$contract_dir/contract.json")
 digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+
+cleanup() {
+  local rc=$?
+  trap - ERR
+  set +e
+  # The volume trees can only be removed by root; a leaked tree fails the gate.
+  if compgen -G "$tmp/volume.*" >/dev/null; then
+    docker run --rm --user 0:0 --read-only -v "$tmp:/cleanup" \
+      --entrypoint /bin/sh "$image" -ec 'rm -rf /cleanup/volume.*' \
+      || { echo "volume trees under $tmp were not removed" >&2; [ "$rc" -ne 0 ] || rc=1; }
+  fi
+  rm -rf "$tmp" || { echo "$tmp was not removed" >&2; [ "$rc" -ne 0 ] || rc=1; }
+  exit "$rc"
+}
+trap cleanup EXIT
 
 for tool in docker helm jq python3; do
   command -v "$tool" >/dev/null || { echo "required executable missing: $tool" >&2; exit 1; }
@@ -66,20 +99,55 @@ raise SystemExit(f"{wanted}: rendered container not found")
 PY
 }
 
+# Runs a shell program inside the image as uid 1000 with a volume tree mounted
+# at its rendered paths. Every assertion, read and stand-in write against a
+# volume tree goes through here, as the Job's own principal would see it.
+in_volume() {
+  local root=$1 script=$2
+  shift 2
+  docker run --rm --read-only --user 1000:1000 \
+    --cap-drop=ALL --security-opt=no-new-privileges \
+    -v "$root/migration:/migration" -v "$root/status:/run/mnemoshare-migration" \
+    --entrypoint /bin/sh "$image" -ec "$script" in_volume "$@"
+}
+
+volume_test() {
+  local root=$1
+  shift
+  in_volume "$root" 'test "$@" || { echo "assertion failed as uid 1000: test $*" >&2; exit 1; }' "$@"
+}
+
+volume_stat() {
+  local root=$1 path=$2 format=$3 expected=$4
+  in_volume "$root" 'actual=$(stat -c "$2" "$1"); [ "$actual" = "$3" ] || { echo "$1: stat $2 is $actual, expected $3" >&2; exit 1; }' \
+    "$path" "$format" "$expected"
+}
+
+volume_cat() {
+  in_volume "$1" 'cat "$1"' "$2"
+}
+
+volume_write() {
+  in_volume "$1" 'printf %s "$2" > "$1"' "$2" "$3"
+}
+
 docker_prepare_volumes() {
-  local volume_root=$1 status_root=$2
+  local root=$1
   # Host-created bind mounts are deliberately normalized by a root helper so
   # the actual migration scripts exercise the same root-owned, setgid volume
   # boundary as kubelet-provisioned emptyDirs while still running as uid 1000.
   docker run --rm --user 0:0 --read-only \
-    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777 \
-    -v "$volume_root:/migration" -v "$status_root:/run/mnemoshare-migration" \
+    -v "$root/migration:/migration" -v "$root/status:/run/mnemoshare-migration" \
     --entrypoint /bin/sh "$image" -ec \
     'chown 0:1000 /migration /run/mnemoshare-migration && chmod 2770 /migration /run/mnemoshare-migration'
-  test "$(stat -c '%u:%g:%a' "$volume_root")" = 0:1000:2770
-  test "$(stat -c '%u:%g:%a' "$status_root")" = 0:1000:2770
+  volume_stat "$root" /migration %u:%g:%a 0:1000:2770
+  volume_stat "$root" /run/mnemoshare-migration %u:%g:%a 0:1000:2770
 }
 
+# The rendered Job containers mount only /migration and the status directory
+# on a read-only root filesystem; the gate grants nothing more (no /tmp). The
+# SQLite target lives in the caller-owned 0700 artifact directory the rendered
+# scripts create before exec, the directory the job contract already requires.
 docker_run() {
   local volume_root=$1 status_root=$2 script=$3
   local timeout_seconds=${DOCKER_RUN_TIMEOUT:-}
@@ -87,8 +155,7 @@ docker_run() {
   local -a command=(docker run --rm --read-only --user 1000:1000 \
     --cap-drop=ALL --security-opt=no-new-privileges \
     --env ENVIRONMENT=production --env CUSTOMER_ID=ci-test \
-    --env DB_DRIVER=sqlite --env SQLITE_PATH=/migration/database/sqlite.db \
-    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777,uid=0,gid=0 \
+    --env DB_DRIVER=sqlite --env SQLITE_PATH=/migration/artifacts/sqlite.db \
     -v "$volume_root:/migration" -v "$status_root:/run/mnemoshare-migration" \
     --entrypoint /bin/sh "$image" -ec "$script" "$@")
   if [ -n "$timeout_seconds" ]; then
@@ -98,53 +165,61 @@ docker_run() {
   fi
 }
 
+# Executes one rendered container, keeps its whole output in $tmp, prints the
+# last lines on success and everything on failure.
+execute_rendered() {
+  local name=$1 tail_lines=$2 root=$3
+  shift 3
+  if ! docker_run "$root/migration" "$root/status" "$(<"$tmp/$name.script")" "$@" > "$tmp/$name.log" 2>&1; then
+    cat "$tmp/$name.log" >&2
+    echo "rendered $name container failed" >&2
+    return 1
+  fi
+  tail -n "$tail_lines" "$tmp/$name.log"
+}
+
 new_volume_root() {
-  local root
-  root=$(mktemp -d "$tmp/volume.XXXXXX")
-  mkdir -p "$root/migration/database" "$root/status"
-  chmod 2770 "$root/migration" "$root/status"
-  docker_prepare_volumes "$root/migration" "$root/status"
-  chown 1000:1000 "$root/migration/database"
-  chmod 0700 "$root/migration/database"
-  printf '%s\n' "$root"
+  local -n new_root=$1
+  new_root=$(mktemp -d "$tmp/volume.XXXXXX")
+  mkdir -p "$new_root/migration" "$new_root/status"
+  chmod 2770 "$new_root/migration" "$new_root/status"
+  docker_prepare_volumes "$new_root"
 }
 
 assert_completed_terminal() {
-  local status_root=$1
-  test -s "$status_root/status/status.json"
-  test -s "$status_root/status/termination.json"
-  test "$(stat -c '%a' "$status_root/status/status.json")" = 600
-  test "$(stat -c '%a' "$status_root/status/termination.json")" = 600
-  jq -e '.state == "completed"' "$status_root/status/status.json" >/dev/null
-  jq -e '.state == "completed"' "$status_root/status/termination.json" >/dev/null
+  local root=$1 file
+  for file in status.json termination.json; do
+    volume_test "$root" -s "/run/mnemoshare-migration/status/$file"
+    volume_stat "$root" "/run/mnemoshare-migration/status/$file" %a 600
+    volume_cat "$root" "/run/mnemoshare-migration/status/$file" | jq -e '.state == "completed"' >/dev/null
+  done
 }
 
 # The chart's automatic mode deliberately admits MongoDB/PostgreSQL only. The
 # rendered shell programs are nevertheless exercised against an isolated real
 # SQLite target here, which gives the gate a deterministic apply/verify store.
 helm template hook "$chart_dir" "${base_values[@]}" > "$tmp/hook.yaml"
-hook_root=$(new_volume_root)
+new_volume_root hook_root
 extract_container "$tmp/hook.yaml" plan-before-drain "$tmp/hook-plan.script" "$tmp/hook-plan.args"
 extract_container "$tmp/hook.yaml" apply "$tmp/hook-apply.script" "$tmp/hook-apply.args"
 extract_container "$tmp/hook.yaml" verify "$tmp/hook-verify.script" "$tmp/hook-verify.args"
 mapfile -t hook_plan_args < "$tmp/hook-plan.args"
 mapfile -t hook_apply_args < "$tmp/hook-apply.args"
 mapfile -t hook_verify_args < "$tmp/hook-verify.args"
-hook_plan_output=$(docker_run "$hook_root/migration" "$hook_root/status" "$(<"$tmp/hook-plan.script")" "${hook_plan_args[@]}" 2>&1)
-printf '%s\n' "$hook_plan_output" | tail -5
-test -d "$hook_root/migration/artifacts"
-test "$(stat -c '%a' "$hook_root/migration/artifacts")" = 700
-test -s "$hook_root/migration/artifacts/plan.json"
-test -s "$hook_root/migration/artifacts/result.json"
-hook_decision=$(jq -er '.decision | select(. == "ordinary" or . == "maintenance")' "$hook_root/migration/artifacts/result.json")
-hook_plan_digest=$(jq -er '.planDigest | select(test("^[a-f0-9]{64}$"))' "$hook_root/migration/artifacts/result.json")
-printf '%s' "$hook_decision" > "$hook_root/migration/decision"
-printf '%s' "$hook_plan_digest" > "$hook_root/migration/artifacts/plan-digest"
-hook_apply_output=$(docker_run "$hook_root/migration" "$hook_root/status" "$(<"$tmp/hook-apply.script")" "${hook_apply_args[@]}" 2>&1)
-printf '%s\n' "$hook_apply_output" | tail -10
-assert_completed_terminal "$hook_root/status"
-hook_verify_output=$(docker_run "$hook_root/migration" "$hook_root/status" "$(<"$tmp/hook-verify.script")" "${hook_verify_args[@]}" 2>&1)
-printf '%s\n' "$hook_verify_output" | tail -5
+execute_rendered hook-plan 5 "$hook_root" "${hook_plan_args[@]}"
+volume_test "$hook_root" -d /migration/artifacts
+volume_stat "$hook_root" /migration/artifacts %a 700
+volume_test "$hook_root" -s /migration/artifacts/plan.json
+volume_test "$hook_root" -s /migration/artifacts/result.json
+hook_decision=$(volume_cat "$hook_root" /migration/artifacts/result.json | jq -er '.decision | select(. == "ordinary" or . == "maintenance")')
+hook_plan_digest=$(volume_cat "$hook_root" /migration/artifacts/result.json | jq -er '.planDigest | select(test("^[a-f0-9]{64}$"))')
+# Stand-in for the drain-application-plane container, which records the plan
+# decision and digest for apply as uid 1000 and needs kubectl otherwise.
+volume_write "$hook_root" /migration/decision "$hook_decision"
+volume_write "$hook_root" /migration/artifacts/plan-digest "$hook_plan_digest"
+execute_rendered hook-apply 10 "$hook_root" "${hook_apply_args[@]}"
+assert_completed_terminal "$hook_root"
+execute_rendered hook-verify 5 "$hook_root" "${hook_verify_args[@]}"
 
 # Operation plan/apply/verify uses the same real SQLite target and retains its
 # caller-owned artifacts across three separately rendered Jobs.
@@ -160,15 +235,14 @@ helm template operation "$chart_dir" "${base_values[@]}" \
   --set migrationOperation.transport.existingClaim=ci-migration \
   --set migrationOperation.planDigest="$plan_digest_placeholder" \
   --set migrationOperation.verifiedPlanDigest="$plan_digest_placeholder" > "$tmp/operation-plan.yaml"
-operation_root=$(new_volume_root)
+new_volume_root operation_root
 extract_container "$tmp/operation-plan.yaml" migration-operation "$tmp/operation-plan.script" "$tmp/operation-plan.args"
 mapfile -t operation_plan_args < "$tmp/operation-plan.args"
-operation_plan_output=$(docker_run "$operation_root/migration" "$operation_root/status" "$(<"$tmp/operation-plan.script")" "${operation_plan_args[@]}" 2>&1)
-printf '%s\n' "$operation_plan_output" | tail -5
-plan_digest=$(jq -er '.planDigest | select(test("^[a-f0-9]{64}$"))' "$operation_root/migration/artifacts/primary-result.json")
-test -s "$operation_root/migration/artifacts/primary-plan.json"
-test -s "$operation_root/migration/artifacts/primary-result.json"
-test "$(stat -c '%a' "$operation_root/migration/artifacts")" = 700
+execute_rendered operation-plan 5 "$operation_root" "${operation_plan_args[@]}"
+plan_digest=$(volume_cat "$operation_root" /migration/artifacts/primary-result.json | jq -er '.planDigest | select(test("^[a-f0-9]{64}$"))')
+volume_test "$operation_root" -s /migration/artifacts/primary-plan.json
+volume_test "$operation_root" -s /migration/artifacts/primary-result.json
+volume_stat "$operation_root" /migration/artifacts %a 700
 
 helm template operation "$chart_dir" "${base_values[@]}" \
   --set formatMigrations.mode=disabled \
@@ -183,9 +257,8 @@ helm template operation "$chart_dir" "${base_values[@]}" \
   --set migrationOperation.verifiedPlanDigest="$plan_digest" > "$tmp/operation-apply.yaml"
 extract_container "$tmp/operation-apply.yaml" migration-operation "$tmp/operation-apply.script" "$tmp/operation-apply.args"
 mapfile -t operation_apply_args < "$tmp/operation-apply.args"
-operation_apply_output=$(docker_run "$operation_root/migration" "$operation_root/status" "$(<"$tmp/operation-apply.script")" "${operation_apply_args[@]}" 2>&1)
-printf '%s\n' "$operation_apply_output" | tail -10
-assert_completed_terminal "$operation_root/status"
+execute_rendered operation-apply 10 "$operation_root" "${operation_apply_args[@]}"
+assert_completed_terminal "$operation_root"
 
 helm template operation "$chart_dir" "${base_values[@]}" \
   --set formatMigrations.mode=disabled \
@@ -200,7 +273,6 @@ helm template operation "$chart_dir" "${base_values[@]}" \
   --set migrationOperation.verifiedPlanDigest="$plan_digest" > "$tmp/operation-verify.yaml"
 extract_container "$tmp/operation-verify.yaml" migration-operation "$tmp/operation-verify.script" "$tmp/operation-verify.args"
 mapfile -t operation_verify_args < "$tmp/operation-verify.args"
-operation_verify_output=$(docker_run "$operation_root/migration" "$operation_root/status" "$(<"$tmp/operation-verify.script")" "${operation_verify_args[@]}" 2>&1)
-printf '%s\n' "$operation_verify_output" | tail -5
+execute_rendered operation-verify 5 "$operation_root" "${operation_verify_args[@]}"
 
 echo 'migration Jobs executed in-image as uid 1000: hook plan/apply/verify and operation plan/apply/verify'
