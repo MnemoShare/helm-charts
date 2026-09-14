@@ -89,9 +89,10 @@ for phase in reset plan down apply verify up; do
       grep -Fq -- '- "plan"' <<<"$render"
       grep -Fq -- '- "--contract"' <<<"$render"
       grep -Fq -- '- "embedded"' <<<"$render"
-	  grep -Fq 'phase="$0"' <<<"$render"
-	  grep -Fq 'exec /usr/local/bin/mnemoshare-migrate "$command" "$@"' <<<"$render"
-	  grep -Fq '/usr/local/bin/mnemoshare-migrate "$command" "$@"' <<<"$render"
+      grep -Fq 'phase="$0"' <<<"$render"
+      grep -Fq 'exec /usr/local/bin/mnemoshare-migrate "$command" "$@"' <<<"$render"
+      grep -Fq '/usr/local/bin/mnemoshare-migrate "$command" "$@"' <<<"$render"
+      ! grep -Fq 'elif [ "$phase" = "plan" ]' <<<"$render"
 	  if grep -Eq '^[[:space:]]+shift([[:space:]]|$)' <<<"$render"; then
 	    echo 'migration wrapper must not discard the first contract argument' >&2
 	    exit 1

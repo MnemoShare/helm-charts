@@ -95,8 +95,6 @@ spec:
                 # it intact lets the deployment supervisor observe the last
                 # truthful checkpoint when apply succeeds or fails.
                 :
-              elif [ "$phase" = "plan" ] && [ -s {{ $resultFile | quote }} ]; then
-                tr -d '\r\n' < {{ $resultFile | quote }} | cut -c 1-4096
               else
                 if [ "$exit_code" -eq 0 ]; then outcome=success; else outcome=failure; fi
                 printf '{"operationId":"%s","phase":"%s","universe":"%s","planDigest":"%s","outcome":"%s","exitCode":%s}\n' "{{ $operationID }}" "$phase" "{{ $universe }}" "{{ $planDigest }}" "$outcome" "$exit_code"
