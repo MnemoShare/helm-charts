@@ -146,7 +146,7 @@ decision-bound apply dispatch):
 
 ```text
 /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint FINGERPRINT --result /migration/artifacts/result.json --output /migration/artifacts/plan.json
-/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-contract-fingerprint FINGERPRINT --expect-plan-digest DIGEST --exclusive --bootstrap-policy provision-untracked --status /run/mnemoshare-migration/status/status.json --termination-file /run/mnemoshare-migration/status/termination.json
+/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-contract-fingerprint FINGERPRINT --expect-plan-digest DIGEST --exclusive --bootstrap-policy provision-untracked --status /run/mnemoshare-migration/status/status.json --termination-file /run/mnemoshare-migration/status/termination.json --termination-message-file /run/mnemoshare-migration/termination-message
 /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint FINGERPRINT --expect-plan-digest DIGEST
 ```
 
