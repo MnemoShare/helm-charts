@@ -166,6 +166,14 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: encryption-key
+        # JWT EC private key. The inbound gateway mints no tokens, but it calls
+        # the shared config.Load(), whose Validate() requires a local-signer key
+        # whenever ENVIRONMENT is production. Mirrors the api/ices wiring.
+        - name: JWT_EC_PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.jwt }}{{ .Values.existingSecrets.jwt }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: jwt-ec-private-key
         # Database — the inbound gateway persists relay/socketmap state. Without
         # an explicit driver it falls back to sqlite and cannot open a file on
         # the read-only rootfs. Mirror the api's DB wiring.
