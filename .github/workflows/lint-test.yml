@@ -38,7 +38,7 @@ jobs:
           repository: MnemoShare/mnemoshare
           # Keep the checker on the exact application revision represented by
           # the vendored migration/deployment contracts in this chart.
-          ref: baec60529c6e4a698296c6c44f7aae24dfda0e25
+          ref: 8229e8d35e9d514082a547aa06e23a977d143849
           path: application
           # The application repository is private; this workflow's GITHUB_TOKEN
           # is scoped to helm-charts. Same org credential the application's

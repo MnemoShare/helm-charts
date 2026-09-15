@@ -33,11 +33,15 @@ base=(
 
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
 jq -e '
-  .commands.apply.args[-4:] == ["--status", "<status-file>", "--termination-file", "<status-dir>/termination.json"] and
-  .commands.status.args == ["status", "--file", "<status-file>", "--termination-file", "<status-dir>/termination.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"] and
-  .commands.reset.args[-8:] == ["--status", "<status-file>", "--termination-file", "<status-dir>/termination.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"] and
-  .result.terminationFile.kubernetesTerminationMessagePath == "<status-dir>/termination.json" and
-  .result.terminationFile.pathBinding == "equal-to-termination-file-argument" and
+  .commands.apply.args[-6:] == ["--status", "<status-file>", "--termination-file", "<status-dir>/termination.json", "--termination-message-file", "<termination-message-file>"] and
+  .commands.status.args == ["status", "--file", "<status-file>", "--termination-file", "<status-dir>/termination.json", "--termination-message-file", "<termination-message-file>", "--max-inactivity", "5m", "--absolute-deadline", "6h"] and
+  .commands.reset.args[-10:] == ["--status", "<status-file>", "--termination-file", "<status-dir>/termination.json", "--termination-message-file", "<termination-message-file>", "--max-inactivity", "5m", "--absolute-deadline", "6h"] and
+  .result.terminationMessageFlag == "--termination-message-file" and
+  .result.terminationFile.target == "<status-dir>/termination.json" and
+  .result.terminationFile.kubernetesTerminationMessage.argument == "<termination-message-file>" and
+  .result.terminationFile.kubernetesTerminationMessage.location == "<status-dir>/../termination-message" and
+  .result.terminationFile.kubernetesTerminationMessage.podSpecField == "container.terminationMessagePath" and
+  .result.terminationFile.kubernetesTerminationMessage.pathBinding == "pod-spec-field-equal-to-termination-message-file-argument" and
   .result.statusFile.parentTrust == "caller-owned-not-group-or-world-writable" and
   .result.planFile.target == "same-parent-atomic-create-or-replace" and
   .result.planFile.publication == "same-parent-temp-fsync-rename-fsync-parent" and
@@ -66,11 +70,13 @@ for phase in reset plan down apply verify up; do
       grep -Fq -- '- "--status"' <<<"$render"
       grep -Fq -- '- "--termination-file"' <<<"$render"
       grep -Fq -- '- "/run/mnemoshare-migration/status/termination.json"' <<<"$render"
-      grep -Fq 'terminationMessagePath: "/run/mnemoshare-migration/status/termination.json"' <<<"$render"
+      grep -Fq -- '- "--termination-message-file"' <<<"$render"
+      grep -Fq -- '- "/run/mnemoshare-migration/termination-message"' <<<"$render"
+      grep -Fq 'terminationMessagePath: "/run/mnemoshare-migration/termination-message"' <<<"$render"
       grep -Fq 'name: migration-status' <<<"$render"
       grep -Fq 'startupProbe:' <<<"$render"
       grep -Fq 'livenessProbe:' <<<"$render"
-      test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/run/mnemoshare-migration/status/status.json", "--termination-file", "/run/mnemoshare-migration/status/termination.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$render")" -eq 2
+      test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/run/mnemoshare-migration/status/status.json", "--termination-file", "/run/mnemoshare-migration/status/termination.json", "--termination-message-file", "/run/mnemoshare-migration/termination-message", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$render")" -eq 2
       ! grep -Fq -- '- "--contract"' <<<"$render"
       ;;
     plan)
@@ -122,6 +128,10 @@ for phase in reset plan down apply verify up; do
       grep -Fq -- '- "/run/mnemoshare-migration/status/status.json"' <<<"$render"
       grep -Fq -- '- "--termination-file"' <<<"$render"
       grep -Fq -- '- "/run/mnemoshare-migration/status/termination.json"' <<<"$render"
+      grep -Fq -- '- "--termination-message-file"' <<<"$render"
+      grep -Fq -- '- "/run/mnemoshare-migration/termination-message"' <<<"$render"
+      grep -Fq 'terminationMessagePath: "/run/mnemoshare-migration/termination-message"' <<<"$render"
+      ! grep -Fq 'terminationMessagePath: "/run/mnemoshare-migration/status/' <<<"$render"
       grep -Fq 'name: migration-status' <<<"$render"
       grep -Fq 'mountPath: /run/mnemoshare-migration' <<<"$render"
       grep -Fq 'emptyDir: {}' <<<"$render"
@@ -133,7 +143,7 @@ for phase in reset plan down apply verify up; do
       grep -Fq 'chmod 0700 "/run/mnemoshare-migration/status"' <<<"$render"
       grep -Fq 'startupProbe:' <<<"$render"
       grep -Fq 'livenessProbe:' <<<"$render"
-      test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/run/mnemoshare-migration/status/status.json", "--termination-file", "/run/mnemoshare-migration/status/termination.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$render")" -eq 2
+      test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/run/mnemoshare-migration/status/status.json", "--termination-file", "/run/mnemoshare-migration/status/termination.json", "--termination-message-file", "/run/mnemoshare-migration/termination-message", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$render")" -eq 2
       grep -Fq 'failureThreshold: 60' <<<"$render"
       grep -Fq 'periodSeconds: 30' <<<"$render"
       grep -Fq 'if [ "$phase" = "apply" ] || [ "$phase" = "reset" ]; then' <<<"$render"
@@ -167,7 +177,7 @@ full_render=$(helm template ci "$chart_dir" -f "$chart_dir/values-production.yam
 ! grep -Fq 'activeDeadlineSeconds:' <<<"$full_render"
 grep -Fq -- '- "--status"' <<<"$full_render"
 grep -Fq -- '- "--termination-file"' <<<"$full_render"
-test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/run/mnemoshare-migration/status/status.json", "--termination-file", "/run/mnemoshare-migration/status/termination.json", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$full_render")" -eq 2
+test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/run/mnemoshare-migration/status/status.json", "--termination-file", "/run/mnemoshare-migration/status/termination.json", "--termination-message-file", "/run/mnemoshare-migration/termination-message", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$full_render")" -eq 2
 
 # Every universe declared by the canonical contract has a concrete adapter.
 # The relay universe uses its own durable files and credentials and passes the

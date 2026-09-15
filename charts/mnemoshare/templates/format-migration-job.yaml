@@ -42,6 +42,8 @@
 {{- $statusDirectory := "/run/mnemoshare-migration/status" }}
 {{- $statusFile := printf "%s/status.json" $statusDirectory }}
 {{- $terminationFile := printf "%s/termination.json" $statusDirectory }}
+{{- /* Kubelet bind-mounts its own file at terminationMessagePath before the container starts, so it must sit beside, never inside, the caller-owned status directory. */}}
+{{- $terminationMessageFile := printf "%s/termination-message" (dir $statusDirectory) }}
 {{- $externalRelayUniverse := false }}
 {{- if .Values.emailGateway.enabled }}
 {{- $gatewayFacts := include "mnemoshare.emailGateway" . | fromJson }}
@@ -451,16 +453,16 @@ spec:
                   /usr/local/bin/mnemoshare-migrate apply \
                     --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan "{{ $artifactDirectory }}/plan.json" --expect-plan-digest "$(cat {{ $artifactDirectory }}/plan-digest)" \
                     --exclusive --bootstrap-policy provision-untracked \
-                    --status {{ $statusFile | quote }} --termination-file {{ $terminationFile | quote }}
+                    --status {{ $statusFile | quote }} --termination-file {{ $terminationFile | quote }} --termination-message-file {{ $terminationMessageFile | quote }}
                   exec /usr/local/bin/mnemoshare-migrate apply \
                     --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --universe email-relay-mongo --plan "{{ $artifactDirectory }}/email-relay-plan.json" --expect-plan-digest "$(cat {{ $artifactDirectory }}/email-relay-plan-digest)" \
                     --exclusive --bootstrap-policy provision-untracked \
-                    --status {{ $statusFile | quote }} --termination-file {{ $terminationFile | quote }}
+                    --status {{ $statusFile | quote }} --termination-file {{ $terminationFile | quote }} --termination-message-file {{ $terminationMessageFile | quote }}
                   {{- else }}
                   exec /usr/local/bin/mnemoshare-migrate apply \
                     --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan "{{ $artifactDirectory }}/plan.json" --expect-plan-digest "$(cat {{ $artifactDirectory }}/plan-digest)" \
                     --exclusive --bootstrap-policy provision-untracked \
-                    --status {{ $statusFile | quote }} --termination-file {{ $terminationFile | quote }}
+                    --status {{ $statusFile | quote }} --termination-file {{ $terminationFile | quote }} --termination-message-file {{ $terminationMessageFile | quote }}
                   {{- end }}
                   ;;
                 *)
@@ -475,7 +477,7 @@ spec:
             {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          terminationMessagePath: {{ $terminationFile | quote }}
+          terminationMessagePath: {{ $terminationMessageFile | quote }}
           volumeMounts:
             - name: migration-plan
               mountPath: /migration

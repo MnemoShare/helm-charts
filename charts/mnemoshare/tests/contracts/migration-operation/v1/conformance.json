@@ -2,11 +2,11 @@
   "contract": "mnemoshare.migration-operation.v1",
   "fingerprintAlgorithm": "SHA-256 over RFC 8785 JCS of the contract with fingerprint set to the empty string",
   "commands": [
-    "pre-1-reset-format-ledger --exclusive --confirm-before-first-1.0 --status \u003cstatus-file\u003e --termination-file \u003cstatus-dir\u003e/termination.json --max-inactivity 5m --absolute-deadline 6h",
+    "pre-1-reset-format-ledger --exclusive --confirm-before-first-1.0 --status \u003cstatus-file\u003e --termination-file \u003cstatus-dir\u003e/termination.json --termination-message-file \u003ctermination-message-file\u003e --max-inactivity 5m --absolute-deadline 6h",
     "plan --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --output \u003cplan-file\u003e --result \u003cresult-file\u003e",
-    "apply --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e --exclusive --bootstrap-policy provision-untracked --status \u003cstatus-file\u003e --termination-file \u003cstatus-dir\u003e/termination.json",
+    "apply --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e --exclusive --bootstrap-policy provision-untracked --status \u003cstatus-file\u003e --termination-file \u003cstatus-dir\u003e/termination.json --termination-message-file \u003ctermination-message-file\u003e",
     "verify --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e",
-    "status --file \u003cstatus-file\u003e --termination-file \u003cstatus-dir\u003e/termination.json --max-inactivity 5m --absolute-deadline 6h"
+    "status --file \u003cstatus-file\u003e --termination-file \u003cstatus-dir\u003e/termination.json --termination-message-file \u003ctermination-message-file\u003e --max-inactivity 5m --absolute-deadline 6h"
   ],
   "schemaOwnership": "exclusive-operation",
   "bootstrapPolicy": "provision-untracked",

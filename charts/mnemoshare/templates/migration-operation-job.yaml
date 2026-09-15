@@ -12,6 +12,8 @@
 {{- $statusDirectory := "/run/mnemoshare-migration/status" }}
 {{- $statusFile := printf "%s/status.json" $statusDirectory }}
 {{- $terminationFile := printf "%s/termination.json" $statusDirectory }}
+{{- /* Kubelet bind-mounts its own file at terminationMessagePath before the container starts, so it must sit beside, never inside, the caller-owned status directory. */}}
+{{- $terminationMessageFile := printf "%s/termination-message" (dir $statusDirectory) }}
 {{- $instrumented := has $phase (list "apply" "reset") }}
 {{- $jobIdentity := printf "%s-migration-%s-%s-%s" $fullname $phase $universe $operationID }}
 {{- $jobHash := sha256sum $jobIdentity | trunc 10 }}
@@ -77,9 +79,11 @@ spec:
               mkdir -p {{ $artifactDirectory | quote }}
               chmod 0700 {{ $artifactDirectory | quote }}
               if [ "$phase" = "apply" ] || [ "$phase" = "reset" ]; then
-                # The emptyDir mount is kubelet-owned. Create the status parent
-                # as the actual non-root caller so the binary can enforce its
-                # caller-owned, non-world-writable filesystem contract.
+                # The emptyDir mount is kubelet-owned and hosts kubelet's own
+                # termination-message file at its root. Create the status
+                # directory beside it as the actual non-root caller so the
+                # binary can enforce its caller-owned, non-world-writable
+                # filesystem contract.
                 mkdir -p {{ $statusDirectory | quote }}
                 chmod 0700 {{ $statusDirectory | quote }}
               fi
@@ -118,6 +122,8 @@ spec:
             - {{ $statusFile | quote }}
             - "--termination-file"
             - {{ $terminationFile | quote }}
+            - "--termination-message-file"
+            - {{ $terminationMessageFile | quote }}
             - "--max-inactivity"
             - "5m"
             - "--absolute-deadline"
@@ -140,6 +146,8 @@ spec:
             - {{ $statusFile | quote }}
             - "--termination-file"
             - {{ $terminationFile | quote }}
+            - "--termination-message-file"
+            - {{ $terminationMessageFile | quote }}
             {{- end }}
             {{- end }}
           env:
@@ -147,7 +155,7 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           {{- if $instrumented }}
-          terminationMessagePath: {{ $terminationFile | quote }}
+          terminationMessagePath: {{ $terminationMessageFile | quote }}
           {{- end }}
           volumeMounts:
             - name: migration-transport
@@ -159,12 +167,12 @@ spec:
           {{- if $instrumented }}
           startupProbe:
             exec:
-              command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", {{ $statusFile | quote }}, "--termination-file", {{ $terminationFile | quote }}, "--max-inactivity", "5m", "--absolute-deadline", "6h"]
+              command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", {{ $statusFile | quote }}, "--termination-file", {{ $terminationFile | quote }}, "--termination-message-file", {{ $terminationMessageFile | quote }}, "--max-inactivity", "5m", "--absolute-deadline", "6h"]
             periodSeconds: 5
             failureThreshold: 60
           livenessProbe:
             exec:
-              command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", {{ $statusFile | quote }}, "--termination-file", {{ $terminationFile | quote }}, "--max-inactivity", "5m", "--absolute-deadline", "6h"]
+              command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", {{ $statusFile | quote }}, "--termination-file", {{ $terminationFile | quote }}, "--termination-message-file", {{ $terminationMessageFile | quote }}, "--max-inactivity", "5m", "--absolute-deadline", "6h"]
             periodSeconds: 30
             failureThreshold: 1
           {{- end }}

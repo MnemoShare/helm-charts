@@ -67,13 +67,13 @@ base_values=(
 )
 
 extract_container() {
-  local manifest=$1 container=$2 script_out=$3 args_out=$4
-  python3 - "$manifest" "$container" "$script_out" "$args_out" <<'PY'
+  local manifest=$1 container=$2 script_out=$3 args_out=$4 message_out=$5
+  python3 - "$manifest" "$container" "$script_out" "$args_out" "$message_out" <<'PY'
 import base64
 import sys
 import yaml
 
-manifest, wanted, script_out, args_out = sys.argv[1:]
+manifest, wanted, script_out, args_out, message_out = sys.argv[1:]
 for document in yaml.safe_load_all(open(manifest, encoding="utf-8")):
     if not isinstance(document, dict) or document.get("kind") != "Job":
         continue
@@ -94,6 +94,11 @@ for document in yaml.safe_load_all(open(manifest, encoding="utf-8")):
                     raise SystemExit(f"{wanted}: non-scalar or multiline argument")
                 out.write(arg)
                 out.write("\n")
+        message_path = container.get("terminationMessagePath", "")
+        if not isinstance(message_path, str) or "\n" in message_path:
+            raise SystemExit(f"{wanted}: terminationMessagePath is not a single-line string")
+        with open(message_out, "w", encoding="utf-8") as out:
+            out.write(message_path)
         raise SystemExit(0)
 raise SystemExit(f"{wanted}: rendered container not found")
 PY
@@ -136,12 +141,29 @@ docker_prepare_volumes() {
   # Host-created bind mounts are deliberately normalized by a root helper so
   # the actual migration scripts exercise the same root-owned, setgid volume
   # boundary as kubelet-provisioned emptyDirs while still running as uid 1000.
+  # The status emptyDir is exactly what kubelet provisions with fsGroup 1000:
+  # root-owned, group 1000, setgid 2777.
   docker run --rm --user 0:0 --read-only \
-    -v "$root/migration:/migration" -v "$root/status:/run/mnemoshare-migration" \
-    --entrypoint /bin/sh "$image" -ec \
-    'chown 0:1000 /migration /run/mnemoshare-migration && chmod 2770 /migration /run/mnemoshare-migration'
+    -v "$root:/volume" --entrypoint /bin/sh "$image" -ec \
+    'chown 0:1000 /volume/migration /volume/status && chmod 2770 /volume/migration && chmod 2777 /volume/status
+     mkdir /volume/kubelet && chmod 0755 /volume/kubelet'
   volume_stat "$root" /migration %u:%g:%a 0:1000:2770
-  volume_stat "$root" /run/mnemoshare-migration %u:%g:%a 0:1000:2770
+  volume_stat "$root" /run/mnemoshare-migration %u:%g:%a 0:1000:2777
+}
+
+# Emulates kubelet's terminationMessagePath handling for one container: before
+# the container starts, kubelet creates a root-owned 0666 regular file outside
+# every volume and bind-mounts it at the declared path. The runtime creates
+# whatever mount point (and missing parent directories) that bind needs, as
+# root, inside the mounted volume. Prints the host file to hand to docker_run.
+kubelet_termination_message() {
+  local root=$1 name=$2
+  docker run --rm --user 0:0 --read-only -v "$root/kubelet:/kubelet" \
+    --entrypoint /bin/sh "$image" -ec ': > "/kubelet/$1" && chown 0:0 "/kubelet/$1" && chmod 0666 "/kubelet/$1"' \
+    kubelet "$name"
+  [ "$(stat -c %u:%g:%a:%F "$root/kubelet/$name")" = "0:0:666:regular empty file" ] \
+    || { echo "kubelet termination message stand-in $root/kubelet/$name is not a root-owned 0666 regular file" >&2; return 1; }
+  printf '%s\n' "$root/kubelet/$name"
 }
 
 # The rendered Job containers mount only /migration and the status directory
@@ -149,14 +171,18 @@ docker_prepare_volumes() {
 # SQLite target lives in the caller-owned 0700 artifact directory the rendered
 # scripts create before exec, the directory the job contract already requires.
 docker_run() {
-  local volume_root=$1 status_root=$2 script=$3
+  local volume_root=$1 status_root=$2 message_mount=$3 script=$4
   local timeout_seconds=${DOCKER_RUN_TIMEOUT:-}
-  shift 3
+  shift 4
+  local -a mounts=(-v "$volume_root:/migration" -v "$status_root:/run/mnemoshare-migration")
+  if [ -n "$message_mount" ]; then
+    mounts+=(-v "$message_mount")
+  fi
   local -a command=(docker run --rm --read-only --user 1000:1000 \
     --cap-drop=ALL --security-opt=no-new-privileges \
     --env ENVIRONMENT=production --env CUSTOMER_ID=ci-test \
     --env DB_DRIVER=sqlite --env SQLITE_PATH=/migration/artifacts/sqlite.db \
-    -v "$volume_root:/migration" -v "$status_root:/run/mnemoshare-migration" \
+    "${mounts[@]}" \
     --entrypoint /bin/sh "$image" -ec "$script" "$@")
   if [ -n "$timeout_seconds" ]; then
     timeout "$timeout_seconds" "${command[@]}"
@@ -166,11 +192,16 @@ docker_run() {
 }
 
 # Executes one rendered container, keeps its whole output in $tmp, prints the
-# last lines on success and everything on failure.
+# last lines on success and everything on failure. A container that declares
+# terminationMessagePath gets kubelet's bind-mounted message file.
 execute_rendered() {
-  local name=$1 tail_lines=$2 root=$3
+  local name=$1 tail_lines=$2 root=$3 message_path message_mount=""
   shift 3
-  if ! docker_run "$root/migration" "$root/status" "$(<"$tmp/$name.script")" "$@" > "$tmp/$name.log" 2>&1; then
+  message_path=$(<"$tmp/$name.message-path")
+  if [ -n "$message_path" ]; then
+    message_mount="$(kubelet_termination_message "$root" "$name"):$message_path"
+  fi
+  if ! docker_run "$root/migration" "$root/status" "$message_mount" "$(<"$tmp/$name.script")" "$@" > "$tmp/$name.log" 2>&1; then
     cat "$tmp/$name.log" >&2
     echo "rendered $name container failed" >&2
     return 1
@@ -186,13 +217,27 @@ new_volume_root() {
   docker_prepare_volumes "$new_root"
 }
 
+# The caller-owned status directory holds the durable 0600 records, and
+# kubelet's own file (still the same root-owned 0666 inode) holds exactly the
+# durable terminal bytes, written in place by the binary.
 assert_completed_terminal() {
-  local root=$1 file
+  local root=$1 name=$2 file message_path
+  volume_stat "$root" /run/mnemoshare-migration/status %u:%a 1000:700
   for file in status.json termination.json; do
     volume_test "$root" -s "/run/mnemoshare-migration/status/$file"
-    volume_stat "$root" "/run/mnemoshare-migration/status/$file" %a 600
+    volume_stat "$root" "/run/mnemoshare-migration/status/$file" %u:%a:%h:%F 1000:600:1:regular\ file
     volume_cat "$root" "/run/mnemoshare-migration/status/$file" | jq -e '.state == "completed"' >/dev/null
   done
+  message_path=$(<"$tmp/$name.message-path")
+  [ -n "$message_path" ] || { echo "$name: rendered container declares no terminationMessagePath" >&2; return 1; }
+  [ "$(stat -c %u:%g:%a:%F "$root/kubelet/$name")" = "0:0:666:regular file" ] \
+    || { echo "$name: kubelet termination message file was replaced or re-permissioned: $(stat -c %u:%g:%a:%F "$root/kubelet/$name")" >&2; return 1; }
+  if ! cmp <(volume_cat "$root" /run/mnemoshare-migration/status/termination.json) "$root/kubelet/$name"; then
+    echo "$name: kubelet termination message ($message_path) does not hold the durable terminal bytes" >&2
+    return 1
+  fi
+  jq -e '.state == "completed"' "$root/kubelet/$name" >/dev/null
+  echo "$name: kubelet termination message $message_path holds the durable completed terminal in place"
 }
 
 # The chart's automatic mode deliberately admits MongoDB/PostgreSQL only. The
@@ -200,9 +245,9 @@ assert_completed_terminal() {
 # SQLite target here, which gives the gate a deterministic apply/verify store.
 helm template hook "$chart_dir" "${base_values[@]}" > "$tmp/hook.yaml"
 new_volume_root hook_root
-extract_container "$tmp/hook.yaml" plan-before-drain "$tmp/hook-plan.script" "$tmp/hook-plan.args"
-extract_container "$tmp/hook.yaml" apply "$tmp/hook-apply.script" "$tmp/hook-apply.args"
-extract_container "$tmp/hook.yaml" verify "$tmp/hook-verify.script" "$tmp/hook-verify.args"
+extract_container "$tmp/hook.yaml" plan-before-drain "$tmp/hook-plan.script" "$tmp/hook-plan.args" "$tmp/hook-plan.message-path"
+extract_container "$tmp/hook.yaml" apply "$tmp/hook-apply.script" "$tmp/hook-apply.args" "$tmp/hook-apply.message-path"
+extract_container "$tmp/hook.yaml" verify "$tmp/hook-verify.script" "$tmp/hook-verify.args" "$tmp/hook-verify.message-path"
 mapfile -t hook_plan_args < "$tmp/hook-plan.args"
 mapfile -t hook_apply_args < "$tmp/hook-apply.args"
 mapfile -t hook_verify_args < "$tmp/hook-verify.args"
@@ -218,7 +263,7 @@ hook_plan_digest=$(volume_cat "$hook_root" /migration/artifacts/result.json | jq
 volume_write "$hook_root" /migration/decision "$hook_decision"
 volume_write "$hook_root" /migration/artifacts/plan-digest "$hook_plan_digest"
 execute_rendered hook-apply 10 "$hook_root" "${hook_apply_args[@]}"
-assert_completed_terminal "$hook_root"
+assert_completed_terminal "$hook_root" hook-apply
 execute_rendered hook-verify 5 "$hook_root" "${hook_verify_args[@]}"
 
 # Operation plan/apply/verify uses the same real SQLite target and retains its
@@ -236,7 +281,7 @@ helm template operation "$chart_dir" "${base_values[@]}" \
   --set migrationOperation.planDigest="$plan_digest_placeholder" \
   --set migrationOperation.verifiedPlanDigest="$plan_digest_placeholder" > "$tmp/operation-plan.yaml"
 new_volume_root operation_root
-extract_container "$tmp/operation-plan.yaml" migration-operation "$tmp/operation-plan.script" "$tmp/operation-plan.args"
+extract_container "$tmp/operation-plan.yaml" migration-operation "$tmp/operation-plan.script" "$tmp/operation-plan.args" "$tmp/operation-plan.message-path"
 mapfile -t operation_plan_args < "$tmp/operation-plan.args"
 execute_rendered operation-plan 5 "$operation_root" "${operation_plan_args[@]}"
 plan_digest=$(volume_cat "$operation_root" /migration/artifacts/primary-result.json | jq -er '.planDigest | select(test("^[a-f0-9]{64}$"))')
@@ -255,10 +300,10 @@ helm template operation "$chart_dir" "${base_values[@]}" \
   --set migrationOperation.transport.existingClaim=ci-migration \
   --set migrationOperation.planDigest="$plan_digest" \
   --set migrationOperation.verifiedPlanDigest="$plan_digest" > "$tmp/operation-apply.yaml"
-extract_container "$tmp/operation-apply.yaml" migration-operation "$tmp/operation-apply.script" "$tmp/operation-apply.args"
+extract_container "$tmp/operation-apply.yaml" migration-operation "$tmp/operation-apply.script" "$tmp/operation-apply.args" "$tmp/operation-apply.message-path"
 mapfile -t operation_apply_args < "$tmp/operation-apply.args"
 execute_rendered operation-apply 10 "$operation_root" "${operation_apply_args[@]}"
-assert_completed_terminal "$operation_root"
+assert_completed_terminal "$operation_root" operation-apply
 
 helm template operation "$chart_dir" "${base_values[@]}" \
   --set formatMigrations.mode=disabled \
@@ -271,7 +316,7 @@ helm template operation "$chart_dir" "${base_values[@]}" \
   --set migrationOperation.transport.existingClaim=ci-migration \
   --set migrationOperation.planDigest="$plan_digest" \
   --set migrationOperation.verifiedPlanDigest="$plan_digest" > "$tmp/operation-verify.yaml"
-extract_container "$tmp/operation-verify.yaml" migration-operation "$tmp/operation-verify.script" "$tmp/operation-verify.args"
+extract_container "$tmp/operation-verify.yaml" migration-operation "$tmp/operation-verify.script" "$tmp/operation-verify.args" "$tmp/operation-verify.message-path"
 mapfile -t operation_verify_args < "$tmp/operation-verify.args"
 execute_rendered operation-verify 5 "$operation_root" "${operation_verify_args[@]}"
 
