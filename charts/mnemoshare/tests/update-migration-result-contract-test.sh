@@ -23,7 +23,7 @@ before=$(find "$destination" -type f -printf '%f\n' | sort | while read -r name;
 after=$(find "$destination" -type f -printf '%f\n' | sort | while read -r name; do sha256sum "${destination}/${name}"; done)
 test "$before" = "$after"
 
-git -C "$app" commit -q --allow-empty -m repin
+git -C "$app" -c user.name=test -c user.email=test@example.com commit -q --allow-empty -m repin
 repin=$(git -C "$app" rev-parse HEAD)
 "$updater" "$app" "$repin"
 test "$(sed -n 's/^commit=//p' "${destination}/UPSTREAM")" = "$repin"
