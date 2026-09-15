@@ -165,6 +165,22 @@ jobs:
             > /tmp/mnemoshare-profiled.yaml
           (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-profiled.yaml)
 
+          # Relay mode with a relay database selects a profile that serves the
+          # email-relay-mongo external universe, so the automatic migration Job
+          # also plans, applies and verifies that universe.
+          helm template relay charts/mnemoshare \
+            --set customerId=ci-test \
+            --set image.digest="$digest" \
+            --set deploymentContract.sourceCommit="$deployment_commit" \
+            --set deploymentContract.contractFingerprint="$deployment_fingerprint" \
+            --set deploymentContract.imageDigest="$digest" \
+            --set emailGateway.enabled=true \
+            --set emailGateway.mode=relay \
+            --set emailGateway.relay.spoolSharedKey=spool \
+            --set emailGateway.relay.db.uri=mongodb://relay:27017/relay \
+            > /tmp/mnemoshare-relay.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-relay.yaml)
+
           operation=charts/mnemoshare/tests/contracts/migration-operation/v1
           operation_fingerprint=$(jq -r .fingerprint "$operation/contract.json")
           # The checker requires the rendered migration image to equal the

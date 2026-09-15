@@ -202,6 +202,7 @@ spec:
               chmod 0700 {{ $artifactDirectory | quote }}
               exec /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint {{ $migrationContractFingerprint | quote }} --universe email-relay-mongo --output {{ printf "%s/email-relay-plan.json" $artifactDirectory | quote }} --result {{ printf "%s/email-relay-result.json" $artifactDirectory | quote }}
           env:
+            {{- include "mnemoshare.productionEnvironment" . | nindent 12 }}
             {{- include "mnemoshare.emailRelayMigrationEnv" . | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}

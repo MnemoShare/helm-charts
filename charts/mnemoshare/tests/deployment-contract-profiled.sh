@@ -137,6 +137,27 @@ relay_apply_line=$(grep -n -m1 -- '--universe email-relay-mongo --plan' <<<"$tok
 test -n "$primary_apply_line"
 test -n "$relay_apply_line"
 test "$primary_apply_line" -lt "$relay_apply_line"
+# Every rendered container that runs the migration CLI, for either universe,
+# carries the production posture the application deployment checker requires.
+for render in "$dkim" "$tokens"; do
+  python3 -c '
+import sys, yaml
+seen = 0
+for document in yaml.safe_load_all(sys.stdin):
+    spec = (document or {}).get("spec") or {}
+    template = spec.get("template") or ((spec.get("jobTemplate") or {}).get("spec") or {}).get("template") or {}
+    pod = template.get("spec") or {}
+    for container in (pod.get("initContainers") or []) + (pod.get("containers") or []):
+        if "/usr/local/bin/mnemoshare-migrate" not in " ".join((container.get("command") or []) + (container.get("args") or [])):
+            continue
+        seen += 1
+        environment = {item["name"]: item.get("value") for item in container.get("env") or []}
+        if environment.get("ENVIRONMENT") != "production":
+            sys.exit("%s/%s runs mnemoshare-migrate without ENVIRONMENT=production" % (document["metadata"]["name"], container["name"]))
+if not seen:
+    sys.exit("no mnemoshare-migrate container rendered")
+' <<<"$render"
+done
 
 expect_failure() {
 	local expected=$1 output
