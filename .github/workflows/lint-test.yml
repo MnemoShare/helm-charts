@@ -40,6 +40,10 @@ jobs:
           # the vendored migration/deployment contracts in this chart.
           ref: baec60529c6e4a698296c6c44f7aae24dfda0e25
           path: application
+          # The application repository is private; this workflow's GITHUB_TOKEN
+          # is scoped to helm-charts. Same org credential the application's
+          # publish-helm workflow uses for its cross-repository checkout.
+          token: ${{ secrets.GH_FULL_PAT }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
