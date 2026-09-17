@@ -245,6 +245,34 @@ mailMonitoring:
   internalMailIntervalSec: 60
   internalMailWatchIntervalSec: 90
 
+  # ARC sealing for the lanes that MODIFY delivered mail — DLP redaction,
+  # caution banners, link rewriting (MEM-155).
+  #
+  # Those lanes insert a new copy of the message, which invalidates the sender's
+  # DKIM signature. Sealing is what makes the modification authenticated and
+  # attributable to this deployment. The lanes REFUSE to insert an unsealed
+  # copy, so leaving this unset means they stand down — detection, quarantine,
+  # clawback and re-scoring are unaffected.
+  #
+  # The identity attests the INTERMEDIARY (us), not the sender, so it is
+  # deployment-level: do NOT set it to a tenant's own sending domain.
+  #
+  # Empty values fall back to inboundGateway.arc, so a combined deployment
+  # reuses the one key it already has. Running mail monitoring does not require
+  # running a gateway — set these directly for an ICES-only deployment.
+  arc:
+    # Signing domain, e.g. "mail.example.com". Needs a published DKIM TXT
+    # record at <selector>._domainkey.<domain>.
+    domain: ""
+    # Selector name, e.g. "arc1".
+    selector: ""
+    # Existing secret holding the RSA private key (preferred).
+    existingSecret: ""
+    # Key within that secret.
+    secretKey: "arc-private-key"
+    # Inline PEM — prefer existingSecret for production.
+    privateKey: ""
+
 # Cloudflare Turnstile CAPTCHA (optional)
 # Used to protect public forms (access requests, etc.) from bots
 # Get keys from: https://dash.cloudflare.com/?to=/:account/turnstile
