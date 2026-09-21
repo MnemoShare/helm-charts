@@ -89,6 +89,7 @@ spec:
         - name: fence-active-migration-state
           image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
           imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}
+          terminationMessagePolicy: FallbackToLogsOnError
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -108,6 +109,7 @@ spec:
         - name: snapshot-target-credentials
           image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
           imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}
+          terminationMessagePolicy: FallbackToLogsOnError
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -143,6 +145,7 @@ spec:
         - name: snapshot-email-relay-mongo-credentials
           image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
           imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}
+          terminationMessagePolicy: FallbackToLogsOnError
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -178,6 +181,7 @@ spec:
         - name: plan-before-drain
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          terminationMessagePolicy: FallbackToLogsOnError
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -196,6 +200,7 @@ spec:
         - name: plan-email-relay-mongo-before-drain
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          terminationMessagePolicy: FallbackToLogsOnError
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -217,6 +222,7 @@ spec:
         - name: drain-application-plane
           image: "{{ .Values.formatMigrations.orchestratorImage.repository }}@{{ .Values.formatMigrations.orchestratorImage.digest }}"
           imagePullPolicy: {{ .Values.formatMigrations.orchestratorImage.pullPolicy }}
+          terminationMessagePolicy: FallbackToLogsOnError
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -431,6 +437,7 @@ spec:
         - name: apply
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          terminationMessagePolicy: FallbackToLogsOnError
           command: ["/bin/sh", "-ec"]
           args:
             - |
@@ -486,6 +493,7 @@ spec:
         - name: verify
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          terminationMessagePolicy: FallbackToLogsOnError
           command: ["/bin/sh", "-ec"]
           args:
             - |

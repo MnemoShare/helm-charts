@@ -108,6 +108,18 @@ assert_has() {
 }
 
 assert_has 'name: test-mnemoshare-format-migration'
+format_migration_init=$(awk '
+  /^# Source: mnemoshare\/templates\/format-migration-job.yaml$/ { source=1; next }
+  source && /^      initContainers:$/ { active=1; next }
+  active && /^      containers:$/ { exit }
+  active { print }
+' <<<"$render")
+init_count=$(grep -Ec '^        - name:' <<<"$format_migration_init")
+fallback_count=$(grep -Ec '^          terminationMessagePolicy: FallbackToLogsOnError$' <<<"$format_migration_init")
+if [ "$init_count" -eq 0 ] || [ "$fallback_count" -ne "$init_count" ]; then
+  echo "every format-migration init container must retain failed logs in its termination message (${fallback_count}/${init_count})" >&2
+  exit 1
+fi
 if grep -Fq 'name: test-mnemoshare-format-migration-mode-fence' <<<"$render"; then
   echo 'automatic mode rendered the non-automatic state fence' >&2
   exit 1
