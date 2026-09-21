@@ -179,8 +179,10 @@ fi
 # governed application and needs no persistent plan transport.
 reset_without_transport=$(helm template ci "$chart_dir" "${base[@]}" \
   --set migrationOperation.phase=reset \
+  --set migrationOperation.suspend=true \
   --set-string migrationOperation.transport.existingClaim=)
 grep -Fq 'replicas: 0' <<<"$reset_without_transport"
+grep -Fq 'suspend: true' <<<"$reset_without_transport"
 grep -Fq 'name: migration-transport' <<<"$reset_without_transport"
 grep -Fq 'emptyDir: {}' <<<"$reset_without_transport"
 

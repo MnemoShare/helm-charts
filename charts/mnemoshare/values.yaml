@@ -183,6 +183,9 @@ database:
 # the plan -> down -> apply -> verify -> up sequence for this release.
 migrationOperation:
   enabled: false
+  # External controllers may stage a destructive reset suspended, wait until
+  # the rendered zero-replica workloads are fully gone, then unsuspend it.
+  suspend: false
   # Must match the immutable v1 contract embedded in targetImage.
   contractFingerprint: ""
   # One immutable phase per reconciliation. Failed attempts remain observable.
