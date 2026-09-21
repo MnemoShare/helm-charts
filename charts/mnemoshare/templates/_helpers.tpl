@@ -474,6 +474,51 @@ standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud
   value: {{ .Values.mailMonitoring.internalMailIntervalSec | default 60 | quote }}
 - name: GOOGLE_INTERNAL_MAIL_WATCH_INTERVAL_SEC
   value: {{ .Values.mailMonitoring.internalMailWatchIntervalSec | default 90 | quote }}
+{{- include "mnemoshare.mailMonitoringArcEnv" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+ARC sealing identity for the mail-monitoring (ICES) lanes — MEM-155.
+
+The lanes that MODIFY delivered mail (DLP redaction, caution banners, link
+rewriting) insert a new copy, which invalidates the sender's DKIM. They seal
+that copy so the modification is authenticated and attributable, and they
+REFUSE to insert without a key. So a deployment running those lanes must set
+this or they stand down.
+
+Config falls back to inboundGateway.arc purely as a convenience for combined
+deployments, where one key already exists. ICES must be configurable on its own
+(mailMonitoring.arc) because running it does NOT require running a gateway.
+*/}}
+{{- define "mnemoshare.mailMonitoringArcEnv" -}}
+{{- $arc := .Values.mailMonitoring.arc | default dict -}}
+{{- $gw := dict -}}
+{{- if .Values.inboundGateway -}}
+{{- $gw = .Values.inboundGateway.arc | default dict -}}
+{{- end -}}
+{{- $domain := $arc.domain | default $gw.domain -}}
+{{- $selector := $arc.selector | default $gw.selector -}}
+{{- $secret := $arc.existingSecret | default $gw.existingSecret -}}
+{{- $secretKey := $arc.secretKey | default "arc-private-key" -}}
+{{- $inline := $arc.privateKey | default $gw.privateKey -}}
+{{- if $domain }}
+- name: ARC_DOMAIN
+  value: {{ $domain | quote }}
+{{- end }}
+{{- if $selector }}
+- name: ARC_SELECTOR
+  value: {{ $selector | quote }}
+{{- end }}
+{{- if $secret }}
+- name: ARC_PRIVATE_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ $secret }}
+      key: {{ $secretKey }}
+{{- else if $inline }}
+- name: ARC_PRIVATE_KEY
+  value: {{ $inline | quote }}
 {{- end }}
 {{- end }}
 
