@@ -120,6 +120,10 @@ if [ "$init_count" -eq 0 ] || [ "$fallback_count" -ne "$init_count" ]; then
   echo "every format-migration init container must retain failed logs in its termination message (${fallback_count}/${init_count})" >&2
   exit 1
 fi
+template_init=$(sed -n '/^      initContainers:$/,/^      containers:$/p' "$chart_dir/templates/format-migration-job.yaml")
+declared_init_count=$(grep -Ec '^        - name:' <<<"$template_init")
+declared_fallback_count=$(grep -Ec '^          terminationMessagePolicy: FallbackToLogsOnError$' <<<"$template_init")
+test "$declared_init_count" -eq 8 && test "$declared_fallback_count" -eq "$declared_init_count"
 if grep -Fq 'name: test-mnemoshare-format-migration-mode-fence' <<<"$render"; then
   echo 'automatic mode rendered the non-automatic state fence' >&2
   exit 1
