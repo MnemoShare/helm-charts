@@ -192,15 +192,24 @@ phases. Ordinary startup remains fail-closed in the application.
 {{- end }}
 
 {{/*
-Mark every rendered migration-operation phase with the application-owned
-contract identity. This intentionally stays out of selectorLabels: selectors
-are immutable while an operation contract changes with a release.
+Mark every rendered migration-operation phase with a label-safe identity.
+The full digest is an annotation on executable operation resources because a
+SHA-256 hex digest is one byte longer than Kubernetes permits in label values.
+These intentionally stay out of selectorLabels: selectors are immutable while
+an operation contract changes with a release.
 */}}
 {{- define "mnemoshare.migrationOperationContractLabels" -}}
 {{- if and .Values.migrationOperation .Values.migrationOperation.enabled -}}
 {{- $contract := include "mnemoshare.migrationOperationContract" . | fromJson -}}
 {{- $version := trimPrefix "mnemoshare.migration-operation." $contract.provenance.schema -}}
 mnemoshare.io/migration-operation-contract: {{ $version | quote }}
+mnemoshare.io/migration-operation-contract-id: {{ trunc 16 $contract.fingerprint | quote }}
+{{- end -}}
+{{- end }}
+
+{{- define "mnemoshare.migrationOperationContractAnnotations" -}}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled -}}
+{{- $contract := include "mnemoshare.migrationOperationContract" . | fromJson -}}
 mnemoshare.io/migration-operation-contract-fingerprint: {{ $contract.fingerprint | quote }}
 {{- end -}}
 {{- end }}
