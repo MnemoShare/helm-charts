@@ -64,6 +64,9 @@ for phase in reset plan down apply verify up; do
     reset)
       deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$render")
       grep -Fq 'replicas: 0' <<<"$deployment"
+      inbound_render=$(helm template ci "$chart_dir" "${base[@]}" --set migrationOperation.phase=reset --set inboundGateway.enabled=true)
+      inbound=$(awk '/# Source: mnemoshare\/templates\/inbound-gateway-deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$inbound_render")
+      grep -Fq 'replicas: 0' <<<"$inbound"
       ! grep -Fq 'activeDeadlineSeconds:' <<<"$render"
       grep -Fq -- '- "reset"' <<<"$render"
       grep -Fq 'if [ "$phase" = "reset" ]; then command="pre-1-reset-format-ledger"; fi' <<<"$render"
