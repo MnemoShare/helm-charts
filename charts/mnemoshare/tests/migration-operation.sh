@@ -38,10 +38,21 @@ assert_job_and_pod_annotation() {
   job_annotations=$(awk '/^  annotations:/{active=1; next} active && /^spec:/{exit} active{print}' <<<"$job")
   pod_labels=$(awk '/^      labels:/{active=1; next} active && /^      annotations:/{exit} active{print}' <<<"$job")
   pod_annotations=$(awk '/^      annotations:/{active=1; next} active && /^    spec:/{exit} active{print}' <<<"$job")
-  ! grep -Fq "$value" <<<"$job_labels"
-  ! grep -Fq "$value" <<<"$pod_labels"
+  if grep -Fq "$value" <<<"$job_labels" || grep -Fq "$value" <<<"$pod_labels"; then
+    echo "$key full digest escaped into a Kubernetes label" >&2
+    return 1
+  fi
   grep -Fq "$key: \"$value\"" <<<"$job_annotations"
   grep -Fq "$key: \"$value\"" <<<"$pod_annotations"
+}
+
+assert_operation_routing_labels() {
+  local render=$1 phase=$2 job pod_labels
+  job=$(awk '/^kind: Job$/{active=1} active{print}' <<<"$render")
+  pod_labels=$(awk '/^      labels:/{active=1; next} active && /^      annotations:/{exit} active{print}' <<<"$job")
+  grep -Fq 'mnemoshare.io/migration-operation-id: "ci-op"' <<<"$pod_labels"
+  grep -Fq "mnemoshare.io/migration-operation-phase: \"$phase\"" <<<"$pod_labels"
+  grep -Fq 'mnemoshare.io/migration-operation-universe: "primary"' <<<"$pod_labels"
 }
 
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
@@ -75,6 +86,7 @@ for phase in reset plan down apply verify up; do
   grep -Fq "mnemoshare.io/migration-operation-contract-id: \"${fingerprint:0:16}\"" <<<"$render"
   case "$phase" in
     reset)
+      assert_operation_routing_labels "$render" "$phase"
       assert_job_and_pod_annotation "$render" mnemoshare.io/migration-operation-contract-fingerprint "$fingerprint"
       assert_job_and_pod_annotation "$render" mnemoshare.io/migration-operation-plan-digest "$plan"
       deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$render")
@@ -102,6 +114,7 @@ for phase in reset plan down apply verify up; do
       ! grep -Fq -- '- "--contract"' <<<"$render"
       ;;
     plan)
+      assert_operation_routing_labels "$render" "$phase"
       grep -Fq 'activeDeadlineSeconds: 1800' <<<"$render"
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
       grep -Fq 'value: "production"' <<<"$render"
@@ -138,6 +151,7 @@ for phase in reset plan down apply verify up; do
       ! grep -Fq '/run/mnemoshare-migration/' <<<"$render"
       ;;
     apply)
+      assert_operation_routing_labels "$render" "$phase"
       ! grep -Fq 'activeDeadlineSeconds:' <<<"$render"
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
       grep -Fq 'value: "production"' <<<"$render"
@@ -173,6 +187,7 @@ for phase in reset plan down apply verify up; do
       grep -Fq 'if [ "$phase" = "apply" ] || [ "$phase" = "reset" ]; then' <<<"$render"
       ;;
     verify)
+      assert_operation_routing_labels "$render" "$phase"
       grep -Fq 'activeDeadlineSeconds: 1800' <<<"$render"
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
       grep -Fq 'value: "production"' <<<"$render"

@@ -47,11 +47,11 @@ spec:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migration-operation
         {{- include "mnemoshare.migrationOperationContractLabels" . | nindent 8 }}
-      annotations:
-        {{- include "mnemoshare.migrationOperationContractAnnotations" . | nindent 8 }}
         mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
         mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
         mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
+      annotations:
+        {{- include "mnemoshare.migrationOperationContractAnnotations" . | nindent 8 }}
         mnemoshare.io/migration-operation-plan-digest: {{ $planDigest | quote }}
     spec:
       restartPolicy: Never
