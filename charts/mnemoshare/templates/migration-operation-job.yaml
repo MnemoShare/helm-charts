@@ -35,6 +35,7 @@ metadata:
     mnemoshare.io/migration-operation-plan-file: {{ $planFile | quote }}
     mnemoshare.io/migration-operation-result-file: {{ $resultFile | quote }}
 spec:
+  suspend: {{ .Values.migrationOperation.suspend }}
   backoffLimit: {{ .Values.migrationOperation.backoffLimit }}
   {{- if not $instrumented }}
   activeDeadlineSeconds: {{ .Values.migrationOperation.uninstrumentedActiveDeadlineSeconds }}
@@ -178,8 +179,12 @@ spec:
           {{- end }}
       volumes:
         - name: migration-transport
+          {{- if eq $phase "reset" }}
+          emptyDir: {}
+          {{- else }}
           persistentVolumeClaim:
             claimName: {{ .Values.migrationOperation.transport.existingClaim | quote }}
+          {{- end }}
         {{- if $instrumented }}
         - name: migration-status
           emptyDir: {}
