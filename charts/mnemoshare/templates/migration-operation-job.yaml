@@ -30,6 +30,7 @@ metadata:
     mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
     mnemoshare.io/migration-operation-plan-digest: {{ $planDigest | quote }}
   annotations:
+    {{- include "mnemoshare.migrationOperationContractAnnotations" . | nindent 4 }}
     # This is intentionally not a Helm hook. The external controller owns
     # ordering, observes status, and retains failures for forward repair.
     mnemoshare.io/migration-operation-plan-file: {{ $planFile | quote }}
@@ -46,6 +47,8 @@ spec:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migration-operation
         {{- include "mnemoshare.migrationOperationContractLabels" . | nindent 8 }}
+      annotations:
+        {{- include "mnemoshare.migrationOperationContractAnnotations" . | nindent 8 }}
         mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
         mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
         mnemoshare.io/migration-operation-universe: {{ $universe | quote }}

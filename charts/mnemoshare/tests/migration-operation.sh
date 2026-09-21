@@ -59,9 +59,10 @@ grep -Fxq "sourceFingerprint=$source_fingerprint" "$contract_dir/UPSTREAM"
 for phase in reset plan down apply verify up; do
   render=$(helm template ci "$chart_dir" "${base[@]}" --set migrationOperation.phase="$phase")
   grep -Fq "mnemoshare.io/migration-operation-contract: \"$contract_version\"" <<<"$render"
-  grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
+  grep -Fq "mnemoshare.io/migration-operation-contract-id: \"${fingerprint:0:16}\"" <<<"$render"
   case "$phase" in
     reset)
+      test "$(grep -Fc "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render")" -eq 2
       deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$render")
       grep -Fq 'replicas: 0' <<<"$deployment"
       inbound_render=$(helm template ci "$chart_dir" "${base[@]}" --set migrationOperation.phase=reset --set inboundGateway.enabled=true)
@@ -90,7 +91,7 @@ for phase in reset plan down apply verify up; do
       grep -Fq 'activeDeadlineSeconds: 1800' <<<"$render"
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
       grep -Fq 'value: "production"' <<<"$render"
-      grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
+      test "$(grep -Fc "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render")" -eq 2
       grep -Fq "args:" <<<"$render"
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"
       grep -Fq -- '"--output"' <<<"$render"
@@ -115,7 +116,7 @@ for phase in reset plan down apply verify up; do
     down)
       deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$render")
       grep -Fq 'replicas: 0' <<<"$deployment"
-      grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$deployment"
+      grep -Fq "mnemoshare.io/migration-operation-contract-id: \"${fingerprint:0:16}\"" <<<"$deployment"
       selector=$(awk '/^  selector:/{active=1; next} active && /^  template:/{exit} active{print}' <<<"$deployment")
       ! grep -q 'mnemoshare.io/migration-operation-contract' <<<"$selector"
       ! grep -q 'kind: Job' <<<"$render"
@@ -125,7 +126,7 @@ for phase in reset plan down apply verify up; do
       ! grep -Fq 'activeDeadlineSeconds:' <<<"$render"
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
       grep -Fq 'value: "production"' <<<"$render"
-      grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
+      test "$(grep -Fc "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render")" -eq 2
       grep -Fq -- '- "apply"' <<<"$render"
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"
       grep -Fq -- '"--exclusive"' <<<"$render"
@@ -159,7 +160,7 @@ for phase in reset plan down apply verify up; do
       grep -Fq 'activeDeadlineSeconds: 1800' <<<"$render"
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
       grep -Fq 'value: "production"' <<<"$render"
-      grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
+      test "$(grep -Fc "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render")" -eq 2
       grep -Fq -- '- "verify"' <<<"$render"
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"
       grep -Fq -- '"--expect-plan-digest"' <<<"$render"
