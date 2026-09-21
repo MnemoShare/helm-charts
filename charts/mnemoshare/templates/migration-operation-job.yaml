@@ -28,9 +28,9 @@ metadata:
     mnemoshare.io/migration-operation-id: {{ $operationID | quote }}
     mnemoshare.io/migration-operation-phase: {{ $phase | quote }}
     mnemoshare.io/migration-operation-universe: {{ $universe | quote }}
-    mnemoshare.io/migration-operation-plan-digest: {{ $planDigest | quote }}
   annotations:
     {{- include "mnemoshare.migrationOperationContractAnnotations" . | nindent 4 }}
+    mnemoshare.io/migration-operation-plan-digest: {{ $planDigest | quote }}
     # This is intentionally not a Helm hook. The external controller owns
     # ordering, observes status, and retains failures for forward repair.
     mnemoshare.io/migration-operation-plan-file: {{ $planFile | quote }}

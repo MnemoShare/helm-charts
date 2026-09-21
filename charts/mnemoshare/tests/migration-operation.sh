@@ -31,6 +31,19 @@ base=(
   --set migrationOperation.verifiedPlanDigest="$plan"
 )
 
+assert_job_and_pod_annotation() {
+  local render=$1 key=$2 value=$3 job job_labels job_annotations pod_labels pod_annotations
+  job=$(awk '/^kind: Job$/{active=1} active{print}' <<<"$render")
+  job_labels=$(awk '/^  labels:/{active=1; next} active && /^  annotations:/{exit} active{print}' <<<"$job")
+  job_annotations=$(awk '/^  annotations:/{active=1; next} active && /^spec:/{exit} active{print}' <<<"$job")
+  pod_labels=$(awk '/^      labels:/{active=1; next} active && /^      annotations:/{exit} active{print}' <<<"$job")
+  pod_annotations=$(awk '/^      annotations:/{active=1; next} active && /^    spec:/{exit} active{print}' <<<"$job")
+  ! grep -Fq "$value" <<<"$job_labels"
+  ! grep -Fq "$value" <<<"$pod_labels"
+  grep -Fq "$key: \"$value\"" <<<"$job_annotations"
+  grep -Fq "$key: \"$value\"" <<<"$pod_annotations"
+}
+
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
 jq -e '
   .commands.apply.args[-6:] == ["--status", "<status-file>", "--termination-file", "<status-dir>/termination.json", "--termination-message-file", "<termination-message-file>"] and
@@ -62,7 +75,8 @@ for phase in reset plan down apply verify up; do
   grep -Fq "mnemoshare.io/migration-operation-contract-id: \"${fingerprint:0:16}\"" <<<"$render"
   case "$phase" in
     reset)
-      test "$(grep -Fc "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render")" -eq 2
+      assert_job_and_pod_annotation "$render" mnemoshare.io/migration-operation-contract-fingerprint "$fingerprint"
+      assert_job_and_pod_annotation "$render" mnemoshare.io/migration-operation-plan-digest "$plan"
       deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$render")
       grep -Fq 'replicas: 0' <<<"$deployment"
       inbound_render=$(helm template ci "$chart_dir" "${base[@]}" --set migrationOperation.phase=reset --set inboundGateway.enabled=true)
@@ -91,7 +105,8 @@ for phase in reset plan down apply verify up; do
       grep -Fq 'activeDeadlineSeconds: 1800' <<<"$render"
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
       grep -Fq 'value: "production"' <<<"$render"
-      test "$(grep -Fc "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render")" -eq 2
+      assert_job_and_pod_annotation "$render" mnemoshare.io/migration-operation-contract-fingerprint "$fingerprint"
+      assert_job_and_pod_annotation "$render" mnemoshare.io/migration-operation-plan-digest "$plan"
       grep -Fq "args:" <<<"$render"
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"
       grep -Fq -- '"--output"' <<<"$render"
@@ -126,7 +141,8 @@ for phase in reset plan down apply verify up; do
       ! grep -Fq 'activeDeadlineSeconds:' <<<"$render"
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
       grep -Fq 'value: "production"' <<<"$render"
-      test "$(grep -Fc "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render")" -eq 2
+      assert_job_and_pod_annotation "$render" mnemoshare.io/migration-operation-contract-fingerprint "$fingerprint"
+      assert_job_and_pod_annotation "$render" mnemoshare.io/migration-operation-plan-digest "$plan"
       grep -Fq -- '- "apply"' <<<"$render"
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"
       grep -Fq -- '"--exclusive"' <<<"$render"
@@ -160,7 +176,8 @@ for phase in reset plan down apply verify up; do
       grep -Fq 'activeDeadlineSeconds: 1800' <<<"$render"
       grep -Fq 'name: ENVIRONMENT' <<<"$render"
       grep -Fq 'value: "production"' <<<"$render"
-      test "$(grep -Fc "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render")" -eq 2
+      assert_job_and_pod_annotation "$render" mnemoshare.io/migration-operation-contract-fingerprint "$fingerprint"
+      assert_job_and_pod_annotation "$render" mnemoshare.io/migration-operation-plan-digest "$plan"
       grep -Fq -- '- "verify"' <<<"$render"
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"
       grep -Fq -- '"--expect-plan-digest"' <<<"$render"
