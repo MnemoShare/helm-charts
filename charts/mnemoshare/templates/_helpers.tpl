@@ -174,7 +174,7 @@ one-shot command and drains the governed writer workloads for maintenance
 phases. Ordinary startup remains fail-closed in the application.
 */}}
 {{- define "mnemoshare.migrationOperationDown" -}}
-{{- if and .Values.migrationOperation .Values.migrationOperation.enabled (has .Values.migrationOperation.phase (list "down" "apply" "verify")) }}true{{ else }}false{{ end }}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled (has .Values.migrationOperation.phase (list "reset" "down" "apply" "verify")) }}true{{ else }}false{{ end }}
 {{- end }}
 
 {{/* Load the generated migration-operation/v1 contract owned by the application. */}}

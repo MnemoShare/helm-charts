@@ -61,7 +61,7 @@
 {{- fail "migrationOperation.phase=down or primary apply requires externalPlanDigest for email-relay-mongo before writers are drained or migration proceeds" }}
 {{- end }}
 {{- end }}
-{{- if has $phase (list "reset" "plan" "apply" "verify") }}
+{{- if has $phase (list "plan" "apply" "verify") }}
 {{- if not .Values.migrationOperation.transport.existingClaim }}
 {{- fail "migrationOperation.transport.existingClaim is required for plan, apply, and verify" }}
 {{- end }}

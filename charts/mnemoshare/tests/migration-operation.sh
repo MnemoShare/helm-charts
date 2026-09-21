@@ -62,6 +62,8 @@ for phase in reset plan down apply verify up; do
   grep -Fq "mnemoshare.io/migration-operation-contract-fingerprint: \"$fingerprint\"" <<<"$render"
   case "$phase" in
     reset)
+      deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$render")
+      grep -Fq 'replicas: 0' <<<"$deployment"
       ! grep -Fq 'activeDeadlineSeconds:' <<<"$render"
       grep -Fq -- '- "reset"' <<<"$render"
       grep -Fq 'if [ "$phase" = "reset" ]; then command="pre-1-reset-format-ledger"; fi' <<<"$render"
@@ -74,6 +76,8 @@ for phase in reset plan down apply verify up; do
       grep -Fq -- '- "/run/mnemoshare-migration/termination-message"' <<<"$render"
       grep -Fq 'terminationMessagePath: "/run/mnemoshare-migration/termination-message"' <<<"$render"
       grep -Fq 'name: migration-status' <<<"$render"
+      grep -Fq 'name: migration-transport' <<<"$render"
+      grep -Fq 'emptyDir: {}' <<<"$render"
       grep -Fq 'startupProbe:' <<<"$render"
       grep -Fq 'livenessProbe:' <<<"$render"
       test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/run/mnemoshare-migration/status/status.json", "--termination-file", "/run/mnemoshare-migration/status/termination.json", "--termination-message-file", "/run/mnemoshare-migration/termination-message", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$render")" -eq 2
@@ -170,6 +174,15 @@ if helm template ci "$chart_dir" "${base[@]}" --set migrationOperation.phase=res
   echo 'primary format-ledger reset accepted an external universe' >&2
   exit 1
 fi
+
+# Reset is the destructive pre-1 escape hatch. It must structurally drain the
+# governed application and needs no persistent plan transport.
+reset_without_transport=$(helm template ci "$chart_dir" "${base[@]}" \
+  --set migrationOperation.phase=reset \
+  --set-string migrationOperation.transport.existingClaim=)
+grep -Fq 'replicas: 0' <<<"$reset_without_transport"
+grep -Fq 'name: migration-transport' <<<"$reset_without_transport"
+grep -Fq 'emptyDir: {}' <<<"$reset_without_transport"
 
 # The full production values profile must preserve the same generated apply
 # command and probe; profile defaults cannot weaken the operation contract.

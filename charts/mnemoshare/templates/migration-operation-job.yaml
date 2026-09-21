@@ -178,8 +178,12 @@ spec:
           {{- end }}
       volumes:
         - name: migration-transport
+          {{- if eq $phase "reset" }}
+          emptyDir: {}
+          {{- else }}
           persistentVolumeClaim:
             claimName: {{ .Values.migrationOperation.transport.existingClaim | quote }}
+          {{- end }}
         {{- if $instrumented }}
         - name: migration-status
           emptyDir: {}
