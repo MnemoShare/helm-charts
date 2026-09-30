@@ -729,3 +729,37 @@ existingAPIKeySecret is set, else an inline apiKey.
 {{- end }}
 {{- end }}
 {{- end }}
+
+{{/*
+License credential and deployment-ID inputs. Every runtime process that
+evaluates the license entitlement must receive identical values: the
+entitlement grant is bound to the credential digest and the deployment ID, so
+a process missing either rejects the grant the others committed.
+*/}}
+{{- define "mnemoshare.licenseEnv" -}}
+# License
+- name: LICENSE_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.license }}{{ .Values.existingSecrets.license }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: license-key
+{{- if .Values.license.deploymentId }}
+# Explicit deployment ID override (optional - infrastructure-based ID is recommended)
+- name: DEPLOYMENT_ID
+  value: {{ .Values.license.deploymentId | quote }}
+{{- end }}
+# Infrastructure-based deployment ID generation
+# Combines namespace name + cluster UID for deterministic, portable deployment IDs
+# - Same namespace + cluster = same deployment ID (allows pod scaling)
+# - Different namespace or cluster = different deployment ID
+# - Copying database doesn't copy deployment ID
+- name: NAMESPACE_UID
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.namespace
+{{- $kubeSystemNs := (lookup "v1" "Namespace" "" "kube-system") }}
+{{- if $kubeSystemNs }}
+- name: KUBE_SYSTEM_UID
+  value: {{ $kubeSystemNs.metadata.uid | quote }}
+{{- end }}
+{{- end -}}

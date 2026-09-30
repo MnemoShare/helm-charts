@@ -99,6 +99,7 @@ spec:
           containerPort: {{ $facts.profile.probe.port }}
           protocol: TCP
         env:
+        {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
         {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         - name: GATEWAY_MODE
           value: {{ .Values.emailGateway.mode | quote }}
