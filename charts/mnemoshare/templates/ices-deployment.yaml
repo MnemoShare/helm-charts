@@ -50,6 +50,7 @@ spec:
         command:
           {{- toYaml $icesCommand | nindent 10 }}
         env:
+        {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
         {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
