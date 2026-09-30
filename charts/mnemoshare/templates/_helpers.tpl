@@ -452,10 +452,6 @@ api's surface or the engine silently can't send.
 {{- end }}
 
 {{/*
-Mail-monitoring env for whichever engine hosts it (worker when embedded, or the
-standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud/webhook/*.
-*/}}
-{{/*
 License env shared by every workload that validates the license itself: api,
 workflow-worker (Deployment and StatefulSet) and ices. The worker/ices license
 refresher reads the key and derives the deployment ID exactly as cmd/api does,
@@ -497,7 +493,7 @@ fall back to the app defaults (Microsoft follows Google; floor 60s; ceiling
 3600s).
 */}}
 {{- define "mnemoshare.mailCadenceEnv" -}}
-{{- if .Values.mailMonitoring.enabled }}
+{{- if .Values.mailMonitoring.enabled -}}
 - name: GOOGLE_INTERNAL_MAIL_INTERVAL_SEC
   value: {{ .Values.mailMonitoring.internalMailIntervalSec | default 60 | quote }}
 {{- with .Values.mailMonitoring.microsoftInternalMailIntervalSec }}
@@ -515,6 +511,10 @@ fall back to the app defaults (Microsoft follows Google; floor 60s; ceiling
 {{- end }}
 {{- end }}
 
+{{/*
+Mail-monitoring env for whichever engine hosts it (worker when embedded, or the
+standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud/webhook/*.
+*/}}
 {{- define "mnemoshare.mailMonitoringEnv" -}}
 {{- if .Values.mailMonitoring.enabled }}
 {{- $base := trimSuffix "/" (.Values.appUrl | default "") -}}
