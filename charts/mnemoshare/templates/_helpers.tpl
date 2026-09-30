@@ -455,6 +455,66 @@ api's surface or the engine silently can't send.
 Mail-monitoring env for whichever engine hosts it (worker when embedded, or the
 standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud/webhook/*.
 */}}
+{{/*
+License env shared by every workload that validates the license itself: api,
+workflow-worker (Deployment and StatefulSet) and ices. The worker/ices license
+refresher reads the key and derives the deployment ID exactly as cmd/api does,
+so these MUST be identical across the three or a worker validates as a
+different deployment (seat checks fail: pending_account / license_unavailable).
+Empty LICENSE_KEY falls back to the key stored in the database.
+*/}}
+{{- define "mnemoshare.licenseEnv" -}}
+- name: LICENSE_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.license }}{{ .Values.existingSecrets.license }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: license-key
+{{- if .Values.license.deploymentId }}
+- name: DEPLOYMENT_ID
+  value: {{ .Values.license.deploymentId | quote }}
+{{- end }}
+{{- /* Infrastructure-based deployment ID: namespace name + cluster (kube-system
+       UID) is deterministic across pods and restarts, and a copied database
+       lands on a new ID. lookup is empty under plain `helm template`. */}}
+- name: NAMESPACE_UID
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.namespace
+{{- $kubeSystemNs := (lookup "v1" "Namespace" "" "kube-system") }}
+{{- if $kubeSystemNs }}
+- name: KUBE_SYSTEM_UID
+  value: {{ $kubeSystemNs.metadata.uid | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
+Straggler-sweep cadence policy (internal/mailcadence): default interval, floor
+and ceiling. The API validates each org's configured interval against these
+and the mail workers clamp with them, so it is rendered on EVERY app pod (api,
+worker, ices) regardless of which one hosts the mail-monitoring engine —
+unlike mailMonitoringEnv, which only the hosting engine needs. Unset values
+fall back to the app defaults (Microsoft follows Google; floor 60s; ceiling
+3600s).
+*/}}
+{{- define "mnemoshare.mailCadenceEnv" -}}
+{{- if .Values.mailMonitoring.enabled }}
+- name: GOOGLE_INTERNAL_MAIL_INTERVAL_SEC
+  value: {{ .Values.mailMonitoring.internalMailIntervalSec | default 60 | quote }}
+{{- with .Values.mailMonitoring.microsoftInternalMailIntervalSec }}
+- name: MICROSOFT_INTERNAL_MAIL_INTERVAL_SEC
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.mailMonitoring.pollIntervalMinSec }}
+- name: MAIL_MONITORING_POLL_INTERVAL_MIN_SEC
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.mailMonitoring.pollIntervalMaxSec }}
+- name: MAIL_MONITORING_POLL_INTERVAL_MAX_SEC
+  value: {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+
 {{- define "mnemoshare.mailMonitoringEnv" -}}
 {{- if .Values.mailMonitoring.enabled }}
 {{- $base := trimSuffix "/" (.Values.appUrl | default "") -}}
@@ -470,8 +530,6 @@ standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud
 {{- end }}
 - name: GOOGLE_MAIL_ENROLLMENT_INTERVAL_SEC
   value: {{ .Values.mailMonitoring.enrollmentIntervalSec | default 60 | quote }}
-- name: GOOGLE_INTERNAL_MAIL_INTERVAL_SEC
-  value: {{ .Values.mailMonitoring.internalMailIntervalSec | default 60 | quote }}
 - name: GOOGLE_INTERNAL_MAIL_WATCH_INTERVAL_SEC
   value: {{ .Values.mailMonitoring.internalMailWatchIntervalSec | default 90 | quote }}
 {{- include "mnemoshare.mailMonitoringArcEnv" . }}

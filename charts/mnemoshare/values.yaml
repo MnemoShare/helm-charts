@@ -244,6 +244,13 @@ mailMonitoring:
   enrollmentIntervalSec: 60
   internalMailIntervalSec: 60
   internalMailWatchIntervalSec: 90
+  # Straggler-sweep cadence policy, rendered identically on api, worker and
+  # ices (the API validates the per-org interval against it; workers clamp
+  # with it). Unset = app defaults: Microsoft follows internalMailIntervalSec,
+  # floor 60s, ceiling 3600s.
+  microsoftInternalMailIntervalSec: 0
+  pollIntervalMinSec: 0
+  pollIntervalMaxSec: 0
 
   # ARC sealing for the lanes that MODIFY delivered mail — DLP redaction,
   # caution banners, link rewriting (MEM-155).
