@@ -143,6 +143,7 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.jwt }}{{ .Values.existingSecrets.jwt }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: jwt-ec-private-key
+        {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
         # S3-compatible object storage. ICES streams quarantined/scanned
         # attachments through storage.NewStorageManagerWithRepos; without these
         # vars the storage manager defaults to localhost:9000 and crashloops on
@@ -223,6 +224,7 @@ spec:
         # email + mail-monitoring surface, matching the worker's embedded form.
         {{- include "mnemoshare.workerApiCallbackEnv" . | nindent 8 }}
         {{- include "mnemoshare.platformEmailEnv" . | nindent 8 }}
+        {{- include "mnemoshare.mailCadenceEnv" . | nindent 8 }}
         {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
         {{- with .Values.ices.extraEnv }}
         {{- toYaml . | nindent 8 }}

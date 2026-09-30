@@ -185,6 +185,7 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.jwt }}{{ .Values.existingSecrets.jwt }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: jwt-ec-private-key
+        {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
         # S3-compatible object storage. The worker hosts the background
         # engine (virus_scan, metadata_extract, report_generate, sftp etc.)
         # which all stream through storage.NewStorageManagerWithRepos. Without
@@ -272,6 +273,7 @@ spec:
         # background engines need the same surface the api serves in-process.
         {{- include "mnemoshare.workerApiCallbackEnv" . | nindent 8 }}
         {{- include "mnemoshare.platformEmailEnv" . | nindent 8 }}
+        {{- include "mnemoshare.mailCadenceEnv" . | nindent 8 }}
         {{- if not .Values.ices.enabled }}
         {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
         {{- end }}
