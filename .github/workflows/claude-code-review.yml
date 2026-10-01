@@ -1,325 +1,39 @@
 name: Claude Code Review
 
-# Trigger: `pull_request`. We previously used `pull_request_target` to expose
-# secrets on fork PRs, but `anthropics/claude-code-action@v1`'s OIDC token
-# exchange does not accept tokens issued under `pull_request_target` events
-# (every run since the switch failed with `401 Invalid OIDC token`). Reverting
-# to `pull_request` restores the gate. Fork PRs from external contributors
-# will not auto-review under this trigger; if/when fork PR review becomes a
-# real need, switch to a `workflow_run`-driven pattern instead.
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
-    # Skip review on docs-only and lockfile-only PRs — review tokens add no signal.
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
       - '**/package-lock.json'
       - '**/go.sum'
-
-permissions:
-  contents: read
-  pull-requests: write
-  issues: write
-  id-token: write
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to re-review
+        required: true
+        type: number
 
 concurrency:
-  group: claude-review-pr-${{ github.event.pull_request.number }}
+  group: claude-review-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
-  claude-review:
-    # Skip Dependabot bumps — they're machine-generated and gated by CI + the
-    # auto-approve workflow. Human review still fires on everything else.
-    if: github.actor != 'dependabot[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      # Defense-in-depth: a malicious PR could theoretically include a file
-      # at the verdict path. Claude writes to /tmp (outside the workspace),
-      # but we clear it explicitly anyway.
-      - name: Reset verdict file
-        run: rm -f /tmp/claude-verdict.txt
-
-      - name: Checkout PR head (read-only)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Run Claude Code Review
-        id: review
-        continue-on-error: true
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            SCOPE — THE DIFF IS THE REVIEW BOUNDARY:
-            Use `gh pr diff` as the diff source (API-computed against the correct
-            merge base; never diff against a branch name locally). Every finding
-            MUST anchor to a line this PR adds or modifies — a file appearing in
-            the diff is not enough; the specific defective line must be in the
-            diff. Pre-existing issues you notice in surrounding code go in a
-            clearly-labeled "Out of scope (pre-existing)" section as non-blocking
-            notes and NEVER affect the verdict.
-
-            EXHAUSTIVE IN ONE PASS:
-            This review is expected to be COMPLETE. Enumerate every finding you
-            can defend NOW — bugs, security, missing tests, convention breaks —
-            rather than surfacing a few and holding the rest for a later round.
-            A finding you could have made this round but raise only after the
-            author pushes fixes is a review failure. Budget your effort for one
-            thorough pass over the full diff.
-
-            VERIFY BEFORE FILING — AT THE PR HEAD:
-            Before writing any finding, Read the actual file at the PR head and
-            confirm the defect exists there. If the code already contains the
-            guard/fix you were about to demand, do not file it. Quote the
-            defective line verbatim in the finding; if you cannot produce the
-            line from the head, you may not file the finding.
-
-            RE-REVIEWS (synchronize events):
-            First read your own previous review(s) on this PR. For each prior
-            finding, verify at the current head whether it is resolved and say so
-            explicitly. Do NOT re-file resolved findings. New findings on a
-            re-review are legitimate ONLY when introduced by the new commits, or
-            when in-diff, verified, and genuinely missed — in which case say
-            "missed in the previous round" rather than presenting it as new code.
-
-            SEVERITY HONESTY:
-            - Request-changes is reserved for verified defects with a concrete
-              failure scenario: inputs/state -> wrong behavior, reproducible from
-              the diff. Security holes, data loss, crashes, broken contracts.
-            - Style preferences, test-strictness wishes, speculative "could bite
-              later" concerns, refactor suggestions, and doc nits are COMMENT
-              material and must never produce a request-changes verdict on their
-              own.
-            - If every finding is comment-grade, the verdict is APPROVE with
-              comments, not COMMENT — do not withhold approval over nits.
-
-            Review focus, in priority order:
-            - Bugs, logic errors, and edge cases
-            - Security concerns (injection, auth, secrets, IDOR)
-            - Test coverage for new behavior
-            - Adherence to repository conventions in CLAUDE.md when present
-            - Performance issues
-
-            Be specific: cite file paths and line numbers from the PR head. Skip nits unless
-            they cluster into a real concern.
-
-            **Submit EXACTLY ONE formal review.** Use `gh pr review` — not a plain comment:
-              - If clean with no blockers: `gh pr review --approve`
-              - If blockers exist: `gh pr review --request-changes`
-              - If only nits or unsure: `gh pr review --comment`
-            Write the complete body to a file first and submit it with
-            `--body-file` in a single `gh pr review` call. Never call
-            `gh pr review` twice in one run: a second call posts a duplicate
-            review the author has to read and dismiss. If the first call
-            returned an error, check `gh pr view --json reviews` for whether it
-            actually posted before retrying.
-
-            **End your review body with one of these exact lines:**
-              VERDICT: APPROVE
-              VERDICT: BLOCK
-              VERDICT: COMMENT
-
-            The VERDICT line is parsed by Darrin (the auto-approval mirror) to
-            post the human-account approval that satisfies branch protection.
-
-            **Also write a verdict file** at `/tmp/claude-verdict.txt`:
-              - `APPROVE` — the change is mergeable as-is. No blocking findings.
-              - `BLOCK: <one-line reason>` — at least one finding must be
-                addressed before merge. Post specifics as inline review
-                comments first, then write the BLOCK line.
-
-            The verdict file gates the CI status check; the gh pr review +
-            VERDICT line gates the branch-protection merge approval. Both
-            must agree (APPROVE in both, or BLOCK in both).
-
-            Calibration: APPROVE only when you would genuinely sign off on
-            this from a colleague. If you would request changes, use BLOCK.
-            The verdict file is the merge gate — a real human will not be
-            clicking approve, so be honest. Trivial nits (typos, comment
-            wording, formatting preferences) are not BLOCK-worthy on their
-            own; bugs, security gaps, broken contracts, or missing tests for
-            new logic are.
-          # Bash is allowed without a prefix filter. The prior allowlist
-          # enumerated specific `gh pr <subcommand>:*` prefixes, which is
-          # fine for simple calls but fails the bot's compound forms
-          # (heredoc bodies, pipes, `bash -c '...'`) because Claude
-          # Code's permission matcher does a literal prefix match on
-          # the resolved command line — `bash -c "gh pr review ..."`
-          # starts with `bash`, not `gh`, so it's denied.
-          #
-          # Symptom: high permission_denials_count (21 on
-          # helm-charts#27 vs 8 on #26), bot writes its verdict file
-          # but never completes `gh pr review --request-changes`, so
-          # the BLOCK reasoning stays buried in CI logs.
-          #
-          # Risk: the bot is sandboxed in the GHA runner and gets a
-          # PR-scoped GITHUB_TOKEN; it can already comment / mint
-          # reviews via the existing allowlist. Broader Bash adds
-          # network reach, which is a prompt-injection surface IF a
-          # malicious PR could subvert the bot's instructions. We
-          # accept that risk for two reasons: (1) the bot is loyal
-          # to its prompt across thousands of turns, (2) the
-          # downstream fallback step below catches BLOCK verdicts
-          # the bot fails to surface as reviews — so the worst case
-          # is "review is posted by GitHub Actions instead of the
-          # bot" rather than "BLOCK silently disappears."
-          claude_args: '--model claude-sonnet-5 --allowed-tools "Read,Glob,Grep,Write,Bash"'
-
-      # A model-chosen side effect is not a control-flow primitive: recover the
-      # verdict from any durable artifact before deciding the PR is blocked.
-      # See .github/scripts/resolve-claude-verdict.sh for the full rationale.
-      - name: Resolve verdict from artifacts
-        id: resolve
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
-        run: bash .github/scripts/resolve-claude-verdict.sh
-
-      # One retry, and ONLY when nothing produced a verdict. The observed
-      # failure is a clean no-op (is_error=false, 0 denials, 4 turns), so a
-      # single re-ask with the file-write made the explicit exit condition is
-      # usually enough — and costs about three cents.
-      - name: Retry Claude Code Review (no verdict from first pass)
-        id: review_retry
-        if: always() && steps.resolve.outputs.has_verdict != 'true'
-        continue-on-error: true
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            Review this pull request for bugs, security issues, missing tests,
-            and violations of repository conventions (see CLAUDE.md if present).
-
-            YOUR RUN IS NOT COMPLETE UNTIL BOTH OF THESE EXIST:
-
-            1. The file `/tmp/claude-verdict.txt`, written with the Write tool,
-               whose FIRST LINE is exactly one of:
-                 APPROVE
-                 BLOCK: <one-line reason>
-            2. A formal review submitted with `gh pr review`
-               (--approve / --request-changes / --comment) whose body ends with
-               `VERDICT: APPROVE`, `VERDICT: BLOCK`, or `VERDICT: COMMENT`.
-
-            Write the verdict file FIRST, before composing your prose review.
-            A missing verdict file blocks the pull request with no explanation,
-            which is worse for the author than either verdict. Do not end your
-            turn until that file exists.
-
-            Calibration: APPROVE when you would genuinely sign off for a
-            colleague. Bugs, security gaps, broken contracts, and missing tests
-            for new logic are BLOCK-worthy; typos and formatting preferences
-            are not.
-          claude_args: '--model claude-sonnet-5 --allowed-tools "Read,Glob,Grep,Write,Bash"'
-
-      - name: Resolve verdict (after retry)
-        id: resolve2
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-          EXECUTION_FILE: ${{ steps.review_retry.outputs.execution_file }}
-        run: bash .github/scripts/resolve-claude-verdict.sh
-
-      # Resilience layer: if the bot reached a BLOCK verdict but
-      # couldn't complete the formal `gh pr review --request-changes`
-      # call (silent-failure mode — see commit message), surface the
-      # BLOCK as a request-changes review here so it appears in the
-      # PR UI instead of staying buried in CI logs.
-      #
-      # Runs even if "Run Claude Code Review" errored — `if: always()`
-      # guards us against losing the verdict to an unrelated upstream
-      # failure.
-      - name: Mirror BLOCK verdict to PR review (fallback)
-        if: always() && github.event.pull_request.number
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          if [ ! -f /tmp/claude-verdict.txt ]; then
-            echo "::notice::No verdict file — nothing to mirror."
-            exit 0
-          fi
-          verdict=$(head -n1 /tmp/claude-verdict.txt | sed 's/[[:space:]]*$//')
-          case "$verdict" in
-            BLOCK*) ;;
-            *) echo "::notice::Verdict is '${verdict}' — nothing to mirror."; exit 0 ;;
-          esac
-
-          # If the bot already submitted ANY review on this PR HEAD
-          # SHA, don't post a duplicate. We scope by commit_id so
-          # stale reviews on prior commits don't suppress mirroring
-          # of the current verdict.
-          head_sha=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq '.headRefOid')
-          existing=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
-            --jq "[.[] | select(.commit_id == \"$head_sha\")] | length")
-          if [ "${existing:-0}" -gt 0 ]; then
-            echo "::notice::Bot already posted ${existing} review(s) on $head_sha — no mirror needed."
-            exit 0
-          fi
-
-          reason="${verdict#BLOCK}"
-          reason="${reason#:}"
-          body=$(cat <<EOF
-          The Claude review bot reached a \`BLOCK\` verdict but couldn't post a formal review (typically tool-permission denials at the action level — see the workflow run logs for the bot's full reasoning).
-
-          Surfacing the verdict here so it's visible in the PR UI:
-
-          > **BLOCK:**${reason}
-
-          Push a fix and the bot will re-review. If the verdict is wrong, push a clarifying commit and re-run the \`Claude Code Review\` workflow.
-          EOF
-          )
-          gh pr review "$PR_NUMBER" --repo "$REPO" --request-changes --body "$body"
-          echo "::notice::Mirrored BLOCK verdict to a PR review (bot failed to post one directly)."
-
-      - name: Enforce verdict
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          if [ ! -f /tmp/claude-verdict.txt ]; then
-            # claude-code-action refuses to run when the workflow file on the PR
-            # head differs from the default branch ("Skipping action due to
-            # workflow validation"). That is by design and unfixable from
-            # inside the PR — so a PR that edits .github/workflows/ can NEVER
-            # produce a verdict, and failing closed would block the entire class
-            # of CI changes forever with no path forward. Report it honestly and
-            # hand the gate to a human instead of pretending we reviewed it.
-            if [ -n "${PR_NUMBER:-}" ] && gh pr diff "$PR_NUMBER" --repo "$REPO" --name-only 2>/dev/null \
-                 | grep -q '^\.github/workflows/'; then
-              echo "::warning::Bot review UNAVAILABLE for this PR: claude-code-action skips any PR whose workflow files differ from the default branch, so it cannot review its own changes. This check is not asserting the change is safe — a HUMAN MUST review the workflow diff before merge."
-              exit 0
-            fi
-            echo "::error::REVIEW TOOLING FAILED (not a review finding): the bot produced no verdict on two attempts via any channel — verdict file, execution log, or PR review. There is no blocking issue to fix and nothing was posted to the PR. Re-run this job, or merge on a human approval if the other checks pass."
-            exit 1
-          fi
-          verdict=$(head -n1 /tmp/claude-verdict.txt | sed 's/[[:space:]]*$//')
-          echo "Claude verdict: $verdict"
-          case "$verdict" in
-            APPROVE)
-              echo "::notice::Claude approved — no blocking findings."
-              ;;
-            BLOCK*)
-              reason="${verdict#BLOCK}"
-              reason="${reason#:}"
-              echo "::error::Claude blocked merge:${reason}"
-              exit 1
-              ;;
-            *)
-              echo "::error::Unrecognized verdict: '$verdict' — treating as BLOCK."
-              exit 1
-              ;;
-          esac
+  review:
+    # Dependabot bumps are gated by CI + auto-approve; fork PRs get no secrets
+    # (public repo). Skip both before a runner starts.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.user.login != 'dependabot[bot]' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    uses: MnemoShare/ci-workflows/.github/workflows/claude-review.yml@v1
+    with:
+      pr_number: ${{ github.event.pull_request.number || inputs.pr_number }}
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      AUTO_APPROVE_PRIVATE_KEY: ${{ secrets.AUTO_APPROVE_PRIVATE_KEY }}
+    permissions:
+      contents: read
+      pull-requests: read
