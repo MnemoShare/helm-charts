@@ -137,9 +137,29 @@ jobs:
       - name: Validate migration operation v1 consumer
         run: bash charts/mnemoshare/tests/migration-operation.sh
 
-      - name: Build application image for in-image migration execution
+      # The pinned application commit only moves when the vendored contracts are
+      # re-pinned, and the application's dev/demo pipelines already publish an
+      # image for it built from the same Dockerfile and context, so pull that
+      # instead of recompiling (~15 min). Build only when no image exists.
+      - name: Provide application image for in-image migration execution
         if: github.event_name == 'pull_request'
-        run: docker build --file application/Dockerfile --tag mnemoshare-chart-migration-ci:${GITHUB_SHA} application
+        env:
+          GHCR_TOKEN: ${{ secrets.GH_FULL_PAT }}
+        run: |
+          set -euo pipefail
+          target=mnemoshare-chart-migration-ci:${GITHUB_SHA}
+          pinned=$(git -C application rev-parse HEAD)
+          if echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1; then
+            for tag in "dev-$pinned" "demo-$pinned"; do
+              if docker pull --quiet "ghcr.io/mnemoshare/mnemoshare:$tag"; then
+                docker tag "ghcr.io/mnemoshare/mnemoshare:$tag" "$target"
+                echo "Using prebuilt ghcr.io/mnemoshare/mnemoshare:$tag"
+                exit 0
+              fi
+            done
+          fi
+          echo "::warning::No prebuilt application image for $pinned; building from source"
+          docker build --file application/Dockerfile --tag "$target" application
 
       - name: Execute rendered migration Jobs inside application image
         if: github.event_name == 'pull_request'
