@@ -149,7 +149,7 @@ jobs:
           set -euo pipefail
           target=mnemoshare-chart-migration-ci:${GITHUB_SHA}
           pinned=$(git -C application rev-parse HEAD)
-          if echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1; then
+          if echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null; then
             for tag in "dev-$pinned" "demo-$pinned"; do
               if docker pull --quiet "ghcr.io/mnemoshare/mnemoshare:$tag"; then
                 docker tag "ghcr.io/mnemoshare/mnemoshare:$tag" "$target"
@@ -157,8 +157,10 @@ jobs:
                 exit 0
               fi
             done
+            echo "::warning::No prebuilt application image for $pinned; building from source"
+          else
+            echo "::warning::GHCR login failed (expired GH_FULL_PAT or missing read:packages?); building from source"
           fi
-          echo "::warning::No prebuilt application image for $pinned; building from source"
           docker build --file application/Dockerfile --tag "$target" application
 
       - name: Execute rendered migration Jobs inside application image
