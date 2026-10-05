@@ -105,6 +105,33 @@ securityContext:
   seccompProfile:
     type: RuntimeDefault
 
+# ============================================================================
+# API pod process layout
+# ============================================================================
+api:
+  # true (default): the API container runs the image default
+  # /usr/local/bin/run-api-worker, which supervises the API together with
+  # background-worker, cloud-worker and workflow-worker. Every API replica
+  # therefore runs a full set of workers.
+  #
+  # false: the API container runs only /usr/local/bin/mnemoshare-api and the
+  # dedicated worker (workflowWorker) is the sole host of the worker processes.
+  # Use this when a dedicated worker already runs them, so each API replica
+  # stops carrying three extra database-connected processes. Requires:
+  #   - workflowWorker.enabled=true with at least one replica
+  #     (autoscaling.minReplicas >= 1 when KEDA autoscaling is on), and
+  #   - workflowWorker.command set to a supervisor that hosts all three workers
+  #     (/usr/local/bin/run-workers). The default worker command runs
+  #     workflow-worker alone and is refused.
+  # The render fails otherwise, because nothing would host the workers.
+  #
+  # In this mode the dedicated worker also receives the integration env
+  # (richMedia, dlp, kms) that the API pod's embedded workers used to read, and
+  # the worker-only names (PRESIDIO_ENABLED, PRESIDIO_API_KEY, DLP_AI_ENABLED)
+  # move off the API pod. Settings passed through the API's `extraEnv` do NOT
+  # follow: repeat any the workers need under workflowWorker.extraEnv.
+  embeddedWorkers: true
+
 service:
   type: ClusterIP
   port: 80

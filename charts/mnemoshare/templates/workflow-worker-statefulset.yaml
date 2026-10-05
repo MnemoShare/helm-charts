@@ -229,6 +229,7 @@ spec:
         # extraction, Presidio NER, AI DLP, KMS envelope flag) — MUST match
         # the api Deployment's surface or the background engine will silently
         # skip integration work that the api previously did in-process.
+        {{- with include "mnemoshare.workerIntegrationEnv" . | trim }}{{- . | nindent 8 }}{{- end }}
         # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
         {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
         # API callback + platform email + embedded mail-monitoring — the worker's
