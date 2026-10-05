@@ -87,6 +87,10 @@ spec:
         - name: TLS_KEY_PATH
           value: "/etc/tls/tls.key"
         {{- end }}
+        # Public URL for links and images in outbound mail. Without it the
+        # binary falls back to http://localhost:8080.
+        - name: APP_URL
+          value: {{ .Values.appUrl | quote }}
         # MnemoShare API connection
         - name: MNEMOSHARE_API_URL
           value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}"
