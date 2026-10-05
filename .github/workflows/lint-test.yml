@@ -119,6 +119,39 @@ jobs:
           (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-dev-shaped.yaml)
           echo "✓ Dev-shaped chart render passed the application contract"
 
+      - name: Validate API-only chart render against application contract
+        if: github.event_name == 'pull_request'
+        run: |
+          # api.embeddedWorkers=false: the API container runs the API
+          # executable alone and the dedicated worker supervises every worker
+          # process. Both containers must carry only env their own executable
+          # owns, with the integration surface on each.
+          helm template apionly charts/mnemoshare \
+            --set customerId=ci-test \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set mongodb.external.enabled=true \
+            --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
+            --set s3.bucket=test --set s3.accessKey=test --set s3.secretKey=test \
+            --set-string jwt.ecPrivateKey=test \
+            --set encryption.key=test-encryption-key-exactly-32by \
+            --set license.key=test --set appUrl=https://dev.example.com \
+            --set ingress.enabled=false \
+            --set formatMigrations.mode=automatic \
+            --set api.embeddedWorkers=false \
+            --set workflowWorker.enabled=true \
+            --set 'workflowWorker.command[0]=/usr/local/bin/run-workers' \
+            --set redis.mode=external \
+            --set redis.external.host=redis.example.com \
+            --set redis.external.password=test \
+            --set richMedia.url=http://media.example.com \
+            --set dlp.tikaUrl=http://tika.example.com \
+            --set dlp.presidioUrl=http://presidio.example.com \
+            --set dlp.presidioApiKey=test \
+            --set dlp.aiEnabled=true \
+            > /tmp/mnemoshare-api-only.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-api-only.yaml)
+          echo "✓ API-only chart render passed the application contract"
+
       - name: Validate format migration orchestration
         run: bash charts/mnemoshare/tests/format-migrations.sh
 

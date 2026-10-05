@@ -32,7 +32,7 @@ spec:
   template:
     metadata:
       annotations:
-        mnemoshare.com/deployment-executable: /usr/local/bin/run-api-worker
+        mnemoshare.com/deployment-executable: {{ include "mnemoshare.apiExecutable" . }}
       {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -54,6 +54,9 @@ spec:
           {{- toYaml .Values.securityContext | nindent 12 }}
         image: {{ include "mnemoshare.writerImage" (dict "root" . "name" "api") | quote }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
+        {{- if not (include "mnemoshare.apiEmbeddedWorkers" .) }}
+        command: [{{ include "mnemoshare.apiExecutable" . | quote }}]
+        {{- end }}
         ports:
         - name: http
           containerPort: {{ .Values.service.targetPort }}

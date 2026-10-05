@@ -276,6 +276,7 @@ upgrade to this chart before uninstalling.
 | `image.digest` | Immutable application/writer digest required by automatic format migrations | Pinned for the chart `appVersion` |
 | `ingress.enabled` | Enable ingress | `true` |
 | `autoscaling.enabled` | Enable HPA | `false` |
+| `api.embeddedWorkers` | API pod also runs the background, cloud and workflow workers. Set `false` to run the API alone when a dedicated worker hosts them (see [API-only pods](#api-only-pods)) | `true` |
 | `sendgrid.apiKey` | SendGrid API key for emails | `""` |
 | `platformEmail.transport` | Tiered outbound email transport (`smtp` or `ses`; empty = auto) | `""` |
 | `platformEmail.fromAddress` | Tiered outbound email from-address (empty disables) | `""` |
@@ -348,6 +349,37 @@ sesAdmin:                     # SESv2 management for domain-authenticated sendin
 sesEvents:
   webhookToken: "xxx"         # enables /api/v1/webhooks/ses-events
 ```
+
+### API-only pods
+
+By default every API replica runs the image's `run-api-worker` supervisor: the
+API plus `background-worker`, `cloud-worker` and `workflow-worker`. An install
+that also enables the dedicated worker (`workflowWorker.enabled`) with the
+`run-workers` supervisor then runs the workers once per API replica and once
+more per worker replica.
+
+To run the workers only in the dedicated worker:
+
+```yaml
+api:
+  embeddedWorkers: false
+workflowWorker:
+  enabled: true
+  command: ["/usr/local/bin/run-workers"]
+```
+
+The API container then runs `/usr/local/bin/mnemoshare-api` directly. The
+render fails unless the dedicated worker is enabled, keeps at least one
+replica, and runs a supervisor that hosts all three workers; the default
+worker command (`workflow-worker` alone) is refused because the background and
+cloud workers would have no host.
+
+In this mode the dedicated worker receives the `richMedia`, `dlp` and `kms`
+integration env, and `PRESIDIO_ENABLED`, `PRESIDIO_API_KEY` and
+`DLP_AI_ENABLED` are rendered on the worker instead of the API pod. Values
+supplied through the API's `extraEnv` are not copied: repeat any the workers
+need under `workflowWorker.extraEnv`. Size the worker for the whole background
+load, since the API replicas no longer share it.
 
 ### Custom Resource Limits
 

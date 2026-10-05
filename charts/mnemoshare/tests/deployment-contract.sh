@@ -77,6 +77,83 @@ if output=$(helm template bad-default "$chart_dir" --set customerId=test --set d
 fi
 grep -Fq 'deploymentContract.sourceCommit must equal vendored application commit' <<<"$output"
 
+# API pod process layout. The default keeps the image-default supervisor with
+# no command override; api.embeddedWorkers=false runs the API executable alone
+# and is refused unless the dedicated worker hosts every worker process.
+jq -e '
+  ([.adapters[] | select(.image_default)] | length == 1)
+  and (([.adapters[] | select(.image_default)][0].processes - ["api"]) as $workers
+    | [.adapters[] | select(.executable == "/usr/local/bin/run-workers") | ($workers - .processes)] == [[]])
+  and ([.executables[] | select(.id == "api" and .path == "/usr/local/bin/mnemoshare-api")] | length == 1)
+' "${contract_dir}/contract.json" >/dev/null
+embedded_adapter=$(jq -er '.adapters[] | select(.image_default) | .executable' "${contract_dir}/contract.json")
+layout=(--set customerId=test "${identity[@]}" --set workflowWorker.enabled=true --set redis.mode=external --set redis.external.host=redis.example.com --set dlp.presidioUrl=http://presidio --set dlp.presidioApiKey=key --set dlp.tikaUrl=http://tika --set richMedia.url=http://media)
+supervisor=(--set 'workflowWorker.command[0]=/usr/local/bin/run-workers')
+container_env() {
+  python3 -c '
+import sys, yaml
+want = sys.argv[1]
+for document in yaml.safe_load_all(sys.stdin):
+    if (document or {}).get("kind") not in ("Deployment", "StatefulSet"):
+        continue
+    if document["metadata"]["labels"].get("app.kubernetes.io/component") != want:
+        continue
+    container = document["spec"]["template"]["spec"]["containers"][0]
+    print("executable=" + document["spec"]["template"]["metadata"].get("annotations", {}).get("mnemoshare.com/deployment-executable", ""))
+    print("command=" + " ".join(container.get("command") or []))
+    for item in container.get("env") or []:
+        print("env=" + item["name"])
+' "$1"
+}
+for worker_shape in workflowWorker.persistence.enabled=false workflowWorker.persistence.enabled=true; do
+  embedded=$(helm template layout "$chart_dir" "${layout[@]}" "${supervisor[@]}" --set "$worker_shape")
+  embedded_api=$(container_env api <<<"$embedded")
+  embedded_worker=$(container_env workflow-worker <<<"$embedded")
+  grep -Fxq "executable=${embedded_adapter}" <<<"$embedded_api"
+  grep -Fxq 'command=' <<<"$embedded_api"
+  for name in PRESIDIO_ENABLED PRESIDIO_API_KEY DLP_AI_ENABLED PRESIDIO_URL TIKA_URL RICH_MEDIA_URL KMS_ENVELOPE_ENABLED; do
+    grep -Fxq "env=${name}" <<<"$embedded_api"
+    ! grep -Fxq "env=${name}" <<<"$embedded_worker"
+  done
+  explicit=$(helm template layout "$chart_dir" "${layout[@]}" "${supervisor[@]}" --set "$worker_shape" --set api.embeddedWorkers=true)
+  test "$(container_env api <<<"$explicit")" = "$embedded_api"
+  test "$(container_env workflow-worker <<<"$explicit")" = "$embedded_worker"
+
+  api_only=$(helm template layout "$chart_dir" "${layout[@]}" "${supervisor[@]}" --set "$worker_shape" --set api.embeddedWorkers=false)
+  api_only_api=$(container_env api <<<"$api_only")
+  api_only_worker=$(container_env workflow-worker <<<"$api_only")
+  grep -Fxq 'executable=/usr/local/bin/mnemoshare-api' <<<"$api_only_api"
+  grep -Fxq 'command=/usr/local/bin/mnemoshare-api' <<<"$api_only_api"
+  grep -Fxq 'command=/usr/local/bin/run-workers' <<<"$api_only_worker"
+  for name in PRESIDIO_ENABLED PRESIDIO_API_KEY DLP_AI_ENABLED; do
+    ! grep -Fxq "env=${name}" <<<"$api_only_api"
+    grep -Fxq "env=${name}" <<<"$api_only_worker"
+  done
+  for name in PRESIDIO_URL TIKA_URL RICH_MEDIA_URL KMS_ENVELOPE_ENABLED; do
+    grep -Fxq "env=${name}" <<<"$api_only_api"
+    grep -Fxq "env=${name}" <<<"$api_only_worker"
+  done
+  # Only the worker-only integration names leave the API pod.
+  test "$(comm -23 <(grep '^env=' <<<"$embedded_api" | sort) <(grep '^env=' <<<"$api_only_api" | sort) | tr '\n' ' ')" = 'env=DLP_AI_ENABLED env=PRESIDIO_API_KEY env=PRESIDIO_ENABLED '
+  test -z "$(comm -13 <(grep '^env=' <<<"$embedded_api" | sort) <(grep '^env=' <<<"$api_only_api" | sort))"
+done
+
+expect_layout_failure() {
+  local expected=$1 output
+  shift
+  if output=$(helm template bad-layout "$chart_dir" --set customerId=test "${identity[@]}" --set api.embeddedWorkers=false "$@" 2>&1); then
+    echo "API-only layout rendered without a complete worker host: $*" >&2; exit 1
+  fi
+  grep -Fq "$expected" <<<"$output" || { echo "API-only layout failure lacked: $expected" >&2; exit 1; }
+}
+worker=(--set workflowWorker.enabled=true --set redis.mode=external --set redis.external.host=redis.example.com)
+expect_layout_failure 'api.embeddedWorkers=false requires workflowWorker.enabled=true'
+expect_layout_failure 'requires workflowWorker.command to be a supervisor that hosts background-worker' "${worker[@]}"
+expect_layout_failure 'requires workflowWorker.command to be a supervisor that hosts background-worker' "${worker[@]}" --set 'workflowWorker.command[0]=/usr/local/bin/workflow-worker'
+expect_layout_failure 'requires workflowWorker.replicas >= 1' "${worker[@]}" "${supervisor[@]}" --set workflowWorker.replicas=0
+expect_layout_failure 'requires workflowWorker.autoscaling.minReplicas >= 1' "${worker[@]}" "${supervisor[@]}" --set workflowWorker.autoscaling.enabled=true --set workflowWorker.autoscaling.minReplicas=0
+expect_layout_failure 'embeddedWorkers' "${worker[@]}" "${supervisor[@]}" --set-string api.embeddedWorkers=false
+
 if output=$(helm template missing "$chart_dir" --set customerId=test "${identity[@]}" --set mcp.enabled=true 2>&1); then echo 'MCP rendered without API key binding' >&2; exit 1; fi
 grep -Fq 'mcp.enabled requires mcp.apiKey.existingSecret or mcp.apiKey.key' <<<"$output"
 derived=$(helm template derived "$chart_dir" --set customerId=test --set mcp.enabled=true --set mcp.apiKey.key=x)

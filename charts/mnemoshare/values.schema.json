@@ -23,6 +23,12 @@
   },
   "properties": {
     "image": { "$ref": "#/$defs/applicationImage" },
+    "api": {
+      "type": "object",
+      "properties": {
+        "embeddedWorkers": { "type": "boolean" }
+      }
+    },
     "workflowWorker": { "$ref": "#/$defs/writer" },
     "ices": { "$ref": "#/$defs/writer" },
     "sftpGateway": { "$ref": "#/$defs/applicationProcess" },

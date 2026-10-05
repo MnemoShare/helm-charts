@@ -32,6 +32,49 @@ Create a default fully qualified app name.
 {{- end }}
 {{- end }}
 
+{{/* Non-empty when the API pod supervises the worker processes itself (the image default). */}}
+{{- define "mnemoshare.apiEmbeddedWorkers" -}}
+{{- $api := .Values.api | default dict -}}
+{{- if or (not (hasKey $api "embeddedWorkers")) $api.embeddedWorkers -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Executable the API container runs, read from the vendored deployment contract.
+API-only mode is refused unless the dedicated worker hosts every process the
+image-default adapter would have supervised beside the API: otherwise the
+install would run with no host for them.
+*/}}
+{{- define "mnemoshare.apiExecutable" -}}
+{{- $contract := fromJson (required "vendored deployment contract is required" (.Files.Get "tests/contracts/deployment/v1/contract.json")) -}}
+{{- $default := dict -}}
+{{- range $contract.adapters }}{{- if .image_default }}{{- $default = . }}{{- end }}{{- end -}}
+{{- if include "mnemoshare.apiEmbeddedWorkers" . -}}
+{{- required "deployment contract declares no image-default adapter" $default.executable -}}
+{{- else -}}
+{{- if not .Values.workflowWorker.enabled -}}
+{{- fail "api.embeddedWorkers=false requires workflowWorker.enabled=true: with both off no pod hosts the worker processes" -}}
+{{- end -}}
+{{- if and (not .Values.workflowWorker.autoscaling.enabled) (lt (int .Values.workflowWorker.replicas) 1) -}}
+{{- fail "api.embeddedWorkers=false requires workflowWorker.replicas >= 1: the dedicated worker is the only host of the worker processes" -}}
+{{- end -}}
+{{- if and .Values.workflowWorker.autoscaling.enabled (lt (int .Values.workflowWorker.autoscaling.minReplicas) 1) -}}
+{{- fail "api.embeddedWorkers=false requires workflowWorker.autoscaling.minReplicas >= 1: the dedicated worker is the only host of the worker processes" -}}
+{{- end -}}
+{{- $workerCommand := "" -}}
+{{- with .Values.workflowWorker.command }}{{- $workerCommand = first . }}{{- end -}}
+{{- $hosted := list -}}
+{{- range $contract.adapters }}{{- if eq .executable $workerCommand }}{{- $hosted = .processes }}{{- end }}{{- end -}}
+{{- $apiPath := "" -}}
+{{- range $contract.executables }}{{- if eq .id "api" }}{{- $apiPath = .path }}{{- end }}{{- end -}}
+{{- range $default.processes }}
+{{- if and (ne . "api") (not (has . $hosted)) -}}
+{{- fail (printf "api.embeddedWorkers=false requires workflowWorker.command to be a supervisor that hosts %s (for example /usr/local/bin/run-workers); %q does not" . $workerCommand) -}}
+{{- end -}}
+{{- end -}}
+{{- required "deployment contract declares no api executable" $apiPath -}}
+{{- end -}}
+{{- end -}}
+
 {{/* Bind contract-governed peers to a declared immutable application identity. */}}
 {{- define "mnemoshare.requireDeploymentContractIdentity" -}}
 {{- $expectedCommit := trim (required "vendored deployment contract provenance is required" (.Files.Get "tests/contracts/deployment/v1/UPSTREAM")) -}}
@@ -420,6 +463,17 @@ callback-host validation. Resolution order:
 {{- end }}
 
 {{/*
+Integration env for the dedicated worker when it is the only host of the worker
+processes (api.embeddedWorkers=false). Emits nothing otherwise, so installs
+that keep the workers in the API pod render the worker exactly as before.
+*/}}
+{{- define "mnemoshare.workerIntegrationEnv" -}}
+{{- if not (include "mnemoshare.apiEmbeddedWorkers" .) -}}
+{{- include "mnemoshare.integrationEnv" (merge (dict "integrationForWorker" true) .) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 mnemoshare.integrationEnv emits env vars for the cross-service integration
 surface that cmd/api AND cmd/worker (background engine) both need: rich-media
 thumbnails, Apache Tika text extraction, Presidio NER, AI-powered DLP, and
@@ -439,8 +493,16 @@ Values consumed (all optional — only emitted when set):
   - .Values.dlp.aiEnabled, .Values.dlp.aiProvider, .Values.dlp.aiModel
   - .Values.dlp.aiApiKey OR .Values.dlp.existingAISecret
   - .Values.kms.envelopeEnabled
+
+PRESIDIO_ENABLED, PRESIDIO_API_KEY and DLP_AI_ENABLED are read only by the
+worker processes, and the deployment contract refuses env a container's
+executable does not own. They are therefore emitted on whichever pod hosts the
+workers: the API pod while api.embeddedWorkers is on, otherwise only the
+dedicated worker (which includes this helper through
+mnemoshare.workerIntegrationEnv).
 */}}
 {{- define "mnemoshare.integrationEnv" -}}
+{{- $hostsWorkers := or (include "mnemoshare.apiEmbeddedWorkers" .) .integrationForWorker -}}
 {{- with .Values.richMedia -}}
 {{- if .url }}
 - name: RICH_MEDIA_URL
@@ -463,17 +525,21 @@ Values consumed (all optional — only emitted when set):
   value: {{ .tikaUrl | quote }}
 {{- end }}
 {{- if .presidioUrl }}
+{{- if $hostsWorkers }}
 - name: PRESIDIO_ENABLED
   value: "true"
+{{- end }}
 - name: PRESIDIO_URL
   value: {{ .presidioUrl | quote }}
-{{- if .presidioApiKey }}
+{{- if and .presidioApiKey $hostsWorkers }}
 - name: PRESIDIO_API_KEY
   value: {{ .presidioApiKey | quote }}
 {{- end }}
 {{- end }}
+{{- if $hostsWorkers }}
 - name: DLP_AI_ENABLED
   value: {{ .aiEnabled | default false | quote }}
+{{- end }}
 {{- if .aiProvider }}
 - name: AI_PROVIDER
   value: {{ .aiProvider | quote }}
