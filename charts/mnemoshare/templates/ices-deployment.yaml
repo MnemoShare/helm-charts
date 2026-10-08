@@ -192,6 +192,10 @@ spec:
         # API Base URL (for reaching MnemoShare's internal API)
         - name: API_BASE_URL
           value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}/api/v1"
+        # Public URL for links and images in outbound mail. Without it the
+        # binary falls back to http://localhost:8080.
+        - name: APP_URL
+          value: {{ .Values.appUrl | quote }}
         # Logging
         - name: LOG_LEVEL
           value: {{ .Values.ices.logLevel | default "info" | quote }}
