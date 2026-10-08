@@ -167,6 +167,23 @@ autoscaling:
   targetMemoryUtilizationPercentage: 80
 ```
 
+### Size the workflow worker for bursty triggers
+
+Each worker pod runs `workflowWorker.outboxConsumers` (default 4) outbox
+consumers; each claims one dispatch row at a time and starts that triggered
+workflow itself, so this is how many upload-triggered workflows a pod starts
+in parallel. Steps that wait on external state (a file's virus scan) park and
+free their consumer. Claims are atomic, so `replicas` x `outboxConsumers`
+never double-process a row.
+
+```yaml
+workflowWorker:
+  replicas: 2
+  outboxConsumers: 8   # OUTBOX_CONSUMER_CONCURRENCY on the worker pods
+```
+
+Worker-less tenants (the api pod hosts the engines) use `apiOutboxConsumers`.
+
 ### Configure SendGrid for Email Notifications
 
 ```yaml
