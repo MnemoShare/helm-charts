@@ -38,40 +38,96 @@ Create a default fully qualified app name.
 {{- if or (not (hasKey $api "embeddedWorkers")) $api.embeddedWorkers -}}true{{- end -}}
 {{- end -}}
 
+{{/* Path of a contract executable by id. */}}
+{{- define "mnemoshare.contractExecutablePath" -}}
+{{- $contract := fromJson (required "vendored deployment contract is required" (.root.Files.Get "tests/contracts/deployment/v1/contract.json")) -}}
+{{- $path := "" -}}
+{{- range $contract.executables }}{{- if eq .id $.id }}{{- $path = .path }}{{- end }}{{- end -}}
+{{- required (printf "deployment contract declares no %s executable" .id) $path -}}
+{{- end -}}
+
+{{/*
+Process ids an executable hosts: an adapter's supervised processes, or the
+executable's own id. Empty when the vendored contract does not know the path,
+which is how an unknown command is refused as hosting nothing.
+Input: dict "root" . "executable" <path>
+*/}}
+{{- define "mnemoshare.contractProcesses" -}}
+{{- $contract := fromJson (required "vendored deployment contract is required" (.root.Files.Get "tests/contracts/deployment/v1/contract.json")) -}}
+{{- $hosted := list -}}
+{{- range $contract.adapters }}{{- if eq .executable $.executable }}{{- $hosted = .processes }}{{- end }}{{- end -}}
+{{- range $contract.executables }}{{- if eq .path $.executable }}{{- $hosted = list .id }}{{- end }}{{- end -}}
+{{- toJson $hosted -}}
+{{- end -}}
+
+{{/* Non-empty when the executable hosts the process. Input: dict "root" "executable" "process" */}}
+{{- define "mnemoshare.hostsProcess" -}}
+{{- if has .process (include "mnemoshare.contractProcesses" (dict "root" .root "executable" .executable) | fromJsonArray) }}true{{ end -}}
+{{- end -}}
+
+{{/* Executable the dedicated worker container runs (workflowWorker.command or the contract's workflow-worker). */}}
+{{- define "mnemoshare.workerExecutable" -}}
+{{- $command := "" -}}
+{{- with .Values.workflowWorker.command }}{{- $command = first . }}{{- end -}}
+{{- $command | default (include "mnemoshare.contractExecutablePath" (dict "root" . "id" "workflow-worker")) -}}
+{{- end -}}
+
+{{/* Executable the cloud-worker pool (ices) container runs (ices.command or the contract's cloud-worker). */}}
+{{- define "mnemoshare.icesExecutable" -}}
+{{- $command := "" -}}
+{{- with .Values.ices.command }}{{- $command = first . }}{{- end -}}
+{{- $command | default (include "mnemoshare.contractExecutablePath" (dict "root" . "id" "cloud-worker")) -}}
+{{- end -}}
+
+{{/* Non-empty when the dedicated worker renders with at least one resident replica. */}}
+{{- define "mnemoshare.workerResident" -}}
+{{- $w := .Values.workflowWorker -}}
+{{- if and $w.enabled (or (and (not $w.autoscaling.enabled) (ge (int $w.replicas) 1)) (and $w.autoscaling.enabled (ge (int $w.autoscaling.minReplicas) 1))) }}true{{ end -}}
+{{- end -}}
+
+{{/* Non-empty when the cloud-worker pool renders with at least one resident replica. */}}
+{{- define "mnemoshare.icesResident" -}}
+{{- $i := .Values.ices -}}
+{{- if and $i.enabled (or (and (not $i.autoscaling.enabled) (ge (int $i.replicas) 1)) (and $i.autoscaling.enabled (ge (int $i.autoscaling.minReplicas) 1))) }}true{{ end -}}
+{{- end -}}
+
+{{/*
+Every worker process the image-default adapter supervises beside the API must
+have a resident host somewhere in the render: the API pod (embedded workers),
+the dedicated worker, or the cloud-worker pool. Fails naming the first process
+left without one.
+*/}}
+{{- define "mnemoshare.requireWorkerHosts" -}}
+{{- $contract := fromJson (required "vendored deployment contract is required" (.Files.Get "tests/contracts/deployment/v1/contract.json")) -}}
+{{- $default := dict -}}
+{{- range $contract.adapters }}{{- if .image_default }}{{- $default = . }}{{- end }}{{- end -}}
+{{- $hosted := list -}}
+{{- if include "mnemoshare.apiEmbeddedWorkers" . }}{{- $hosted = concat $hosted $default.processes }}{{- end -}}
+{{- $workerExecutable := include "mnemoshare.workerExecutable" . -}}
+{{- if include "mnemoshare.workerResident" . }}{{- $hosted = concat $hosted (include "mnemoshare.contractProcesses" (dict "root" . "executable" $workerExecutable) | fromJsonArray) }}{{- end -}}
+{{- $icesExecutable := include "mnemoshare.icesExecutable" . -}}
+{{- if include "mnemoshare.icesResident" . }}{{- $hosted = concat $hosted (include "mnemoshare.contractProcesses" (dict "root" . "executable" $icesExecutable) | fromJsonArray) }}{{- end -}}
+{{- range $default.processes }}
+{{- if and (ne . "api") (not (has . $hosted)) -}}
+{{- fail (printf "api.embeddedWorkers=false leaves %s with no host. Give it one: workflowWorker.enabled=true with a resident replica and a command that hosts it (/usr/local/bin/run-workers hosts background-worker, cloud-worker and workflow-worker; /usr/local/bin/run-core-workers hosts background-worker and workflow-worker beside a cloud-worker pool), or ices.enabled=true with a resident replica for cloud-worker. Rendered: workflowWorker=%q resident=%v, ices=%q resident=%v" . $workerExecutable (ne (include "mnemoshare.workerResident" $) "") $icesExecutable (ne (include "mnemoshare.icesResident" $) "")) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{/*
 Executable the API container runs, read from the vendored deployment contract.
-API-only mode is refused unless the dedicated worker hosts every process the
-image-default adapter would have supervised beside the API: otherwise the
-install would run with no host for them.
+API-only mode is refused unless every worker process the image-default adapter
+would have supervised beside the API has another resident host.
 */}}
 {{- define "mnemoshare.apiExecutable" -}}
+{{- include "mnemoshare.requireWorkerHosts" . -}}
 {{- $contract := fromJson (required "vendored deployment contract is required" (.Files.Get "tests/contracts/deployment/v1/contract.json")) -}}
 {{- $default := dict -}}
 {{- range $contract.adapters }}{{- if .image_default }}{{- $default = . }}{{- end }}{{- end -}}
 {{- if include "mnemoshare.apiEmbeddedWorkers" . -}}
 {{- required "deployment contract declares no image-default adapter" $default.executable -}}
 {{- else -}}
-{{- if not .Values.workflowWorker.enabled -}}
-{{- fail "api.embeddedWorkers=false requires workflowWorker.enabled=true: with both off no pod hosts the worker processes" -}}
-{{- end -}}
-{{- if and (not .Values.workflowWorker.autoscaling.enabled) (lt (int .Values.workflowWorker.replicas) 1) -}}
-{{- fail "api.embeddedWorkers=false requires workflowWorker.replicas >= 1: the dedicated worker is the only host of the worker processes" -}}
-{{- end -}}
-{{- if and .Values.workflowWorker.autoscaling.enabled (lt (int .Values.workflowWorker.autoscaling.minReplicas) 1) -}}
-{{- fail "api.embeddedWorkers=false requires workflowWorker.autoscaling.minReplicas >= 1: the dedicated worker is the only host of the worker processes" -}}
-{{- end -}}
-{{- $workerCommand := "" -}}
-{{- with .Values.workflowWorker.command }}{{- $workerCommand = first . }}{{- end -}}
-{{- $hosted := list -}}
-{{- range $contract.adapters }}{{- if eq .executable $workerCommand }}{{- $hosted = .processes }}{{- end }}{{- end -}}
-{{- $apiPath := "" -}}
-{{- range $contract.executables }}{{- if eq .id "api" }}{{- $apiPath = .path }}{{- end }}{{- end -}}
-{{- range $default.processes }}
-{{- if and (ne . "api") (not (has . $hosted)) -}}
-{{- fail (printf "api.embeddedWorkers=false requires workflowWorker.command to be a supervisor that hosts %s (for example /usr/local/bin/run-workers); %q does not" . $workerCommand) -}}
-{{- end -}}
-{{- end -}}
-{{- required "deployment contract declares no api executable" $apiPath -}}
+{{- include "mnemoshare.contractExecutablePath" (dict "root" . "id" "api") -}}
 {{- end -}}
 {{- end -}}
 
@@ -747,8 +803,10 @@ api's surface or the engine silently can't send.
 {{- end }}
 
 {{/*
-Mail-monitoring env for whichever engine hosts it (worker when embedded, or the
-standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud/webhook/*.
+Mail-monitoring env, owned by cloud-worker. Rendered on every container whose
+executable hosts cloud-worker (mnemoshare.mailMonitoringEnvFor) and nowhere
+else: the application contract check refuses env a container's executable does
+not own. Webhook URLs default to <appUrl>/api/v1/integrations/cloud/webhook/*.
 */}}
 {{- define "mnemoshare.mailMonitoringEnv" -}}
 {{- if .Values.mailMonitoring.enabled }}
@@ -763,14 +821,38 @@ standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud
 - name: MICROSOFT_WEBHOOK_URL
   value: {{ .Values.mailMonitoring.microsoftWebhookUrl | default (printf "%s/api/v1/integrations/cloud/webhook/microsoft" $base) | quote }}
 {{- end }}
-- name: GOOGLE_MAIL_ENROLLMENT_INTERVAL_SEC
-  value: {{ .Values.mailMonitoring.enrollmentIntervalSec | default 60 | quote }}
 - name: GOOGLE_INTERNAL_MAIL_INTERVAL_SEC
   value: {{ .Values.mailMonitoring.internalMailIntervalSec | default 60 | quote }}
-- name: GOOGLE_INTERNAL_MAIL_WATCH_INTERVAL_SEC
-  value: {{ .Values.mailMonitoring.internalMailWatchIntervalSec | default 90 | quote }}
 {{- end }}
 {{- end }}
+
+{{/* mailMonitoringEnv for one container. Input: dict "root" . "executable" <path> */}}
+{{- define "mnemoshare.mailMonitoringEnvFor" -}}
+{{- if include "mnemoshare.hostsProcess" (dict "root" .root "executable" .executable "process" "cloud-worker") -}}
+{{- include "mnemoshare.mailMonitoringEnv" .root -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Metrics listener env for one worker process. Each worker executable owns its
+own address name, so a container supervising several processes can expose
+each on its own port. Refused when the container does not host the process.
+Input: dict "root" . "executable" <path> "process" <id> "name" <ENV> "port" <int>
+*/}}
+{{- define "mnemoshare.workerMetricsEnv" -}}
+{{- if not (include "mnemoshare.hostsProcess" (dict "root" .root "executable" .executable "process" .process)) -}}
+{{- fail (printf "metrics for %s cannot be enabled on a container running %q: that executable does not host %s" .process .executable .process) -}}
+{{- end }}
+- name: {{ .name }}
+  value: {{ printf ":%d" (int .port) | quote }}
+{{- end -}}
+
+{{/* Prometheus pod-discovery annotations for a metrics listener. Input: dict "port" <int> */}}
+{{- define "mnemoshare.metricsScrapeAnnotations" -}}
+prometheus.io/scrape: "true"
+prometheus.io/port: {{ .port | quote }}
+prometheus.io/path: "/metrics"
+{{- end -}}
 
 {{/*
 API callback env for a background engine (worker/ices) that calls the app API.

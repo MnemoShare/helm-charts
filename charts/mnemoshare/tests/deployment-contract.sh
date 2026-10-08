@@ -77,18 +77,45 @@ if output=$(helm template bad-default "$chart_dir" --set customerId=test --set d
 fi
 grep -Fq 'deploymentContract.sourceCommit must equal vendored application commit' <<<"$output"
 
-# API pod process layout. The default keeps the image-default supervisor with
+# Worker process layout. The default keeps the image-default supervisor with
 # no command override; api.embeddedWorkers=false runs the API executable alone
-# and is refused unless the dedicated worker hosts every worker process.
+# and is refused unless every worker process keeps a resident host in the
+# dedicated worker and/or the cloud-worker pool (ices).
 jq -e '
   ([.adapters[] | select(.image_default)] | length == 1)
   and (([.adapters[] | select(.image_default)][0].processes - ["api"]) as $workers
     | [.adapters[] | select(.executable == "/usr/local/bin/run-workers") | ($workers - .processes)] == [[]])
+  and ([.adapters[] | select(.executable == "/usr/local/bin/run-core-workers") | .processes] == [["background-worker", "workflow-worker"]])
   and ([.executables[] | select(.id == "api" and .path == "/usr/local/bin/mnemoshare-api")] | length == 1)
+  and ([.executables[] | select(.id == "cloud-worker" and .path == "/usr/local/bin/cloud-worker")] | length == 1)
+  and ([.executables[] | select(.id == "workflow-worker" and .path == "/usr/local/bin/workflow-worker")] | length == 1)
 ' "${contract_dir}/contract.json" >/dev/null
 embedded_adapter=$(jq -er '.adapters[] | select(.image_default) | .executable' "${contract_dir}/contract.json")
-layout=(--set customerId=test "${identity[@]}" --set workflowWorker.enabled=true --set redis.mode=external --set redis.external.host=redis.example.com --set dlp.presidioUrl=http://presidio --set dlp.presidioApiKey=key --set dlp.tikaUrl=http://tika --set richMedia.url=http://media)
+# owns EXECUTABLE-ID NAME: the executable's profile requirements read NAME from env.
+owns() {
+  jq -e --arg id "$1" --arg name "$2" '[.executables[] | select(.id == $id) | .profiles[].requirements[]?.sources[]? | select(.identity == "env" and .address == $name)] | length > 0' "${contract_dir}/contract.json" >/dev/null
+}
+# hosts_cloud_worker PATH: the contract says PATH supervises or is cloud-worker.
+hosts_cloud_worker() {
+  jq -e --arg exe "$1" '(([.adapters[] | select(.executable == $exe) | .processes] + [.executables[] | select(.path == $exe) | [.id]]) | add // []) | index("cloud-worker") != null' "${contract_dir}/contract.json" >/dev/null
+}
+# Mail-monitoring settings are rendered on every cloud-worker host and nowhere
+# else, so cloud-worker must own each name the chart renders; the two names the
+# chart stopped rendering must stay unowned by every executable.
+mail_names=(GOOGLE_WEBHOOK_URL MICROSOFT_WEBHOOK_URL GOOGLE_INTERNAL_MAIL_INTERVAL_SEC)
+dead_mail_names=(GOOGLE_INTERNAL_MAIL_WATCH_INTERVAL_SEC GOOGLE_MAIL_ENROLLMENT_INTERVAL_SEC)
+for name in "${mail_names[@]}"; do owns cloud-worker "$name"; done
+for name in "${dead_mail_names[@]}"; do
+  if jq -e --arg name "$name" '[.executables[].profiles[].requirements[]?.sources[]? | select(.identity == "env" and .address == $name)] | length > 0' "${contract_dir}/contract.json" >/dev/null; then
+    echo "$name is owned again; render it from mailMonitoringEnv" >&2; exit 1
+  fi
+done
+owns cloud-worker CLOUD_WORKER_METRICS_ADDR
+owns workflow-worker WORKFLOW_WORKER_METRICS_ADDR
+layout=(--set customerId=test "${identity[@]}" --set workflowWorker.enabled=true --set redis.mode=external --set redis.external.host=redis.example.com --set dlp.presidioUrl=http://presidio --set dlp.presidioApiKey=key --set dlp.tikaUrl=http://tika --set richMedia.url=http://media --set mailMonitoring.enabled=true --set appUrl=https://mnemoshare.example.com --set encryption.key=test-encryption-key-exactly-32by --set-string jwt.ecPrivateKey=test)
 supervisor=(--set 'workflowWorker.command[0]=/usr/local/bin/run-workers')
+core=(--set 'workflowWorker.command[0]=/usr/local/bin/run-core-workers')
+pool=(--set ices.enabled=true)
 container_env() {
   python3 -c '
 import sys, yaml
@@ -105,37 +132,109 @@ for document in yaml.safe_load_all(sys.stdin):
         print("env=" + item["name"])
 ' "$1"
 }
+# assert_mail CONTAINER-ENV EXECUTABLE: the mail names are present exactly when
+# the executable hosts cloud-worker; the dead names never are.
+assert_mail() {
+  local env=$1 executable=$2 name
+  for name in "${mail_names[@]}"; do
+    if hosts_cloud_worker "$executable"; then
+      grep -Fxq "env=${name}" <<<"$env" || { echo "cloud-worker host $executable lacks $name" >&2; exit 1; }
+    else
+      ! grep -Fxq "env=${name}" <<<"$env" || { echo "non-host $executable carries $name" >&2; exit 1; }
+    fi
+  done
+  for name in "${dead_mail_names[@]}"; do
+    ! grep -Fxq "env=${name}" <<<"$env" || { echo "$executable carries dead $name" >&2; exit 1; }
+  done
+}
 for worker_shape in workflowWorker.persistence.enabled=false workflowWorker.persistence.enabled=true; do
-  embedded=$(helm template layout "$chart_dir" "${layout[@]}" "${supervisor[@]}" --set "$worker_shape")
-  embedded_api=$(container_env api <<<"$embedded")
-  embedded_worker=$(container_env workflow-worker <<<"$embedded")
-  grep -Fxq "executable=${embedded_adapter}" <<<"$embedded_api"
-  grep -Fxq 'command=' <<<"$embedded_api"
-  for name in PRESIDIO_ENABLED PRESIDIO_API_KEY DLP_AI_ENABLED PRESIDIO_URL TIKA_URL RICH_MEDIA_URL KMS_ENVELOPE_ENABLED; do
-    grep -Fxq "env=${name}" <<<"$embedded_api"
-    ! grep -Fxq "env=${name}" <<<"$embedded_worker"
-  done
-  explicit=$(helm template layout "$chart_dir" "${layout[@]}" "${supervisor[@]}" --set "$worker_shape" --set api.embeddedWorkers=true)
-  test "$(container_env api <<<"$explicit")" = "$embedded_api"
-  test "$(container_env workflow-worker <<<"$explicit")" = "$embedded_worker"
+  for pool_shape in ices.enabled=false ices.enabled=true; do
+    embedded=$(helm template layout "$chart_dir" "${layout[@]}" "${supervisor[@]}" --set "$worker_shape" --set "$pool_shape")
+    embedded_api=$(container_env api <<<"$embedded")
+    embedded_worker=$(container_env workflow-worker <<<"$embedded")
+    grep -Fxq "executable=${embedded_adapter}" <<<"$embedded_api"
+    grep -Fxq 'command=' <<<"$embedded_api"
+    for name in PRESIDIO_ENABLED PRESIDIO_API_KEY DLP_AI_ENABLED PRESIDIO_URL TIKA_URL RICH_MEDIA_URL KMS_ENVELOPE_ENABLED; do
+      grep -Fxq "env=${name}" <<<"$embedded_api"
+      ! grep -Fxq "env=${name}" <<<"$embedded_worker"
+    done
+    assert_mail "$embedded_api" "$embedded_adapter"
+    assert_mail "$embedded_worker" /usr/local/bin/run-workers
+    if [ "$pool_shape" = ices.enabled=true ]; then
+      embedded_pool=$(container_env ices <<<"$embedded")
+      grep -Fxq 'command=/usr/local/bin/cloud-worker' <<<"$embedded_pool"
+      assert_mail "$embedded_pool" /usr/local/bin/cloud-worker
+    else
+      test -z "$(container_env ices <<<"$embedded")"
+    fi
+    # Setting the new values to their defaults changes nothing.
+    explicit=$(helm template layout "$chart_dir" "${layout[@]}" "${supervisor[@]}" --set "$worker_shape" --set "$pool_shape" --set api.embeddedWorkers=true --set ices.metrics.enabled=false --set workflowWorker.metrics.enabled=false --set ices.autoscaling.prometheus.serverAddress= --set workflowWorker.autoscaling.prometheus.serverAddress=)
+    test "$explicit" = "$embedded"
 
-  api_only=$(helm template layout "$chart_dir" "${layout[@]}" "${supervisor[@]}" --set "$worker_shape" --set api.embeddedWorkers=false)
-  api_only_api=$(container_env api <<<"$api_only")
-  api_only_worker=$(container_env workflow-worker <<<"$api_only")
-  grep -Fxq 'executable=/usr/local/bin/mnemoshare-api' <<<"$api_only_api"
-  grep -Fxq 'command=/usr/local/bin/mnemoshare-api' <<<"$api_only_api"
-  grep -Fxq 'command=/usr/local/bin/run-workers' <<<"$api_only_worker"
-  for name in PRESIDIO_ENABLED PRESIDIO_API_KEY DLP_AI_ENABLED; do
-    ! grep -Fxq "env=${name}" <<<"$api_only_api"
-    grep -Fxq "env=${name}" <<<"$api_only_worker"
+    api_only=$(helm template layout "$chart_dir" "${layout[@]}" "${supervisor[@]}" --set "$worker_shape" --set "$pool_shape" --set api.embeddedWorkers=false)
+    api_only_api=$(container_env api <<<"$api_only")
+    api_only_worker=$(container_env workflow-worker <<<"$api_only")
+    grep -Fxq 'executable=/usr/local/bin/mnemoshare-api' <<<"$api_only_api"
+    grep -Fxq 'command=/usr/local/bin/mnemoshare-api' <<<"$api_only_api"
+    grep -Fxq 'command=/usr/local/bin/run-workers' <<<"$api_only_worker"
+    for name in PRESIDIO_ENABLED PRESIDIO_API_KEY DLP_AI_ENABLED; do
+      ! grep -Fxq "env=${name}" <<<"$api_only_api"
+      grep -Fxq "env=${name}" <<<"$api_only_worker"
+    done
+    for name in PRESIDIO_URL TIKA_URL RICH_MEDIA_URL KMS_ENVELOPE_ENABLED; do
+      grep -Fxq "env=${name}" <<<"$api_only_api"
+      grep -Fxq "env=${name}" <<<"$api_only_worker"
+    done
+    assert_mail "$api_only_api" /usr/local/bin/mnemoshare-api
+    assert_mail "$api_only_worker" /usr/local/bin/run-workers
+    [ "$pool_shape" = ices.enabled=false ] || assert_mail "$(container_env ices <<<"$api_only")" /usr/local/bin/cloud-worker
+    # Only the worker-only integration names and the mail names leave the API pod.
+    test "$(comm -23 <(grep '^env=' <<<"$embedded_api" | sort) <(grep '^env=' <<<"$api_only_api" | sort) | tr '\n' ' ')" = 'env=DLP_AI_ENABLED env=GOOGLE_INTERNAL_MAIL_INTERVAL_SEC env=GOOGLE_WEBHOOK_URL env=MICROSOFT_WEBHOOK_URL env=PRESIDIO_API_KEY env=PRESIDIO_ENABLED '
+    test -z "$(comm -13 <(grep '^env=' <<<"$embedded_api" | sort) <(grep '^env=' <<<"$api_only_api" | sort))"
   done
-  for name in PRESIDIO_URL TIKA_URL RICH_MEDIA_URL KMS_ENVELOPE_ENABLED; do
-    grep -Fxq "env=${name}" <<<"$api_only_api"
-    grep -Fxq "env=${name}" <<<"$api_only_worker"
-  done
-  # Only the worker-only integration names leave the API pod.
-  test "$(comm -23 <(grep '^env=' <<<"$embedded_api" | sort) <(grep '^env=' <<<"$api_only_api" | sort) | tr '\n' ' ')" = 'env=DLP_AI_ENABLED env=PRESIDIO_API_KEY env=PRESIDIO_ENABLED '
-  test -z "$(comm -13 <(grep '^env=' <<<"$embedded_api" | sort) <(grep '^env=' <<<"$api_only_api" | sort))"
+
+  # Pool layout: cloud-worker only in the ices pool, background + workflow in
+  # the dedicated worker, metrics and the backlog trigger on both.
+  pooled=$(helm template layout "$chart_dir" "${layout[@]}" "${core[@]}" "${pool[@]}" --set "$worker_shape" --set api.embeddedWorkers=false --set ices.metrics.enabled=true --set ices.autoscaling.enabled=true --set ices.autoscaling.prometheus.serverAddress=http://prometheus:9090 --set workflowWorker.metrics.enabled=true --set workflowWorker.autoscaling.enabled=true --set workflowWorker.autoscaling.prometheus.serverAddress=http://prometheus:9090)
+  pooled_api=$(container_env api <<<"$pooled")
+  pooled_worker=$(container_env workflow-worker <<<"$pooled")
+  pooled_pool=$(container_env ices <<<"$pooled")
+  grep -Fxq 'command=/usr/local/bin/mnemoshare-api' <<<"$pooled_api"
+  grep -Fxq 'command=/usr/local/bin/run-core-workers' <<<"$pooled_worker"
+  grep -Fxq 'command=/usr/local/bin/cloud-worker' <<<"$pooled_pool"
+  assert_mail "$pooled_api" /usr/local/bin/mnemoshare-api
+  assert_mail "$pooled_worker" /usr/local/bin/run-core-workers
+  assert_mail "$pooled_pool" /usr/local/bin/cloud-worker
+  grep -Fxq 'env=CLOUD_WORKER_METRICS_ADDR' <<<"$pooled_pool"
+  ! grep -Fxq 'env=CLOUD_WORKER_METRICS_ADDR' <<<"$pooled_worker"
+  grep -Fxq 'env=WORKFLOW_WORKER_METRICS_ADDR' <<<"$pooled_worker"
+  ! grep -Fxq 'env=WORKFLOW_WORKER_METRICS_ADDR' <<<"$pooled_pool"
+  for name in PRESIDIO_ENABLED PRESIDIO_API_KEY DLP_AI_ENABLED; do grep -Fxq "env=${name}" <<<"$pooled_worker"; done
+  pooled_scalers=$(python3 -c '
+import sys, yaml
+for document in yaml.safe_load_all(sys.stdin):
+    if (document or {}).get("kind") != "ScaledObject":
+        continue
+    print(document["metadata"]["labels"]["app.kubernetes.io/component"] + "=" + ",".join(t["type"] for t in document["spec"]["triggers"]) + " min=" + str(document["spec"]["minReplicaCount"]))
+    for trigger in document["spec"]["triggers"]:
+        if trigger["type"] == "prometheus":
+            print("query=" + trigger["metadata"]["query"])
+' <<<"$pooled")
+  grep -Fxq 'ices=prometheus min=2' <<<"$pooled_scalers"
+  grep -Fxq 'workflow-worker=prometheus min=1' <<<"$pooled_scalers"
+  grep -Fxq 'query=sum(mnemoshare_dispatch_backlog_rows{namespace="default",process="cloud-worker",engine=~"google|microsoft"})' <<<"$pooled_scalers"
+  grep -Fxq 'query=sum(mnemoshare_dispatch_backlog_rows{namespace="default",process="workflow-worker"})' <<<"$pooled_scalers"
+  ! grep -Fq 'kind: TriggerAuthentication' <<<"$pooled"
+  grep -Fq 'prometheus.io/port: "9091"' <<<"$pooled"
+  # Both pool triggers render when both are configured, prometheus first.
+  both=$(helm template layout "$chart_dir" "${layout[@]}" "${core[@]}" "${pool[@]}" --set "$worker_shape" --set api.embeddedWorkers=false --set ices.metrics.enabled=true --set ices.autoscaling.enabled=true --set ices.autoscaling.prometheus.serverAddress=http://prometheus:9090 --set ices.autoscaling.subscriptionName=projects/p/subscriptions/s)
+  grep -Fq 'type: prometheus' <<<"$both"
+  grep -Fq 'type: gcp-pubsub' <<<"$both"
+  # Without a Prometheus address the pool keeps the Pub/Sub trigger alone and the worker its Redis triggers.
+  legacy=$(helm template layout "$chart_dir" "${layout[@]}" "${supervisor[@]}" "${pool[@]}" --set "$worker_shape" --set ices.autoscaling.enabled=true --set ices.autoscaling.subscriptionName=projects/p/subscriptions/s --set workflowWorker.autoscaling.enabled=true --set redis.external.password=x --set existingSecrets.redis=redis-secret)
+  ! grep -Fq 'type: prometheus' <<<"$legacy"
+  grep -Fq 'listName: "asynq:default:pending"' <<<"$legacy"
+  grep -Fq 'kind: TriggerAuthentication' <<<"$legacy"
 done
 
 expect_layout_failure() {
@@ -147,12 +246,19 @@ expect_layout_failure() {
   grep -Fq "$expected" <<<"$output" || { echo "API-only layout failure lacked: $expected" >&2; exit 1; }
 }
 worker=(--set workflowWorker.enabled=true --set redis.mode=external --set redis.external.host=redis.example.com)
-expect_layout_failure 'api.embeddedWorkers=false requires workflowWorker.enabled=true'
-expect_layout_failure 'requires workflowWorker.command to be a supervisor that hosts background-worker' "${worker[@]}"
-expect_layout_failure 'requires workflowWorker.command to be a supervisor that hosts background-worker' "${worker[@]}" --set 'workflowWorker.command[0]=/usr/local/bin/workflow-worker'
-expect_layout_failure 'requires workflowWorker.replicas >= 1' "${worker[@]}" "${supervisor[@]}" --set workflowWorker.replicas=0
-expect_layout_failure 'requires workflowWorker.autoscaling.minReplicas >= 1' "${worker[@]}" "${supervisor[@]}" --set workflowWorker.autoscaling.enabled=true --set workflowWorker.autoscaling.minReplicas=0
+expect_layout_failure 'leaves background-worker with no host'
+expect_layout_failure 'leaves background-worker with no host' "${worker[@]}"
+expect_layout_failure 'leaves background-worker with no host' "${worker[@]}" --set 'workflowWorker.command[0]=/usr/local/bin/workflow-worker'
+expect_layout_failure 'leaves background-worker with no host' "${worker[@]}" "${supervisor[@]}" --set workflowWorker.replicas=0
+expect_layout_failure 'leaves background-worker with no host' "${worker[@]}" "${supervisor[@]}" --set workflowWorker.autoscaling.enabled=true --set workflowWorker.autoscaling.minReplicas=0
 expect_layout_failure 'embeddedWorkers' "${worker[@]}" "${supervisor[@]}" --set-string api.embeddedWorkers=false
+expect_layout_failure 'leaves cloud-worker with no host' "${worker[@]}" "${core[@]}"
+expect_layout_failure 'leaves cloud-worker with no host' "${worker[@]}" "${core[@]}" "${pool[@]}" --set ices.replicas=0
+expect_layout_failure 'ices.autoscaling.minReplicas must be >= 1' "${worker[@]}" "${core[@]}" "${pool[@]}" --set ices.autoscaling.enabled=true --set ices.autoscaling.minReplicas=0 --set ices.autoscaling.subscriptionName=projects/p/subscriptions/s
+expect_layout_failure 'needs a trigger' "${worker[@]}" "${core[@]}" "${pool[@]}" --set ices.autoscaling.enabled=true
+expect_layout_failure 'requires ices.metrics.enabled=true' "${worker[@]}" "${core[@]}" "${pool[@]}" --set ices.autoscaling.enabled=true --set ices.autoscaling.prometheus.serverAddress=http://prometheus:9090
+expect_layout_failure 'does not host cloud-worker' "${worker[@]}" "${supervisor[@]}" "${pool[@]}" --set 'ices.command[0]=/usr/local/bin/run-core-workers' --set ices.metrics.enabled=true
+expect_layout_failure 'requires workflowWorker.metrics.enabled=true' "${worker[@]}" "${supervisor[@]}" --set workflowWorker.autoscaling.enabled=true --set workflowWorker.autoscaling.prometheus.serverAddress=http://prometheus:9090
 
 if output=$(helm template missing "$chart_dir" --set customerId=test "${identity[@]}" --set mcp.enabled=true 2>&1); then echo 'MCP rendered without API key binding' >&2; exit 1; fi
 grep -Fq 'mcp.enabled requires mcp.apiKey.existingSecret or mcp.apiKey.key' <<<"$output"

@@ -115,15 +115,18 @@ api:
   # therefore runs a full set of workers.
   #
   # false: the API container runs only /usr/local/bin/mnemoshare-api and the
-  # dedicated worker (workflowWorker) is the sole host of the worker processes.
-  # Use this when a dedicated worker already runs them, so each API replica
-  # stops carrying three extra database-connected processes. Requires:
-  #   - workflowWorker.enabled=true with at least one replica
-  #     (autoscaling.minReplicas >= 1 when KEDA autoscaling is on), and
-  #   - workflowWorker.command set to a supervisor that hosts all three workers
-  #     (/usr/local/bin/run-workers). The default worker command runs
-  #     workflow-worker alone and is refused.
-  # The render fails otherwise, because nothing would host the workers.
+  # worker processes live in the dedicated worker (workflowWorker) and/or the
+  # cloud-worker pool (ices). Use this when they already run there, so each API
+  # replica stops carrying three extra database-connected processes. Every one
+  # of background-worker, cloud-worker and workflow-worker must keep a resident
+  # host (a workload that is enabled with replicas >= 1, or KEDA minReplicas >=
+  # 1), derived from the vendored deployment contract:
+  #   - workflowWorker.command /usr/local/bin/run-workers hosts all three;
+  #   - workflowWorker.command /usr/local/bin/run-core-workers hosts
+  #     background-worker and workflow-worker, so ices.enabled=true must host
+  #     cloud-worker (see the ices block);
+  #   - the default worker command runs workflow-worker alone and is refused.
+  # The render fails naming the first process left without a host.
   #
   # In this mode the dedicated worker also receives the integration env
   # (richMedia, dlp, kms) that the API pod's embedded workers used to read, and
@@ -324,18 +327,18 @@ sesEvents:
   # SNS topic the SES event webhook validates against (non-secret).
   snsTopicArn: ""
 
-# Mail-monitoring (ICES) tuning for whichever engine hosts it — the worker when
-# ices.enabled=false, otherwise the standalone ices pod. Webhook URLs default to
+# Mail-monitoring tuning, owned by the cloud-worker executable. Rendered on
+# every container whose command hosts cloud-worker — the API pod while
+# api.embeddedWorkers is on, a worker running run-workers, the ices pool — and
+# on no other container. Webhook URLs default to
 # <appUrl>/api/v1/integrations/cloud/webhook/{google,microsoft}.
 mailMonitoring:
   # Off by default so SaaS/reconciler-driven deployments keep providing this via
-  # ConfigMap (envFrom). Self-hosted ICES users set enabled=true.
+  # ConfigMap (envFrom). Self-hosted mail-monitoring users set enabled=true.
   enabled: false
   googleWebhookUrl: ""      # empty = derive from appUrl
   microsoftWebhookUrl: ""   # empty = derive from appUrl
-  enrollmentIntervalSec: 60
   internalMailIntervalSec: 60
-  internalMailWatchIntervalSec: 90
 
 # Cloudflare Turnstile CAPTCHA (optional)
 # Used to protect public forms (access requests, etc.) from bots
@@ -1176,6 +1179,11 @@ redis:
 # Processes inbound file transfers from SFTP/FTPS/rsync sources.
 # Requires Redis to be enabled for the job queue.
 workflowWorker:
+  # Pod termination grace. The worker binaries release their outbox claims and
+  # mailbox leases on SIGTERM within a 30 s shutdown budget; Kubernetes' default
+  # grace is also 30 s, so set this above 30 to leave headroom for that release.
+  # Unset keeps the Kubernetes default.
+  # terminationGracePeriodSeconds: 60
   # Enable/disable workflow worker deployment
   enabled: false
 
@@ -1189,11 +1197,23 @@ workflowWorker:
   # settings the typed knobs above don't cover).
   extraEnv: []
 
-  # Container entrypoint. Empty = /usr/local/bin/worker (the unified hosted
-  # binary). Application builds with the fixed worker process layout ship
-  # /usr/local/bin/run-workers instead (a supervisor over background-worker,
-  # cloud-worker and workflow-worker); set that here for such images.
+  # Container entrypoint. Empty = the contract's /usr/local/bin/workflow-worker
+  # alone. Supervisors from the vendored deployment contract:
+  #   /usr/local/bin/run-workers      background-worker + cloud-worker + workflow-worker
+  #   /usr/local/bin/run-core-workers background-worker + workflow-worker, for a
+  #                                   layout that runs cloud-worker only in the
+  #                                   ices pool (api.embeddedWorkers=false,
+  #                                   ices.enabled=true)
   command: []
+
+  # Prometheus metrics listener for the workflow-worker process in this
+  # container (WORKFLOW_WORKER_METRICS_ADDR=:<port>, pod scrape annotations).
+  # Serves mnemoshare_dispatch_backlog_rows / _oldest_age_seconds, the signal
+  # autoscaling.prometheus scales on. Requires a command that hosts
+  # workflow-worker (every supported command does).
+  metrics:
+    enabled: false
+    port: 9091
 
   # Number of worker replicas (scale for more concurrent processing)
   replicas: 2
@@ -1271,8 +1291,15 @@ workflowWorker:
   # ============================================================================
   # KEDA Autoscaling (requires KEDA to be installed in the cluster)
   # ============================================================================
-  # Scales workflow workers based on Redis queue depth.
   # Install KEDA: helm install keda kedacore/keda --namespace keda --create-namespace
+  #
+  # With prometheus.serverAddress set, the worker scales on the claimable
+  # workflow backlog in messaging_outbox (metrics.enabled must be true). Without
+  # it the chart keeps its legacy Redis list triggers, which on this
+  # application line never measure backlog: Redis carries only Asynq doorbells
+  # (one task per outbox row, consumed as soon as a worker is listening) on
+  # keyspaced queues (<customerId>:dispatch-default / -high), not the
+  # asynq:{default,critical,low}:pending lists the triggers watch.
   autoscaling:
     # Enable KEDA-based autoscaling
     enabled: false
@@ -1283,14 +1310,30 @@ workflowWorker:
     # Maximum number of workers
     maxReplicas: 10
 
-    # Target queue length per worker replica
-    # If queue has 15 pending tasks and target is 5, KEDA will scale to 3 workers
+    # Outbox-backlog trigger (primary when serverAddress is set).
+    prometheus:
+      # Prometheus server KEDA queries, e.g. http://prometheus.monitoring.svc:9090.
+      # Empty keeps the legacy Redis triggers.
+      serverAddress: ""
+      # PromQL override. The default sums mnemoshare_dispatch_backlog_rows for
+      # process="workflow-worker" in this release's namespace and assumes the
+      # Prometheus kubernetes-pods discovery convention (prometheus.io/*
+      # annotations, a `namespace` label); override when yours differs.
+      query: ""
+      # Claimable rows per replica before another replica is added.
+      threshold: "20"
+      # Backlog that activates scaling from minReplicas.
+      activationThreshold: "0"
+      # Optional KEDA TriggerAuthentication name for an authenticated Prometheus.
+      authenticationRef: ""
+
+    # Legacy Redis trigger: target list length per worker replica.
     listLengthTarget: 5
 
-    # How often KEDA checks queue depth (seconds)
+    # How often KEDA checks the trigger (seconds)
     pollingInterval: 15
 
-    # How long to wait before scaling down after queue is empty (seconds)
+    # How long to wait before scaling down after the backlog clears (seconds)
     cooldownPeriod: 60
 
 # ============================================================================
@@ -1331,36 +1374,57 @@ threatFeed:
     name: ""
 
 # ============================================================================
-# ICES — Standalone Email-Security Service (mail monitoring)
+# ices — the cloud-worker pool (mail monitoring)
 # ============================================================================
-# Runs the dedicated `ices` binary (workerboot) as a stateless Deployment.
-# ICES hosts mail-monitoring: the BEC poller, the Pub/Sub subscriber, and the
-# mail-security sweepers. It shards across replicas via Redis + the worker
-# registry (no PVC).
+# A stateless Deployment of the application's cloud-worker executable: the
+# Google and Microsoft mail engines (Pub/Sub receiver, BEC poller, mailbox and
+# integration polls, remediation, sweepers) plus the shared messaging engine.
+# The engine set is fixed in the binary; nothing here selects it. Replicas
+# share work through messaging_outbox claims, per-mailbox leases and one Redis
+# leader lock, so the pool scales horizontally (no PVC).
 #
-# Enabling ices sets ICES_STANDALONE=true on the workflow worker, so the
-# worker's google engine drops mail-monitoring and it is hosted exactly once
-# by this dedicated pod.
+# The workload keeps its historical name `ices`. Two layouts host cloud-worker:
+#   - run-workers in the dedicated worker (cloud-worker runs there, and in
+#     every API pod while api.embeddedWorkers is true) — ices is then an
+#     additional pool, not the only host;
+#   - run-core-workers in the dedicated worker with api.embeddedWorkers=false:
+#     this pool is the ONLY cloud-worker host and the render refuses to drop
+#     it (ices.enabled=false or no resident replica fails).
+# Mail-monitoring env (mailMonitoring) is rendered here and on every other
+# cloud-worker host.
 #
 # Requires Redis and a real database (mongodb/postgres) — sqlite is rejected.
 ices:
-  # Enable the standalone ICES deployment.
+  # Pod termination grace. The worker binaries release their outbox claims and
+  # mailbox leases on SIGTERM within a 30 s shutdown budget; Kubernetes' default
+  # grace is also 30 s, so set this above 30 to leave headroom for that release.
+  # Unset keeps the Kubernetes default.
+  # terminationGracePeriodSeconds: 60
+  # Enable the cloud-worker pool.
   enabled: false
 
-  # Extra env injected verbatim onto the ices pod (escape valve).
+  # Extra env injected verbatim onto the pool pods (escape valve).
   extraEnv: []
 
-  # Container entrypoint. Empty = /usr/local/bin/ices. Application builds with
-  # the fixed worker process layout host mail monitoring in
-  # /usr/local/bin/cloud-worker and ship no ices binary; set that here for such
-  # images. The liveness/readiness probes follow this value.
+  # Container entrypoint. Empty = the vendored contract's cloud-worker
+  # executable (/usr/local/bin/cloud-worker). The liveness/readiness probes
+  # follow this value.
   command: []
+
+  # Prometheus metrics listener for the cloud-worker process
+  # (CLOUD_WORKER_METRICS_ADDR=:<port>, pod scrape annotations). Serves
+  # mnemoshare_dispatch_backlog_rows{process="cloud-worker",engine,kind} and
+  # mnemoshare_dispatch_backlog_oldest_age_seconds — the claimable mail-task
+  # backlog autoscaling.prometheus scales on.
+  metrics:
+    enabled: false
+    port: 9091
 
   # Number of replicas (ignored when autoscaling.enabled=true).
   replicas: 1
 
   image:
-    # Same image as the main app — `ices` is a separate entrypoint.
+    # Same image as the main app — cloud-worker is a separate entrypoint.
     # Empty chains to the global .Values.image.repository so a single
     # image.repository + image.tag drives every app-entrypoint component.
     repository: ""
@@ -1368,12 +1432,12 @@ ices:
     digest: ""  # Automatic mode defaults to and must equal image.digest.
     pullPolicy: IfNotPresent
 
-  # Log level for the ICES pod.
+  # Log level for the pool pods.
   logLevel: "info"
 
-  # Writable /tmp emptyDir. ICES does ICAP attachment scanning that spools
-  # decrypted streams to /tmp; the base image runs readOnlyRootFilesystem=true
-  # so the mount is required for scanning to work.
+  # Writable /tmp emptyDir. Attachment scanning spools decrypted streams to
+  # /tmp; the base image runs readOnlyRootFilesystem=true so the mount is
+  # required for scanning to work.
   tmpVolume:
     enabled: true
     # Optional sizeLimit on the tmpfs-backed emptyDir.
@@ -1395,26 +1459,51 @@ ices:
   tolerations: []
 
   # ==========================================================================
-  # KEDA Autoscaling (gcp-pubsub subscription backlog)
+  # KEDA Autoscaling (outbox backlog, Pub/Sub subscription backlog)
   # ==========================================================================
-  # Scales ICES on the backlog of its per-integration Pub/Sub PULL
-  # subscription. Requires KEDA installed in the cluster.
+  # Requires KEDA installed in the cluster and at least one trigger:
+  #   - prometheus.serverAddress (primary): claimable mail-task rows in
+  #     messaging_outbox, from the pool's own metrics (metrics.enabled=true).
+  #     The Pub/Sub receiver drains its subscription into outbox rows almost
+  #     immediately, so subscription size alone under-reports waiting work.
+  #   - subscriptionName (secondary): the Pub/Sub PULL subscription backlog.
+  # Both render when both are set.
   #
-  # minReplicas MUST be >= 1 — never 0: the always-on Pub/Sub subscriber and
-  # the leader-elected sweeper components need a resident pod at all times.
+  # minReplicas MUST be >= 1 — never 0: the always-on Pub/Sub receiver and the
+  # leader-elected sweeper components need a resident pod at all times. Keep
+  # it >= 2 in production so a rollout or node loss never leaves the pool
+  # without a receiver and leader; the pool defaults to 2.
   autoscaling:
     # Enable KEDA-based autoscaling.
     enabled: false
 
-    # Minimum replicas (>= 1, never 0 — see note above).
-    minReplicas: 1
+    # Minimum replicas (>= 1; 2 recommended — see note above).
+    minReplicas: 2
 
     # Maximum replicas.
     maxReplicas: 10
 
-    # REQUIRED when autoscaling.enabled: the fully-qualified per-integration
-    # Pub/Sub PULL subscription the gcp-pubsub trigger polls
-    # (e.g. "projects/<proj>/subscriptions/<sub>").
+    # Outbox-backlog trigger (primary when serverAddress is set).
+    prometheus:
+      # Prometheus server KEDA queries, e.g. http://prometheus.monitoring.svc:9090.
+      # Empty disables this trigger; subscriptionName must then be set.
+      serverAddress: ""
+      # PromQL override. The default sums mnemoshare_dispatch_backlog_rows for
+      # process="cloud-worker" and the google/microsoft engines in this
+      # release's namespace, assuming the Prometheus kubernetes-pods discovery
+      # convention (prometheus.io/* annotations, a `namespace` label).
+      # Narrow it to specific wire types with a kind=~"..." matcher.
+      query: ""
+      # Claimable rows per replica before another replica is added.
+      threshold: "20"
+      # Backlog that activates scaling from minReplicas.
+      activationThreshold: "0"
+      # Optional KEDA TriggerAuthentication name for an authenticated Prometheus.
+      authenticationRef: ""
+
+    # Fully-qualified per-integration Pub/Sub PULL subscription for the
+    # gcp-pubsub trigger (e.g. "projects/<proj>/subscriptions/<sub>"). Empty
+    # disables that trigger.
     subscriptionName: ""
 
     # Target undelivered messages per pod (SubscriptionSize mode).

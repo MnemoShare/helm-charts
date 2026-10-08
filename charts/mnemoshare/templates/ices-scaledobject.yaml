@@ -1,9 +1,14 @@
 {{- if and .Values.ices.enabled .Values.ices.autoscaling.enabled (ne (include "mnemoshare.migrationOperationDown" .) "true") }}
-{{- if not .Values.ices.autoscaling.subscriptionName }}
-{{- fail "ices.autoscaling.enabled requires ices.autoscaling.subscriptionName: the KEDA gcp-pubsub trigger polls a specific Pub/Sub PULL subscription (e.g. projects/<proj>/subscriptions/<sub>). Set it, or disable ices.autoscaling." }}
+{{- $auto := .Values.ices.autoscaling }}
+{{- $prometheus := $auto.prometheus | default dict }}
+{{- if and (not $prometheus.serverAddress) (not $auto.subscriptionName) }}
+{{- fail "ices.autoscaling.enabled needs a trigger: set ices.autoscaling.prometheus.serverAddress (scales on the pool's claimable outbox backlog; needs ices.metrics.enabled=true) and/or ices.autoscaling.subscriptionName (KEDA gcp-pubsub on a Pub/Sub PULL subscription, e.g. projects/<proj>/subscriptions/<sub>)." }}
 {{- end }}
-{{- if lt (int .Values.ices.autoscaling.minReplicas) 1 }}
-{{- fail "ices.autoscaling.minReplicas must be >= 1: the always-on Pub/Sub subscriber and leader-elected sweepers need a resident pod at all times." }}
+{{- if and $prometheus.serverAddress (not .Values.ices.metrics.enabled) }}
+{{- fail "ices.autoscaling.prometheus.serverAddress requires ices.metrics.enabled=true: the backlog metric is served by the pool pods' metrics listener." }}
+{{- end }}
+{{- if lt (int $auto.minReplicas) 1 }}
+{{- fail "ices.autoscaling.minReplicas must be >= 1: the always-on Pub/Sub receiver and leader-elected sweepers need a resident pod at all times." }}
 {{- end }}
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -15,28 +20,45 @@ metadata:
 spec:
   scaleTargetRef:
     name: {{ include "mnemoshare.fullname" . }}-ices
-  # minReplicaCount MUST stay >= 1: the always-on Pub/Sub subscriber and the
+  # minReplicaCount MUST stay >= 1: the always-on Pub/Sub receiver and the
   # leader-elected sweepers need a resident pod at all times.
-  minReplicaCount: {{ .Values.ices.autoscaling.minReplicas }}
-  maxReplicaCount: {{ .Values.ices.autoscaling.maxReplicas }}
-  pollingInterval: {{ .Values.ices.autoscaling.pollingInterval | default 15 }}
-  cooldownPeriod: {{ .Values.ices.autoscaling.cooldownPeriod | default 60 }}
+  minReplicaCount: {{ $auto.minReplicas }}
+  maxReplicaCount: {{ $auto.maxReplicas }}
+  pollingInterval: {{ $auto.pollingInterval | default 15 }}
+  cooldownPeriod: {{ $auto.cooldownPeriod | default 60 }}
   triggers:
-  # Scale on the backlog of the per-integration Pub/Sub PULL subscription.
+  {{- if $prometheus.serverAddress }}
+  # Primary: claimable mail-task rows in messaging_outbox. Every pool replica's
+  # Pub/Sub receiver drains the subscription into outbox rows almost at once,
+  # so subscription size alone under-reports the work waiting for this pool.
+  - type: prometheus
+    metadata:
+      serverAddress: {{ $prometheus.serverAddress | quote }}
+      query: {{ $prometheus.query | default (printf "sum(mnemoshare_dispatch_backlog_rows{namespace=%q,process=\"cloud-worker\",engine=~\"google|microsoft\"})" .Release.Namespace) | quote }}
+      threshold: {{ $prometheus.threshold | default "20" | quote }}
+      activationThreshold: {{ $prometheus.activationThreshold | default "0" | quote }}
+    {{- if $prometheus.authenticationRef }}
+    authenticationRef:
+      name: {{ $prometheus.authenticationRef | quote }}
+    {{- end }}
+  {{- end }}
+  {{- if $auto.subscriptionName }}
+  # Secondary: backlog of the per-integration Pub/Sub PULL subscription.
   - type: gcp-pubsub
     metadata:
-      subscriptionName: {{ .Values.ices.autoscaling.subscriptionName | quote }}
+      subscriptionName: {{ $auto.subscriptionName | quote }}
       mode: "SubscriptionSize"
-      value: {{ .Values.ices.autoscaling.targetBacklogPerPod | quote }}
+      value: {{ $auto.targetBacklogPerPod | quote }}
       # Without this the scaler reports an empty subscription as a FAILED query
       # (kedacore/keda#5896), not as 0 — which parks the HPA at
       # ScalingActive=False, so it cannot scale up when traffic returns.
-      valueIfNull: {{ .Values.ices.autoscaling.valueIfNull | default "0" | quote }}
-      {{- if .Values.ices.autoscaling.projectID }}
-      projectID: {{ .Values.ices.autoscaling.projectID | quote }}
+      valueIfNull: {{ $auto.valueIfNull | default "0" | quote }}
+      {{- if $auto.projectID }}
+      projectID: {{ $auto.projectID | quote }}
       {{- end }}
-    {{- if .Values.ices.autoscaling.credentialsFromSecret.name }}
+    {{- if $auto.credentialsFromSecret.name }}
     authenticationRef:
       name: {{ include "mnemoshare.fullname" . }}-ices-pubsub-auth
     {{- end }}
+  {{- end }}
 {{- end }}

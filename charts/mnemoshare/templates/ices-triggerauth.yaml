@@ -1,7 +1,5 @@
-{{- if and .Values.ices.enabled .Values.ices.autoscaling.enabled (ne (include "mnemoshare.migrationOperationDown" .) "true") }}
-{{- if not .Values.ices.autoscaling.subscriptionName }}
-{{- fail "ices.autoscaling.enabled requires ices.autoscaling.subscriptionName: the KEDA gcp-pubsub trigger polls a specific Pub/Sub PULL subscription (e.g. projects/<proj>/subscriptions/<sub>). Set it, or disable ices.autoscaling." }}
-{{- end }}
+{{- /* Trigger presence is validated by ices-scaledobject.yaml; this only binds credentials for the gcp-pubsub trigger. */}}
+{{- if and .Values.ices.enabled .Values.ices.autoscaling.enabled (ne (include "mnemoshare.migrationOperationDown" .) "true") .Values.ices.autoscaling.subscriptionName }}
 {{- if .Values.ices.autoscaling.credentialsFromSecret.name }}
 apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication

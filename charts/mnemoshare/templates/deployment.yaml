@@ -80,11 +80,9 @@ spec:
         # explicit so the application cannot activate development-only key
         # behavior merely because ENVIRONMENT was omitted.
         {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
-        {{- if not .Values.ices.enabled }}
-        # No standalone ICES: the API pod's embedded mail-monitoring engine
-        # needs the webhook/interval env when mailMonitoring.enabled.
-        {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
-        {{- end }}
+        {{- /* Mail-monitoring env is owned by cloud-worker: rendered only while this
+               container's executable hosts it (embedded workers), never in API-only mode. */}}
+        {{- include "mnemoshare.mailMonitoringEnvFor" (dict "root" . "executable" (include "mnemoshare.apiExecutable" .)) | nindent 8 }}
         # Database Configuration (v0.6.0+ supports MongoDB, PostgreSQL, SQLite)
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}
