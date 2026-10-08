@@ -110,6 +110,11 @@ spec:
         {{- else }}
           value: "*"
         {{- end }}
+        {{- with .Values.apiOutboxConsumers }}
+        # Parallel outbox consumers when this pod hosts the engines — see values.yaml.
+        - name: OUTBOX_CONSUMER_CONCURRENCY
+          value: {{ . | quote }}
+        {{- end }}
         {{- if .Values.ices.enabled }}
         # Standalone ICES hosts mail-monitoring; suppress the embedded
         # mail-monitoring engine here so it is registered exactly once.

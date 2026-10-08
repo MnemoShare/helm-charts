@@ -77,6 +77,9 @@ spec:
         {{- else }}
           value: "*"
         {{- end }}
+        # Parallel outbox consumers — see values.yaml workflowWorker.outboxConsumers.
+        - name: OUTBOX_CONSUMER_CONCURRENCY
+          value: {{ .Values.workflowWorker.outboxConsumers | default 4 | quote }}
         {{- if .Values.ices.enabled }}
         # A dedicated ICES pod hosts mail-monitoring (BEC poller + pub/sub
         # subscriber + sweepers). ICES_STANDALONE tells this worker's google

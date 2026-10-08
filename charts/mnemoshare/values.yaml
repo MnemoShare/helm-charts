@@ -1148,6 +1148,11 @@ redis:
 # Set only for edge configs.
 apiFilteredProcess: ""
 
+# Outbox consumers on the api pod when IT hosts the engines (worker-less
+# tenants, FILTERED_PROCESS != none). Same semantics as
+# workflowWorker.outboxConsumers; empty = the binary default (4).
+apiOutboxConsumers: ""
+
 workflowWorker:
   # Enable/disable workflow worker deployment
   enabled: false
@@ -1175,6 +1180,15 @@ workflowWorker:
 
   # Worker concurrency (tasks per worker)
   concurrency: 10
+
+  # Outbox consumers per worker pod (OUTBOX_CONSUMER_CONCURRENCY). Each
+  # consumer claims one dispatch row at a time and runs the triggered saga's
+  # inline part itself, so this is how many triggered workflows a pod starts
+  # in parallel; steps that wait on external state (a pending virus scan)
+  # park and free their consumer. Raise it for bursty upload-triggered
+  # workflows. Claims are atomic, so replicas x consumers never
+  # double-process. Minimum 1.
+  outboxConsumers: 4
 
   # Engine activation filter — selects which dispatch engines this pod
   # hosts. Empty = derived by the template: "*" (every engine the app
