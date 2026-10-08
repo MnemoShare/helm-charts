@@ -1179,6 +1179,11 @@ redis:
 # Processes inbound file transfers from SFTP/FTPS/rsync sources.
 # Requires Redis to be enabled for the job queue.
 workflowWorker:
+  # Pod termination grace. The worker binaries release their outbox claims and
+  # mailbox leases on SIGTERM within a 30 s shutdown budget; Kubernetes' default
+  # grace is also 30 s, so set this above 30 to leave headroom for that release.
+  # Unset keeps the Kubernetes default.
+  # terminationGracePeriodSeconds: 60
   # Enable/disable workflow worker deployment
   enabled: false
 
@@ -1390,6 +1395,11 @@ threatFeed:
 #
 # Requires Redis and a real database (mongodb/postgres) — sqlite is rejected.
 ices:
+  # Pod termination grace. The worker binaries release their outbox claims and
+  # mailbox leases on SIGTERM within a 30 s shutdown budget; Kubernetes' default
+  # grace is also 30 s, so set this above 30 to leave headroom for that release.
+  # Unset keeps the Kubernetes default.
+  # terminationGracePeriodSeconds: 60
   # Enable the cloud-worker pool.
   enabled: false
 

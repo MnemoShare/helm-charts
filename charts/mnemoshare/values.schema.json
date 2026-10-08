@@ -5,18 +5,29 @@
     "applicationImage": {
       "type": "object",
       "properties": {
-        "digest": { "type": "string", "pattern": "^(|sha256:[a-f0-9]{64})$" }
+        "digest": {
+          "type": "string",
+          "pattern": "^(|sha256:[a-f0-9]{64})$"
+        }
       }
     },
     "writer": {
       "type": "object",
       "properties": {
-        "image": { "$ref": "#/$defs/applicationImage" },
+        "image": {
+          "$ref": "#/$defs/applicationImage"
+        },
         "metrics": {
           "type": "object",
           "properties": {
-            "enabled": { "type": "boolean" },
-            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            "enabled": {
+              "type": "boolean"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
           }
         },
         "autoscaling": {
@@ -25,62 +36,125 @@
             "prometheus": {
               "type": "object",
               "properties": {
-                "serverAddress": { "type": "string" },
-                "query": { "type": "string" },
-                "threshold": { "type": "string" },
-                "activationThreshold": { "type": "string" },
-                "authenticationRef": { "type": "string" }
+                "serverAddress": {
+                  "type": "string"
+                },
+                "query": {
+                  "type": "string"
+                },
+                "threshold": {
+                  "type": "string"
+                },
+                "activationThreshold": {
+                  "type": "string"
+                },
+                "authenticationRef": {
+                  "type": "string"
+                }
               }
             }
           }
+        },
+        "terminationGracePeriodSeconds": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
     "applicationProcess": {
       "type": "object",
       "properties": {
-        "image": { "$ref": "#/$defs/applicationImage" }
+        "image": {
+          "$ref": "#/$defs/applicationImage"
+        }
       }
     }
   },
   "properties": {
-    "image": { "$ref": "#/$defs/applicationImage" },
+    "image": {
+      "$ref": "#/$defs/applicationImage"
+    },
     "api": {
       "type": "object",
       "properties": {
-        "embeddedWorkers": { "type": "boolean" }
+        "embeddedWorkers": {
+          "type": "boolean"
+        }
       }
     },
-    "workflowWorker": { "$ref": "#/$defs/writer" },
-    "ices": { "$ref": "#/$defs/writer" },
-    "sftpGateway": { "$ref": "#/$defs/applicationProcess" },
-    "mcp": { "$ref": "#/$defs/applicationProcess" },
+    "workflowWorker": {
+      "$ref": "#/$defs/writer"
+    },
+    "ices": {
+      "$ref": "#/$defs/writer"
+    },
+    "sftpGateway": {
+      "$ref": "#/$defs/applicationProcess"
+    },
+    "mcp": {
+      "$ref": "#/$defs/applicationProcess"
+    },
     "emailGateway": {
       "type": "object",
       "properties": {
-        "enabled": { "type": "boolean" },
-        "mode": { "type": "string", "enum": ["gateway", "relay", "inbound-relay"] },
-        "smtpAuthRequired": { "type": "boolean" },
+        "enabled": {
+          "type": "boolean"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "gateway",
+            "relay",
+            "inbound-relay"
+          ]
+        },
+        "smtpAuthRequired": {
+          "type": "boolean"
+        },
         "relay": {
           "type": "object",
           "properties": {
-            "spoolSharedKey": { "type": "string" },
-            "existingSpoolKeySecret": { "type": "string" },
+            "spoolSharedKey": {
+              "type": "string"
+            },
+            "existingSpoolKeySecret": {
+              "type": "string"
+            },
             "persistence": {
               "type": "object",
               "properties": {
-                "enabled": { "type": "boolean" },
-                "existingClaim": { "type": "string" }
+                "enabled": {
+                  "type": "boolean"
+                },
+                "existingClaim": {
+                  "type": "string"
+                }
               }
             },
             "db": {
               "type": "object",
               "properties": {
-                "uri": { "type": "string" },
-                "name": { "type": "string", "minLength": 1 },
-                "existingSecret": { "type": "string" },
-                "networkPolicyCIDRs": { "type": "array", "items": { "type": "string" } },
-                "networkPolicyPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+                "uri": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "existingSecret": {
+                  "type": "string"
+                },
+                "networkPolicyCIDRs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "networkPolicyPort": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
               }
             }
           }
@@ -91,11 +165,22 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "sourceCommit": { "type": "string" },
-        "contractFingerprint": { "type": "string" },
-        "imageDigest": { "type": "string", "pattern": "^(|sha256:[a-f0-9]{64})$" }
+        "sourceCommit": {
+          "type": "string"
+        },
+        "contractFingerprint": {
+          "type": "string"
+        },
+        "imageDigest": {
+          "type": "string",
+          "pattern": "^(|sha256:[a-f0-9]{64})$"
+        }
       },
-      "required": ["sourceCommit", "contractFingerprint", "imageDigest"]
+      "required": [
+        "sourceCommit",
+        "contractFingerprint",
+        "imageDigest"
+      ]
     },
     "formatMigrations": {
       "type": "object",
@@ -103,7 +188,11 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["automatic", "operator", "disabled"],
+          "enum": [
+            "automatic",
+            "operator",
+            "disabled"
+          ],
           "default": "automatic",
           "description": "automatic renders chart-owned migration orchestration; operator renders no chart-owned migration control resources; disabled retains stale-state fencing and cleanup without executing migrations"
         },
@@ -111,47 +200,94 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "repository": { "type": "string", "minLength": 1 },
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
             "digest": {
               "type": "string",
               "pattern": "^sha256:[a-f0-9]{64}$"
             },
             "pullPolicy": {
               "type": "string",
-              "enum": ["Always", "IfNotPresent", "Never"]
+              "enum": [
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ]
             }
           },
-          "required": ["repository", "digest", "pullPolicy"]
+          "required": [
+            "repository",
+            "digest",
+            "pullPolicy"
+          ]
         },
         "podTerminationTimeout": {
           "type": "string",
           "pattern": "^[1-9][0-9]*(s|m|h)$"
         },
-        "backoffLimit": { "type": "integer", "minimum": 0 },
-        "activeDeadlineSeconds": { "type": "integer", "minimum": 60 },
+        "backoffLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "activeDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 60
+        },
         "networkPolicy": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "databaseCIDRs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-            "databasePort": { "type": "integer", "minimum": 0, "maximum": 65535 },
+            "databaseCIDRs": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "databasePort": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
             "kubernetesApiTargets": {
               "type": "array",
               "items": {
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "cidr": { "type": "string", "minLength": 1 },
-                  "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+                  "cidr": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  }
                 },
-                "required": ["cidr", "port"]
+                "required": [
+                  "cidr",
+                  "port"
+                ]
               }
             }
           },
-          "required": ["databaseCIDRs", "databasePort", "kubernetesApiTargets"]
+          "required": [
+            "databaseCIDRs",
+            "databasePort",
+            "kubernetesApiTargets"
+          ]
         }
       },
-      "required": ["mode", "orchestratorImage", "podTerminationTimeout", "backoffLimit", "activeDeadlineSeconds"]
+      "required": [
+        "mode",
+        "orchestratorImage",
+        "podTerminationTimeout",
+        "backoffLimit",
+        "activeDeadlineSeconds"
+      ]
     }
   }
 }
