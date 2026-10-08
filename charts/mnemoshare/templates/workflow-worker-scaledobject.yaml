@@ -1,4 +1,8 @@
 {{- if and .Values.workflowWorker.enabled .Values.workflowWorker.autoscaling.enabled (ne (include "mnemoshare.migrationOperationDown" .) "true") }}
+{{- $prometheus := .Values.workflowWorker.autoscaling.prometheus | default dict }}
+{{- if and $prometheus.serverAddress (not .Values.workflowWorker.metrics.enabled) }}
+{{- fail "workflowWorker.autoscaling.prometheus.serverAddress requires workflowWorker.metrics.enabled=true: the backlog metric is served by the worker pods' metrics listener." }}
+{{- end }}
 {{- /*
 KEDA's Redis trigger needs a concrete host:port to poll queue depth. The
 `urlExistingSecret` path is for the app's REDIS_URL only — KEDA can't
@@ -9,6 +13,7 @@ also providing `redis.external.host`, fail loudly rather than render a
 ScaledObject with `address: ":6379"` that silently can't connect.
 */}}
 {{- if and
+      (not $prometheus.serverAddress)
       (eq (include "mnemoshare.redisMode" .) "external")
       .Values.redis.external.urlExistingSecret
       (not .Values.redis.external.host)
@@ -47,6 +52,26 @@ spec:
   pollingInterval: {{ .Values.workflowWorker.autoscaling.pollingInterval | default 15 }}
   cooldownPeriod: {{ .Values.workflowWorker.autoscaling.cooldownPeriod | default 60 }}
   triggers:
+  {{- if $prometheus.serverAddress }}
+  # Claimable workflow rows in messaging_outbox: the backlog this worker's
+  # messaging engine drains. On this application line Redis only carries
+  # doorbells (one Asynq task per outbox row, consumed immediately), so the
+  # Redis list triggers below never measure backlog; this is the real signal.
+  - type: prometheus
+    metadata:
+      serverAddress: {{ $prometheus.serverAddress | quote }}
+      query: {{ $prometheus.query | default (printf "sum(mnemoshare_dispatch_backlog_rows{namespace=%q,process=\"workflow-worker\"})" .Release.Namespace) | quote }}
+      threshold: {{ $prometheus.threshold | default "20" | quote }}
+      activationThreshold: {{ $prometheus.activationThreshold | default "0" | quote }}
+    {{- if $prometheus.authenticationRef }}
+    authenticationRef:
+      name: {{ $prometheus.authenticationRef | quote }}
+    {{- end }}
+  {{- else }}
+  # Legacy Redis list triggers. The application's Asynq doorbell queues are
+  # keyspaced (<customerId>:dispatch-default / -high) and hold only row IDs
+  # until a worker dequeues them, so these lists do not track backlog; set
+  # workflowWorker.autoscaling.prometheus.serverAddress to scale on it.
   # Scale based on pending tasks in the default queue
   - type: redis
     metadata:
@@ -86,4 +111,5 @@ spec:
     authenticationRef:
       name: {{ include "mnemoshare.fullname" . }}-redis-trigger-auth
     {{- end }}
+  {{- end }}
 {{- end }}

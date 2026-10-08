@@ -276,7 +276,11 @@ upgrade to this chart before uninstalling.
 | `image.digest` | Immutable application/writer digest required by automatic format migrations | Pinned for the chart `appVersion` |
 | `ingress.enabled` | Enable ingress | `true` |
 | `autoscaling.enabled` | Enable HPA | `false` |
-| `api.embeddedWorkers` | API pod also runs the background, cloud and workflow workers. Set `false` to run the API alone when a dedicated worker hosts them (see [API-only pods](#api-only-pods)) | `true` |
+| `api.embeddedWorkers` | API pod also runs the background, cloud and workflow workers. Set `false` to run the API alone when other workloads host them (see [API-only pods](#api-only-pods)) | `true` |
+| `workflowWorker.command` | Dedicated worker command: `run-workers` (all three workers) or `run-core-workers` (background + workflow, with cloud-worker in the [pool](#cloud-worker-pool)) | `workflow-worker` alone |
+| `ices.enabled` | Render the cloud-worker pool (see [Cloud-worker pool](#cloud-worker-pool)) | `false` |
+| `ices.metrics.enabled` / `workflowWorker.metrics.enabled` | Serve Prometheus metrics (claimable outbox backlog) from the pool / worker pods | `false` |
+| `ices.autoscaling.prometheus.serverAddress` / `workflowWorker.autoscaling.prometheus.serverAddress` | Prometheus server for the KEDA backlog trigger (empty keeps the legacy triggers) | `""` |
 | `sendgrid.apiKey` | SendGrid API key for emails | `""` |
 | `platformEmail.transport` | Tiered outbound email transport (`smtp` or `ses`; empty = auto) | `""` |
 | `platformEmail.fromAddress` | Tiered outbound email from-address (empty disables) | `""` |
@@ -369,10 +373,13 @@ workflowWorker:
 ```
 
 The API container then runs `/usr/local/bin/mnemoshare-api` directly. The
-render fails unless the dedicated worker is enabled, keeps at least one
-replica, and runs a supervisor that hosts all three workers; the default
-worker command (`workflow-worker` alone) is refused because the background and
-cloud workers would have no host.
+render fails unless every one of `background-worker`, `cloud-worker` and
+`workflow-worker` keeps a resident host (an enabled workload with
+`replicas >= 1`, or KEDA `minReplicas >= 1`): the dedicated worker with a
+supervisor that hosts them, and/or the [cloud-worker pool](#cloud-worker-pool).
+The default worker command (`workflow-worker` alone) is refused because the
+background and cloud workers would have no host. Which processes a command
+hosts is read from the vendored deployment contract, never guessed.
 
 In this mode the dedicated worker receives the `richMedia`, `dlp` and `kms`
 integration env, and `PRESIDIO_ENABLED`, `PRESIDIO_API_KEY` and
@@ -380,6 +387,89 @@ integration env, and `PRESIDIO_ENABLED`, `PRESIDIO_API_KEY` and
 supplied through the API's `extraEnv` are not copied: repeat any the workers
 need under `workflowWorker.extraEnv`. Size the worker for the whole background
 load, since the API replicas no longer share it.
+
+### Cloud-worker pool
+
+The `ices` workload is the cloud-worker pool: a stateless Deployment of the
+application's `cloud-worker` executable (Google and Microsoft mail engines —
+Pub/Sub receiver, mailbox and integration polls, remediation, sweepers — plus
+the shared messaging engine). Replicas share work through `messaging_outbox`
+claims, per-mailbox leases and one Redis leader lock, so the pool scales
+horizontally. The engine set is fixed in the binary; nothing in the chart
+selects it.
+
+To run `cloud-worker` only in the pool, with background and workflow work on
+the StatefulSet:
+
+```yaml
+api:
+  embeddedWorkers: false
+workflowWorker:
+  enabled: true
+  command: ["/usr/local/bin/run-core-workers"]   # background-worker + workflow-worker
+ices:
+  enabled: true
+  replicas: 2
+```
+
+The render refuses to leave any worker process without a host: with
+`run-core-workers`, `ices.enabled=false` (or a pool with no resident replica)
+fails naming `cloud-worker`. `run-workers` remains valid with or without the
+pool; the pool then adds cloud-worker capacity beside the worker's own.
+
+Mail-monitoring settings (`mailMonitoring.*`: `GOOGLE_WEBHOOK_URL`,
+`MICROSOFT_WEBHOOK_URL`, `GOOGLE_INTERNAL_MAIL_INTERVAL_SEC`) are rendered on
+every container whose command hosts `cloud-worker` — the API pod while
+`api.embeddedWorkers` is on, a worker running `run-workers`, the pool — and
+on no other container, because the application contract check refuses env a
+container's executable does not own. `GOOGLE_INTERNAL_MAIL_WATCH_INTERVAL_SEC`
+and `GOOGLE_MAIL_ENROLLMENT_INTERVAL_SEC` are no longer rendered: no
+executable in the vendored contract reads them.
+
+#### Autoscaling the pool on outbox backlog
+
+Every pool replica's Pub/Sub receiver drains its subscription into
+`messaging_outbox` rows almost immediately, so the Pub/Sub subscription size
+under-reports the mail work waiting for the pool. The worker binaries expose
+the real signal when their metrics listener is on:
+
+- `mnemoshare_dispatch_backlog_rows{process,engine,kind}` — claimable rows
+  (pending, due, unclaimed or past the claim lease) per wire type the process
+  handles;
+- `mnemoshare_dispatch_backlog_oldest_age_seconds{process,engine}` — age of
+  the oldest such row.
+
+```yaml
+ices:
+  metrics:
+    enabled: true            # CLOUD_WORKER_METRICS_ADDR=:9091 + prometheus.io/* annotations
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    prometheus:
+      serverAddress: http://prometheus.monitoring.svc:9090
+      threshold: "20"        # claimable rows per replica
+    subscriptionName: ""     # optional secondary gcp-pubsub trigger
+```
+
+The default query is
+`sum(mnemoshare_dispatch_backlog_rows{namespace="<release namespace>",process="cloud-worker",engine=~"google|microsoft"})`;
+override `prometheus.query` when your Prometheus labels pods differently or
+to narrow it to specific wire types. Without `prometheus.serverAddress` the
+chart keeps the Pub/Sub trigger alone (today's behaviour). `minReplicas` must
+stay >= 1 and defaults to 2 so a rollout never leaves the pool without a
+receiver and leader. Load behaviour of the backlog trigger has not been
+measured; tune `threshold` against your own traffic.
+
+The same metric drives the dedicated worker through
+`workflowWorker.metrics.enabled` and
+`workflowWorker.autoscaling.prometheus.serverAddress` (default query
+`process="workflow-worker"`). Without it the worker keeps its legacy Redis
+list triggers, which on this application line never measure backlog: Redis
+carries only Asynq doorbells (one task per outbox row, consumed as soon as a
+worker listens) on keyspaced `<customerId>:dispatch-default` /
+`-high` queues, not the `asynq:{default,critical,low}:pending` lists the
+triggers watch.
 
 ### Custom Resource Limits
 

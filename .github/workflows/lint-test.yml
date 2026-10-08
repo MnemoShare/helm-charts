@@ -38,7 +38,7 @@ jobs:
           repository: MnemoShare/mnemoshare
           # Keep the checker on the exact application revision represented by
           # the vendored migration/deployment contracts in this chart.
-          ref: d4a067e4d55f5fb3e8cdba76d1ab0b315184e489
+          ref: be5f958a3ab2c19deee6cf2c4cbe56d6d088b8f6
           path: application
           # The application repository is private; this workflow's GITHUB_TOKEN
           # is scoped to helm-charts. Same org credential the application's
@@ -151,6 +151,47 @@ jobs:
             > /tmp/mnemoshare-api-only.yaml
           (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-api-only.yaml)
           echo "✓ API-only chart render passed the application contract"
+
+      - name: Validate cloud-worker pool render against application contract
+        if: github.event_name == 'pull_request'
+        run: |
+          # run-core-workers in the dedicated worker, cloud-worker only in the
+          # ices pool, mail-monitoring env on the pool alone, metrics listeners
+          # and the KEDA backlog trigger on both. Every container must carry
+          # only env its own executable owns.
+          helm template pool charts/mnemoshare \
+            --set customerId=ci-test \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set mongodb.external.enabled=true \
+            --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
+            --set s3.bucket=test --set s3.accessKey=test --set s3.secretKey=test \
+            --set-string jwt.ecPrivateKey=test \
+            --set encryption.key=test-encryption-key-exactly-32by \
+            --set license.key=test --set appUrl=https://dev.example.com \
+            --set ingress.enabled=false \
+            --set formatMigrations.mode=automatic \
+            --set api.embeddedWorkers=false \
+            --set workflowWorker.enabled=true \
+            --set 'workflowWorker.command[0]=/usr/local/bin/run-core-workers' \
+            --set workflowWorker.metrics.enabled=true \
+            --set workflowWorker.autoscaling.enabled=true \
+            --set workflowWorker.autoscaling.prometheus.serverAddress=http://prometheus.monitoring.svc:9090 \
+            --set ices.enabled=true \
+            --set ices.metrics.enabled=true \
+            --set ices.autoscaling.enabled=true \
+            --set ices.autoscaling.prometheus.serverAddress=http://prometheus.monitoring.svc:9090 \
+            --set mailMonitoring.enabled=true \
+            --set redis.mode=external \
+            --set redis.external.host=redis.example.com \
+            --set redis.external.password=test \
+            --set richMedia.url=http://media.example.com \
+            --set dlp.tikaUrl=http://tika.example.com \
+            --set dlp.presidioUrl=http://presidio.example.com \
+            --set dlp.presidioApiKey=test \
+            --set dlp.aiEnabled=true \
+            > /tmp/mnemoshare-pool.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-pool.yaml)
+          echo "✓ Cloud-worker pool render passed the application contract"
 
       - name: Validate format migration orchestration
         run: bash charts/mnemoshare/tests/format-migrations.sh

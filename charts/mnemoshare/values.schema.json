@@ -11,7 +11,29 @@
     "writer": {
       "type": "object",
       "properties": {
-        "image": { "$ref": "#/$defs/applicationImage" }
+        "image": { "$ref": "#/$defs/applicationImage" },
+        "metrics": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        },
+        "autoscaling": {
+          "type": "object",
+          "properties": {
+            "prometheus": {
+              "type": "object",
+              "properties": {
+                "serverAddress": { "type": "string" },
+                "query": { "type": "string" },
+                "threshold": { "type": "string" },
+                "activationThreshold": { "type": "string" },
+                "authenticationRef": { "type": "string" }
+              }
+            }
+          }
+        }
       }
     },
     "applicationProcess": {

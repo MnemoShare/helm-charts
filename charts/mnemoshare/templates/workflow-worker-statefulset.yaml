@@ -25,6 +25,10 @@ spec:
       app.kubernetes.io/component: workflow-worker
   template:
     metadata:
+      {{- if .Values.workflowWorker.metrics.enabled }}
+      annotations:
+        {{- include "mnemoshare.metricsScrapeAnnotations" (dict "port" .Values.workflowWorker.metrics.port) | nindent 8 }}
+      {{- end }}
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: workflow-worker
@@ -236,8 +240,12 @@ spec:
         # background engines need the same surface the api serves in-process.
         {{- include "mnemoshare.workerApiCallbackEnv" . | nindent 8 }}
         {{- include "mnemoshare.platformEmailEnv" . | nindent 8 }}
-        {{- if not .Values.ices.enabled }}
-        {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
+        {{- /* Mail-monitoring env is owned by cloud-worker: rendered only when this
+               container's command hosts it (run-workers), not for run-core-workers
+               or workflow-worker alone. */}}
+        {{- include "mnemoshare.mailMonitoringEnvFor" (dict "root" . "executable" (include "mnemoshare.workerExecutable" .)) | nindent 8 }}
+        {{- if .Values.workflowWorker.metrics.enabled }}
+        {{- include "mnemoshare.workerMetricsEnv" (dict "root" . "executable" (include "mnemoshare.workerExecutable" .) "process" "workflow-worker" "name" "WORKFLOW_WORKER_METRICS_ADDR" "port" .Values.workflowWorker.metrics.port) | nindent 8 }}
         {{- end }}
         {{- with .Values.workflowWorker.extraEnv }}
         {{- toYaml . | nindent 8 }}
