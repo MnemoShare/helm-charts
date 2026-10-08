@@ -148,9 +148,12 @@ livenessProbe:
   timeoutSeconds: 10
   failureThreshold: 3
 
+# /ready holds a replica out of the Service while its startup license check
+# has no verdict (bounded by LICENSE_READINESS_GRACE_SEC). Liveness and startup
+# stay on /health. Needs an image that serves /ready.
 readinessProbe:
   httpGet:
-    path: /health
+    path: /ready
     port: http
   initialDelaySeconds: 30
   periodSeconds: 10
