@@ -1696,6 +1696,27 @@ emailGateway:
     # Existing secret with key: relay-admin-key
     existingAdminKeySecret: ""
 
+  # Gateway-mode durable spool: encrypted queue for accepted-but-undelivered
+  # outbound mail. Rendered only when the deployment contract declares the
+  # gateway-spool durable resource for the gateway profile. Forces a single
+  # replica and the Recreate strategy; the PVC is mounted at spool.dir and is
+  # the only writable path (the root filesystem stays read-only).
+  # To join the master-key rotation census in gateway mode, set
+  # relay.existingSpoolKeySecret (or relay.spoolSharedKey) and
+  # relay.existingAdminKeySecret (or relay.adminKey), and pass
+  # RELAY_SPOOL_REGISTRY_URL through emailGateway.extraEnv. All are optional.
+  spool:
+    # Must equal the contract's durable path.
+    dir: "/var/spool/mnemo-gateway"
+    persistence:
+      enabled: true
+      size: "10Gi"
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+      # Use an existing PVC instead of creating one
+      existingClaim: ""
+
   # Kubernetes Service (SMTP is L4 TCP — needs LoadBalancer/NLB, not Ingress)
   service:
     type: LoadBalancer

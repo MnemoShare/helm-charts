@@ -112,7 +112,9 @@ grep -Fq "image: \"mnemoshare/mnemoshare@${digest}\"" <<<"$tagged"
 api_deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1;next} active&&/^---$/{exit} active{print}' <<<"$gateway")
 grep -A1 -F 'name: ENVIRONMENT' <<<"$api_deployment" | grep -Fq 'value: "production"'
 ! grep -Fq -- '--universe email-relay-mongo' <<<"$gateway"
-grep -Fq 'type: RollingUpdate' <<<"$gateway"
+if ! jq -e '[.executables[] | select(.id == "emailgateway") | .profiles[] | select(.id == "gateway") | .durable_resources[]? | select(.id == "gateway-spool")] | length == 1' "${contract_dir}/contract.json" >/dev/null; then
+  grep -Fq 'type: RollingUpdate' <<<"$gateway"
+fi
 inbound=$(render_profile inbound-relay --set emailGateway.mode=inbound-relay --set emailGateway.relay.spoolSharedKey=spool)
 grep -Fq 'persistentVolumeClaim:' <<<"$inbound"
 grep -Fq 'type: Recreate' <<<"$inbound"
@@ -187,6 +189,23 @@ derived_identity=$(render_profile gateway --set deploymentContract.sourceCommit=
 grep -Eq 'image: "mnemoshare/mnemoshare@sha256:[a-f0-9]{64}"' <<<"$derived_identity"
 expect_failure 'image.digest pinned as sha256' --set image.digest=
 
+if jq -e '[.executables[] | select(.id == "emailgateway") | .profiles[] | select(.id == "gateway") | .durable_resources[]? | select(.id == "gateway-spool")] | length == 1' "${contract_dir}/contract.json" >/dev/null; then
+  gateway_deployment=$(awk '/# Source: mnemoshare\/templates\/email-gateway-deployment.yaml/{active=1;next} active&&/^---$/{exit} active{print}' <<<"$gateway")
+  grep -Fq 'type: Recreate' <<<"$gateway_deployment"
+  grep -Fq 'name: GATEWAY_SPOOL_DIR' <<<"$gateway_deployment"
+  grep -Fq 'mountPath: /var/spool/mnemo-gateway' <<<"$gateway_deployment"
+  grep -Fq 'claimName: contract-v4-mnemoshare-gateway-spool' <<<"$gateway_deployment"
+  grep -Fq 'name: contract-v4-mnemoshare-gateway-spool' <<<"$gateway"
+  ! grep -Fq 'name: RELAY_SPOOL_SHARED_KEY' <<<"$gateway_deployment"
+  gateway_census=$(render_profile gateway --set emailGateway.mode=gateway --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.adminKey=admin)
+  grep -Fq 'name: RELAY_SPOOL_SHARED_KEY' <<<"$gateway_census"
+  grep -Fq 'name: RELAY_ADMIN_KEY' <<<"$gateway_census"
+  gateway_claim=$(render_profile gateway --set emailGateway.mode=gateway --set emailGateway.spool.persistence.enabled=false --set emailGateway.spool.persistence.existingClaim=external-gateway-spool)
+  grep -Fq 'claimName: external-gateway-spool' <<<"$gateway_claim"
+  expect_failure 'replicas exactly 1' --set emailGateway.mode=gateway --set emailGateway.replicas=2
+  expect_failure 'durable path /var/spool/mnemo-gateway' --set emailGateway.mode=gateway --set emailGateway.spool.dir=/tmp/spool
+  expect_failure 'durable spool' --set emailGateway.mode=gateway --set emailGateway.spool.persistence.enabled=false
+fi
 existing_claim=$(render_profile inbound-relay --set emailGateway.mode=inbound-relay --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.persistence.enabled=false --set emailGateway.relay.persistence.existingClaim=external-spool)
 grep -Fq 'claimName: external-spool' <<<"$existing_claim"
 
