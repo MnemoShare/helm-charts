@@ -56,3 +56,25 @@
   {{- if hasKey $reserved .name -}}{{- fail (printf "emailGateway.extraEnv may not override deployment-contract v4 environment %s" .name) -}}{{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{/* Resolves the single durable resource the selected profile declares; empty dict when it declares none. */}}
+{{- define "mnemoshare.emailGatewaySpool" -}}
+{{- $facts := include "mnemoshare.emailGateway" . | fromJson -}}
+{{- $durables := $facts.profile.durable_resources | default list -}}
+{{- $spool := dict -}}
+{{- if gt (len $durables) 0 -}}
+{{- if ne (len $durables) 1 -}}{{- fail (printf "emailgateway profile %s declares an unsupported durable-resource count" $facts.profile.id) -}}{{- end -}}
+{{- $d := first $durables -}}
+{{- $eg := .Values.emailGateway -}}
+{{- if and (eq $d.id "relay-spool") (eq $d.kind "filesystem") (eq $d.path_environment "RELAY_SPOOL_DIR") -}}
+{{- $spool = dict "section" "relay" "dirKey" "relay.spoolDir" "dir" $eg.relay.spoolDir "persistence" $eg.relay.persistence "claimSuffix" "relay-spool" -}}
+{{- else if and (eq $d.id "gateway-spool") (eq $d.kind "filesystem") (eq $d.path_environment "GATEWAY_SPOOL_DIR") -}}
+{{- $spool = dict "section" "spool" "dirKey" "spool.dir" "dir" $eg.spool.dir "persistence" $eg.spool.persistence "claimSuffix" "gateway-spool" -}}
+{{- else -}}
+{{- fail (printf "emailgateway profile %s declares an unsupported durable resource" $facts.profile.id) -}}
+{{- end -}}
+{{- $_ := set $spool "path" $d.path -}}
+{{- $_ := set $spool "pathEnv" $d.path_environment -}}
+{{- end -}}
+{{- toJson $spool -}}
+{{- end -}}

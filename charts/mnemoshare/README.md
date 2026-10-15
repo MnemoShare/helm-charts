@@ -864,3 +864,16 @@ spool rotation key supplied inline or through
 also requires its MongoDB configuration and selects the token-bearing profile.
 When that profile owns the `email-relay-mongo` universe, automatic migrations
 plan it before drain and apply it exclusively in the existing migration hook.
+
+When the vendored contract declares the `gateway-spool` durable resource for the
+`gateway` profile, gateway mode also gets an encrypted file spool: a
+ReadWriteOnce PVC (`emailGateway.spool.persistence.*`, or
+`emailGateway.spool.persistence.existingClaim`) mounted at
+`emailGateway.spool.dir` (must equal the contract path,
+`/var/spool/mnemo-gateway`) and exported as `GATEWAY_SPOOL_DIR`. The
+Deployment uses the `Recreate` strategy and rendering fails unless
+`emailGateway.replicas` is exactly 1. The root filesystem stays read-only; the
+mount is the only writable path. Master-key rotation census participation is
+optional in gateway mode: set `emailGateway.relay.existingSpoolKeySecret` (or
+`spoolSharedKey`) and `emailGateway.relay.existingAdminKeySecret` (or
+`adminKey`), and add `RELAY_SPOOL_REGISTRY_URL` via `emailGateway.extraEnv`.

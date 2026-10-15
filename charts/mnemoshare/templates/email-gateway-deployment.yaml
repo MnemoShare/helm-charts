@@ -35,15 +35,16 @@
 {{- $durable := dict }}
 {{- if $durableProfile }}
 {{- if ne (.Values.emailGateway.replicas | int) 1 }}{{- fail (printf "emailgateway durable profile %s requires replicas exactly 1 for exclusive spool ownership" $facts.profile.id) }}{{- end }}
-{{- if ne (len $durables) 1 }}{{- fail (printf "emailgateway profile %s declares an unsupported durable-resource count" $facts.profile.id) }}{{- end }}
-{{- $durable = first $durables }}
-{{- if or (ne $durable.id "relay-spool") (ne $durable.kind "filesystem") (ne $durable.path_environment "RELAY_SPOOL_DIR") }}{{- fail (printf "emailgateway profile %s declares an unsupported durable resource" $facts.profile.id) }}{{- end }}
-{{- if ne .Values.emailGateway.relay.spoolDir $durable.path }}{{- fail (printf "emailGateway.relay.spoolDir must equal deployment-contract v4 durable path %s" $durable.path) }}{{- end }}
+{{- $spool := include "mnemoshare.emailGatewaySpool" . | fromJson }}
+{{- $durable = $spool }}
+{{- if ne .Values.emailGateway.mode "gateway" }}{{- if eq $spool.section "spool" }}{{- fail "durable gateway-spool is only valid in gateway mode" }}{{- end }}{{- end }}
+{{- if ne $spool.dir $spool.path }}{{- fail (printf "emailGateway.%s must equal deployment-contract v4 durable path %s" $spool.dirKey $spool.path) }}{{- end }}
+{{- if and (not $spool.persistence.enabled) (not $spool.persistence.existingClaim) }}
+{{- fail (printf "emailGateway %s profiles require %s.persistence.enabled=true or %s.persistence.existingClaim for the durable spool" $spool.section $spool.section $spool.section) }}
 {{- end }}
-{{- if and $durableProfile (not .Values.emailGateway.relay.persistence.enabled) (not .Values.emailGateway.relay.persistence.existingClaim) }}
-{{- fail "emailGateway relay profiles require relay.persistence.enabled=true or relay.persistence.existingClaim for the durable spool" }}
 {{- end }}
-{{- $relayClaim := .Values.emailGateway.relay.persistence.existingClaim | default (printf "%s-relay-spool" (include "mnemoshare.fullname" .)) }}
+{{- $spoolClaim := "" }}
+{{- if $durableProfile }}{{- $spoolClaim = $durable.persistence.existingClaim | default (printf "%s-%s" (include "mnemoshare.fullname" .) $durable.claimSuffix) }}{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -290,6 +291,30 @@ spec:
           value: {{ .Values.emailGateway.relay.spoolSharedKey | quote }}
         {{- end }}
         {{- end }}
+        {{- if and $durableProfile (eq .Values.emailGateway.mode "gateway") }}
+        - name: GATEWAY_SPOOL_DIR
+          value: {{ $durable.path | quote }}
+        {{- if .Values.emailGateway.relay.existingAdminKeySecret }}
+        - name: RELAY_ADMIN_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.relay.existingAdminKeySecret }}
+              key: relay-admin-key
+        {{- else if .Values.emailGateway.relay.adminKey }}
+        - name: RELAY_ADMIN_KEY
+          value: {{ .Values.emailGateway.relay.adminKey | quote }}
+        {{- end }}
+        {{- if .Values.emailGateway.relay.existingSpoolKeySecret }}
+        - name: RELAY_SPOOL_SHARED_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.relay.existingSpoolKeySecret }}
+              key: relay-spool-shared-key
+        {{- else if .Values.emailGateway.relay.spoolSharedKey }}
+        - name: RELAY_SPOOL_SHARED_KEY
+          value: {{ .Values.emailGateway.relay.spoolSharedKey | quote }}
+        {{- end }}
+        {{- end }}
         # Encryption key for internal API secret derivation
         - name: ENCRYPTION_KEY
           valueFrom:
@@ -330,7 +355,7 @@ spec:
           readOnly: true
         {{- end }}
         {{- if $durableProfile }}
-        - name: relay-spool
+        - name: {{ $durable.claimSuffix }}
           mountPath: {{ $durable.path }}
         {{- end }}
         {{- end }}
@@ -342,9 +367,9 @@ spec:
           secretName: {{ $tlsSecret }}
       {{- end }}
       {{- if $durableProfile }}
-      - name: relay-spool
+      - name: {{ $durable.claimSuffix }}
         persistentVolumeClaim:
-          claimName: {{ $relayClaim }}
+          claimName: {{ $spoolClaim }}
       {{- end }}
       {{- end }}
       {{- with .Values.emailGateway.nodeSelector }}

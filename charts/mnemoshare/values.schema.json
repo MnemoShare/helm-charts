@@ -158,6 +158,38 @@
               }
             }
           }
+        },
+        "spool": {
+          "type": "object",
+          "properties": {
+            "dir": {
+              "type": "string",
+              "minLength": 1
+            },
+            "persistence": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "size": {
+                  "type": "string"
+                },
+                "storageClass": {
+                  "type": "string"
+                },
+                "accessModes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "existingClaim": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     },
