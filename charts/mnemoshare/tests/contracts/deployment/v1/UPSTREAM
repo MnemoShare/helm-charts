@@ -1,5 +1,5 @@
 # Reproduction pin only. Verify repository provenance separately.
 repository=https://github.com/MnemoShare/mnemoshare.git
-commit=9b896ef96e5c72cc8fa52b713172efc31084c9c6
+commit=2905bb7efde518fd20d122e24b5b7ee463a25b34
 path=contracts/deployment/v1
-sha256sums=ef74d9311c0db1ce6842716dc9a51803853aee4ecff6c0b0044de8c9f1eaeaca
+sha256sums=3f1a06bb41a5d88630b4738f9da3adc26e2b1bb2483dea74927504c6a2528c25
