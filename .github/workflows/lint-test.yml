@@ -65,6 +65,10 @@ jobs:
       - name: Run chart-testing (lint)
         run: ct lint --target-branch main --charts charts/mnemoshare
 
+      - name: Egress and service-account-token render guards
+        if: github.event_name == 'pull_request'
+        run: hack/render-matrix.sh
+
       - name: Validate chart templates (default — sftpGateway disabled)
         if: github.event_name == 'pull_request'
         run: |

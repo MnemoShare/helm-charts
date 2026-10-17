@@ -39,6 +39,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      automountServiceAccountToken: false
       {{- with .Values.workflowWorker.terminationGracePeriodSeconds }}
       terminationGracePeriodSeconds: {{ . }}
       {{- end }}
@@ -54,6 +55,7 @@ spec:
         command:
           {{- toYaml (.Values.workflowWorker.command | default (list "/usr/local/bin/workflow-worker")) | nindent 10 }}
         env:
+        {{- include "mnemoshare.vault.k8sTokenEnv" . | nindent 8 }}
         {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
         {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # Tenant Identity — required for dispatch keyspace isolation.
@@ -275,6 +277,7 @@ spec:
         resources:
           {{- toYaml .Values.workflowWorker.resources | nindent 12 }}
         volumeMounts:
+        {{- include "mnemoshare.vault.k8sTokenMount" . | nindent 8 }}
         - name: workflow-data
           mountPath: /mnt/workflow-data
         {{- if .Values.diskBuffer.enabled }}
@@ -310,6 +313,7 @@ spec:
       {{- end }}
       {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled (include "mnemoshare.keyguard.enabled" .) }}
       volumes:
+      {{- include "mnemoshare.vault.k8sTokenVolume" . | nindent 6 }}
       {{- if .Values.workflowWorker.tmpVolume.enabled }}
       - name: tmp
         emptyDir:

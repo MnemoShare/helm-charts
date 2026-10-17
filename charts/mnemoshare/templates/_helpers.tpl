@@ -911,3 +911,31 @@ a process missing either rejects the grant the others committed.
   value: {{ $kubeSystemNs.metadata.uid | quote }}
 {{- end }}
 {{- end -}}
+
+{{/* Vault kubernetes-auth token, projected (the default SA token is not mounted). */}}
+{{- define "mnemoshare.vault.k8sTokenEnv" -}}
+{{- if .Values.vault.kubernetesAuth.enabled }}
+- name: VAULT_K8S_TOKEN_PATH
+  value: {{ .Values.vault.kubernetesAuth.tokenPath | quote }}
+{{- end }}
+{{- end -}}
+
+{{- define "mnemoshare.vault.k8sTokenMount" -}}
+{{- if .Values.vault.kubernetesAuth.enabled }}
+- name: vault-k8s-token
+  mountPath: {{ dir .Values.vault.kubernetesAuth.tokenPath }}
+  readOnly: true
+{{- end }}
+{{- end -}}
+
+{{- define "mnemoshare.vault.k8sTokenVolume" -}}
+{{- if .Values.vault.kubernetesAuth.enabled }}
+- name: vault-k8s-token
+  projected:
+    sources:
+      - serviceAccountToken:
+          path: {{ base .Values.vault.kubernetesAuth.tokenPath }}
+          audience: {{ .Values.vault.kubernetesAuth.audience | quote }}
+          expirationSeconds: {{ .Values.vault.kubernetesAuth.expirationSeconds | default 3600 }}
+{{- end }}
+{{- end -}}

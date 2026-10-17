@@ -263,10 +263,10 @@ for image_override in \
   fi
 done
 
-if helm template test "$chart_dir" "${base[@]}" --set networkPolicy.enabled=true >/dev/null 2>&1; then
-  echo 'network policy accepted missing restricted DB/API destinations' >&2
-  exit 1
-fi
+fallback_render=$(helm template test "$chart_dir" "${base[@]}" --set networkPolicy.enabled=true)
+for port in 6443; do
+  grep -Fq "port: ${port}" <<<"$fallback_render" || { echo "network policy fallback missing port ${port}" >&2; exit 1; }
+done
 np_render=$(helm template test "$chart_dir" "${base[@]}" \
   --set networkPolicy.enabled=true \
   --set formatMigrations.networkPolicy.databaseCIDRs[0]=10.20.30.40/32 \

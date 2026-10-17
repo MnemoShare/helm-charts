@@ -73,6 +73,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      automountServiceAccountToken: false
       securityContext:
         {{- $podSC := deepCopy .Values.podSecurityContext }}
         {{- if $hasLowPort }}
