@@ -294,17 +294,22 @@ spec:
         {{- if include "mnemoshare.keyguard.enabled" . }}
         {{- include "mnemoshare.keyguard.volumeMountsMain" . | nindent 8 }}
         {{- end }}
+        ports:
+        - name: health
+          containerPort: 8081
+          protocol: TCP
         livenessProbe:
           exec:
-            command:
-            - /bin/sh
-            - -c
-            # busybox pgrep on alpine matches against full /proc/N/cmdline,
-            # so `-x worker` (basename) never matches `/usr/local/bin/worker`.
-            # Drop -x → substring match (works for both procps and busybox).
-            - "pgrep worker"
+            command: [{{ include "mnemoshare.workerExecutable" . | quote }}, "healthcheck"]
           initialDelaySeconds: 30
           periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: [{{ include "mnemoshare.workerExecutable" . | quote }}, "healthcheck", "--url", "http://127.0.0.1:8081/readyz"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
       {{- if include "mnemoshare.keyguard.enabled" . }}

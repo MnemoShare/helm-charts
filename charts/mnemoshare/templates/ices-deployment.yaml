@@ -262,26 +262,20 @@ spec:
         {{- include "mnemoshare.keyguard.volumeMountsMain" . | nindent 8 }}
         {{- end }}
         {{- end }}
+        ports:
+        - name: health
+          containerPort: 8081
+          protocol: TCP
         livenessProbe:
           exec:
-            command:
-            - /bin/sh
-            - -c
-            # Anchored full-cmdline match: bare `pgrep ices` matches the probe's
-            # own `/bin/sh -c ...` cmdline (contains "ices") → false-positive
-            # even when the binary is dead. `-f` + ^...$ works on both procps
-            # and busybox pgrep and cannot match the probe shell.
-            - {{ printf "pgrep -f '^%s$'" (first $icesCommand) | quote }}
+            command: [{{ first $icesCommand | quote }}, "healthcheck"]
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           exec:
-            command:
-            - /bin/sh
-            - -c
-            - {{ printf "pgrep -f '^%s$'" (first $icesCommand) | quote }}
+            command: [{{ first $icesCommand | quote }}, "healthcheck", "--url", "http://127.0.0.1:8081/readyz"]
           initialDelaySeconds: 10
           periodSeconds: 15
           timeoutSeconds: 5
