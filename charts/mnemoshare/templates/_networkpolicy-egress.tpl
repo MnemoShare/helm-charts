@@ -332,7 +332,7 @@ Outbound mail: SMTP relays (customer-configured) on smtp.ports.
 {{/*
 Customer-facing egress ports for a component (JSON list). The API pod hosts the
 engines when no external workflow-worker exists, so it inherits the worker list.
-Deprecated networkPolicy.workflows.enabled appends workflows.ports (never any-port).
+Deprecated networkPolicy.workflows.enabled appends workflows.customerEgressPorts (never any-port).
 args: root, component (api|workflowWorker|ices|emailGateway|inboundGateway)
 */}}
 {{- define "mnemoshare.np.customerPorts" -}}
@@ -343,16 +343,35 @@ args: root, component (api|workflowWorker|ices|emailGateway|inboundGateway)
 {{- $ports = concat $ports ($np.workflowWorker.customerEgressPorts | default list) -}}
 {{- end -}}
 {{- if and (has .component (list "api" "workflowWorker")) $np.workflows $np.workflows.enabled -}}
-{{- $ports = concat $ports ($np.workflows.ports | default list) -}}
+{{- $ports = concat $ports ($np.workflows.customerEgressPorts | default list) -}}
 {{- end -}}
 {{- $ports | uniq | toJson -}}
 {{- end -}}
 
 {{- define "mnemoshare.np.customer" -}}
-{{- $ce := .root.Values.networkPolicy.customerEgress | default dict -}}
+{{- $np := .root.Values.networkPolicy -}}
+{{- $ce := $np.customerEgress | default dict -}}
 {{- $public := ne ($ce.publicInternet | toString) "false" -}}
+{{- $own := (index $np .component | default dict).customerEgressCIDRs | default list -}}
+{{- $cidrs := concat ($ce.cidrs | default list) $own | uniq -}}
 # Customer-facing destinations (connectors, webhooks, SIEM, LLM): listed ports only
-{{- include "mnemoshare.np.rule" (dict "ports" (include "mnemoshare.np.customerPorts" . | fromJsonArray) "public" $public "cidrs" ($ce.cidrs | default list)) }}
+{{- include "mnemoshare.np.rule" (dict "ports" (include "mnemoshare.np.customerPorts" . | fromJsonArray) "public" $public "cidrs" $cidrs) }}
+{{- $ftp := ($np.workflows | default dict).ftpPassive | default dict -}}
+{{- $workerClass := or (eq .component "workflowWorker") (and (eq .component "api") (not .root.Values.workflowWorker.enabled)) -}}
+{{- if and $ftp.enabled $workerClass }}
+{{- if not $ftp.cidrs }}{{ fail "networkPolicy.workflows.ftpPassive.cidrs is required when ftpPassive.enabled=true (no public-any fallback)" }}{{ end }}
+{{- $pr := $ftp.portRange | default dict }}
+# FTP/FTPS passive data connections: server-chosen high ports, restricted to the listed servers
+- ports:
+    - protocol: TCP
+      port: {{ $pr.start | default 1024 }}
+      endPort: {{ $pr.end | default 65535 }}
+  to:
+    {{- range $ftp.cidrs }}
+    - ipBlock:
+        cidr: {{ . }}
+    {{- end }}
+{{- end }}
 {{- end -}}
 
 {{- define "mnemoshare.np.https" -}}

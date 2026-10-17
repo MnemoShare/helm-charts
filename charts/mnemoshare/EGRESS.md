@@ -26,7 +26,7 @@ expressible there; use a CNI-specific policy (CiliumNetworkPolicy `toFQDNs`, Cal
 | Rich-media / Tika / Presidio | `networkPolicy.{richMedia,tika,presidio}.port` (8080 / 9998 / 3000) | namespace-scoped when `.namespace` set | `richMedia.url`, `dlp.tikaUrl`, `dlp.presidioUrl` | `internal/config/config.go` `RICH_MEDIA_URL`, `TIKA_URL`, `PRESIDIO_URL`. Thumbnails are generated in-process (`internal/background/metadata_processor.go`): no extra destination |
 | SendGrid / SES / OAuth-SSO IdPs / Google Workspace / Microsoft Graph | 443 | public | `sendgrid`, `platformEmail`, `networkPolicy.oauth.enabled`; ICES always 443 | `internal/mailsettings/client.go` (Gmail), Graph URLs in `internal/repository/*mailbox_registry*` |
 | SMTP relays | `networkPolicy.smtp.ports` (25, 465, 587, 2525) | public + `smtp.cidrs` | `networkPolicy.smtp.*` | `internal/config/config.go` SMTP settings |
-| Connectors, webhooks, SIEM, LLM (customer-chosen hosts) | `networkPolicy.<component>.customerEgressPorts` | `customerEgress.publicInternet` + `customerEgress.cidrs` | see below | `internal/messaging/kinds/remote`, `internal/webhook/delivery.go`, `internal/siemsyslog`, `internal/llmclient` |
+| Connectors, webhooks, SIEM, LLM (customer-chosen hosts) | `networkPolicy.<component>.customerEgressPorts` | `customerEgress.publicInternet` + `customerEgress.cidrs` + `<component>.customerEgressCIDRs` | see below | `internal/messaging/kinds/remote`, `internal/webhook/delivery.go`, `internal/siemsyslog`, `internal/llmclient` |
 | API (from gateways, MCP) | `service.targetPort` (8080) | pod `component=api` | always | `MNEMOSHARE_API_URL`, `SFTP_GATEWAY_API_BASE_URL` |
 
 ## Per component
@@ -59,6 +59,23 @@ networkPolicy:
 
 Hook Jobs: this chart line renders none. Any future hook Job running the app image
 must be covered by an egress policy (DNS + database) before shipping.
+
+## FTP/FTPS passive mode
+
+Passive data connections use a server-chosen high port, so a fixed list cannot allow them.
+Opt in per FTP server range (CIDRs are mandatory; enabling without them fails the render):
+
+```yaml
+networkPolicy:
+  workflows:
+    ftpPassive:
+      enabled: true
+      cidrs: [203.0.113.0/28]
+      portRange: {start: 1024, end: 65535}   # rendered with endPort; needs Kubernetes >= 1.25
+```
+
+Applies to workflow-worker and to the api when it hosts the engines. Keep the control
+channel port (21/990) in `customerEgressPorts`.
 
 ## Service account token
 

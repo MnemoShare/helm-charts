@@ -32,6 +32,7 @@ run worker-deployment "${ALL[@]}" --set workflowWorker.enabled=true
 run worker-statefulset "${ALL[@]}" --set workflowWorker.enabled=true --set workflowWorker.persistence.enabled=true
 run legacy-workflows-flag "${ALL[@]}" --set networkPolicy.workflows.enabled=true
 run vault-k8s-auth "${ALL[@]}" --set workflowWorker.enabled=true --set vault.kubernetesAuth.enabled=true
+run ftp-passive "${ALL[@]}" --set workflowWorker.enabled=true --set networkPolicy.workflows.ftpPassive.enabled=true --set "networkPolicy.workflows.ftpPassive.cidrs={203.0.113.0/28}"
 run policy-off --set networkPolicy.enabled=false
 run postgres --set database.driver=postgres --set-string postgres.dsn=postgres://u:p@h:5432/d
 run db2 --set database.driver=db2

@@ -5,7 +5,8 @@
    (an omitted ports list or a protocol-only entry means every port).
 2. Any egress rule to a public ipBlock (0.0.0.0/0 or any non-RFC1918 CIDR) is
    covered by (1); reported separately for clarity.
-3. Every app pod (component api, workflow-worker, ices, mcp, email-gateway,
+3. An endPort range must never target a /0 ipBlock.
+4. Every app pod (component api, workflow-worker, ices, mcp, email-gateway,
    inbound-gateway, sftp-gateway) sets automountServiceAccountToken: false, and
    no Role/RoleBinding is rendered.
 """
@@ -26,6 +27,10 @@ for d in docs:
             ports = rule.get("ports") or []
             public = any("ipBlock" in p and not p["ipBlock"]["cidr"].startswith(("10.", "172.16.", "192.168."))
                          for p in rule.get("to") or [])
+            for p in ports:
+                if "endPort" in p and any(
+                        "ipBlock" in t and t["ipBlock"]["cidr"].endswith("/0") for t in rule.get("to") or []):
+                    errors.append(f"NetworkPolicy/{name} egress[{i}]: endPort range paired with a public-any ipBlock")
             if not ports or any("port" not in p for p in ports):
                 errors.append(f"NetworkPolicy/{name} egress[{i}]: "
                               f"{'public ipBlock rule' if public else 'rule'} lacks explicit ports")

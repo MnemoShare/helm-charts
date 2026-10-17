@@ -1730,16 +1730,23 @@ networkPolicy:
   # (rsync 873, database_connect 5432/3306/1433/1521/50000/27017, AS2 4080, ...).
   # When workflowWorker.enabled=false the API hosts the engines and also gets the
   # workflowWorker list.
+  # customerEgressCIDRs adds peers (e.g. private partner ranges) for that component
+  # on top of customerEgress.cidrs.
   api:
     customerEgressPorts: [443]
+    customerEgressCIDRs: []
   workflowWorker:
     customerEgressPorts: [21, 22, 443, 990]
+    customerEgressCIDRs: []
   ices:
     customerEgressPorts: [443]
+    customerEgressCIDRs: []
   emailGateway:
     customerEgressPorts: [443]
+    customerEgressCIDRs: []
   inboundGateway:
     customerEgressPorts: [443]
+    customerEgressCIDRs: []
 
   # Database egress. Port derives from database.driver (mongodb 27017, postgres
   # 5432, mysql 3306, mssql 1433, oracle 1521, db2 50000) unless `port` is set.
@@ -1877,11 +1884,19 @@ networkPolicy:
     cidrs: []
 
   # DEPRECATED. Formerly opened every TCP port to the public internet. It no
-  # longer does: when true it appends `ports` to the api/workflowWorker customer
+  # longer does: when true it appends `customerEgressPorts` to the api/workflowWorker customer
   # lists. Prefer networkPolicy.<component>.customerEgressPorts.
   workflows:
     enabled: false
-    ports: [21, 22, 80, 443, 873, 990, 1433, 1521, 3306, 4080, 5432, 27017, 50000]
+    # FTP/FTPS passive mode: data connections use server-chosen high ports, which a
+    # fixed list cannot cover. Opt in with the FTP servers' CIDRs (required; there
+    # is no public-any fallback). Rendered with endPort (Kubernetes >= 1.25) on
+    # api (when it hosts the engines) and workflow-worker.
+    ftpPassive:
+      enabled: false
+      cidrs: []
+      portRange: {start: 1024, end: 65535}
+    customerEgressPorts: [21, 22, 80, 443, 873, 990, 1433, 1521, 3306, 4080, 5432, 27017, 50000]
 
 # ============================================================================
 # MCP Admin Server - AI-Assisted Configuration Management
