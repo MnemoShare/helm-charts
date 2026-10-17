@@ -448,6 +448,7 @@ spec:
     {{- end }}
     {{- include "mnemoshare.np.smtp" . | nindent 4 }}
     {{- include "mnemoshare.np.customer" (dict "root" . "component" "emailGateway") | nindent 4 }}
+    {{- include "mnemoshare.np.extraEgress" (dict "root" . "component" "emailGateway") | nindent 4 }}
 {{- end }}
 {{- if and .Values.inboundGateway .Values.inboundGateway.enabled }}
 ---
@@ -505,6 +506,7 @@ spec:
     {{- include "mnemoshare.np.rule" (dict "ports" (.Values.networkPolicy.smtp.ports | default (list 25 465 587 2525)) "anyDest" true) | nindent 4 }}
     {{- end }}
     {{- include "mnemoshare.np.customer" (dict "root" . "component" "inboundGateway") | nindent 4 }}
+    {{- include "mnemoshare.np.extraEgress" (dict "root" . "component" "inboundGateway") | nindent 4 }}
 {{- end }}
 {{- end }}
 {{- if and .Values.migrationOperation.enabled (has .Values.migrationOperation.phase (list "reset" "plan" "apply" "verify")) }}

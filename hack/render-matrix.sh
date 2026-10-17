@@ -37,6 +37,7 @@ run vault-k8s-auth "${ALL[@]}" --set workflowWorker.enabled=true --set vault.kub
 run ftp-passive "${ALL[@]}" --set workflowWorker.enabled=true --set networkPolicy.workflows.ftpPassive.enabled=true --set "networkPolicy.workflows.ftpPassive.cidrs={203.0.113.0/28}"
 run vault-k8s-auth-no-tmp "${ALL[@]}" --set workflowWorker.enabled=true --set workflowWorker.tmpVolume.enabled=false --set diskBuffer.enabled=false --set vault.kubernetesAuth.enabled=true
 run vault-k8s-auth-statefulset-no-tmp "${ALL[@]}" --set workflowWorker.enabled=true --set workflowWorker.persistence.enabled=true --set workflowWorker.tmpVolume.enabled=false --set diskBuffer.enabled=false --set vault.kubernetesAuth.enabled=true
+run extra-egress "${ALL[@]}" --set workflowWorker.enabled=true --set mtls.enabled=true --set-json 'networkPolicy.workflowWorker.extraEgress=[{"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"tailscale"}}}],"ports":[{"protocol":"TCP","port":2525}]}]'
 run policy-off --set networkPolicy.enabled=false
 run postgres --set database.driver=postgres --set-string postgres.dsn=postgres://u:p@h:5432/d
 run db2 --set database.driver=db2 --set formatMigrations.mode=operator

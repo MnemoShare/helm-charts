@@ -44,6 +44,24 @@ expressible there; use a CNI-specific policy (CiliumNetworkPolicy `toFQDNs`, Cal
 | clamav | DNS, 80/443 public (signature updates) |
 | redis (in-cluster) | DNS |
 
+## API calls and extra rules
+
+Worker, ices and api egress include a rule to the release's `component=api` pods on
+`service.targetPort` (and `mtls.port` when enabled): `API_BASE_URL`/`MNEMOSHARE_API_URL`
+point at the api Service, whose port 80 lands on the pod port.
+
+`networkPolicy.<component>.extraEgress` appends raw egress rules for destinations the chart
+cannot model, e.g. SMTP to a Tailscale egress namespace:
+
+```yaml
+networkPolicy:
+  workflowWorker:
+    extraEgress:
+      - to:
+          - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: tailscale}}
+        ports: [{protocol: TCP, port: 2525}]
+```
+
 ## Upgrade notes
 
 - `networkPolicy.workflows.ports` is renamed `networkPolicy.workflows.customerEgressPorts`.

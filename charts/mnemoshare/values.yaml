@@ -1870,18 +1870,28 @@ networkPolicy:
   api:
     customerEgressPorts: [443]
     customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
   workflowWorker:
     customerEgressPorts: [21, 22, 443, 990]
     customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
   ices:
     customerEgressPorts: [443]
     customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
   emailGateway:
     customerEgressPorts: [443]
     customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
   inboundGateway:
     customerEgressPorts: [443]
     customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
 
   # Database egress. Port derives from database.driver (mongodb 27017, postgres
   # 5432, mysql 3306, mssql 1433, oracle 1521, db2 50000) unless `port` is set.
