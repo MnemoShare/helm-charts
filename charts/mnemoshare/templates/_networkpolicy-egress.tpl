@@ -407,4 +407,31 @@ args: root, component
 {{ include "mnemoshare.np.https" $r }}
 {{ include "mnemoshare.np.smtp" $r }}
 {{ include "mnemoshare.np.customer" . }}
+{{ include "mnemoshare.np.apiPods" $r }}
+{{ include "mnemoshare.np.extraEgress" . }}
+{{- end -}}
+
+{{/* Calls to the api Service (API_BASE_URL / MNEMOSHARE_API_URL); Service port 80 lands on targetPort. */}}
+{{- define "mnemoshare.np.apiPods" -}}
+# MnemoShare API pods (intra-release)
+- to:
+    - podSelector:
+        matchLabels:
+          {{- include "mnemoshare.selectorLabels" . | nindent 10 }}
+          app.kubernetes.io/component: api
+  ports:
+    - protocol: TCP
+      port: {{ .Values.service.targetPort }}
+    {{- if .Values.mtls.enabled }}
+    - protocol: TCP
+      port: {{ .Values.mtls.port | default 8443 }}
+    {{- end }}
+{{- end -}}
+
+{{/* Operator-supplied raw egress rules for destinations the chart cannot model; hack/check-render.py still requires ports. args: root, component */}}
+{{- define "mnemoshare.np.extraEgress" -}}
+{{- with (index .root.Values.networkPolicy .component | default dict).extraEgress }}
+# networkPolicy.{{ $.component }}.extraEgress
+{{ toYaml . }}
+{{- end }}
 {{- end -}}
