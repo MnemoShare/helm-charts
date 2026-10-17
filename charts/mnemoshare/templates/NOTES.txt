@@ -71,6 +71,7 @@ NETWORK POLICIES
   networkPolicy.redis.cidrs and networkPolicy.smtp.cidrs to narrow database/Redis/SMTP
   destinations (unset = those ports only, any destination); add ports for workflow steps
   via networkPolicy.workflowWorker.customerEgressPorts. Opt out: networkPolicy.enabled=false.
+  Renamed: networkPolicy.workflows.ports -> networkPolicy.workflows.customerEgressPorts.
 {{- else }}
 
 WARNING: networkPolicy.enabled=false - no pod-level network isolation is applied.

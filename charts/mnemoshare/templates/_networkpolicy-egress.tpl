@@ -64,6 +64,8 @@ no `to` (any destination, restricted to ports). Renders nothing without ports.
 {{- else if eq $d "mssql" -}}1433
 {{- else if eq $d "oracle" -}}1521
 {{- else if eq $d "db2" -}}50000
+{{- else if eq $d "sqlite" -}}0
+{{- else -}}{{ fail (printf "networkPolicy: unknown database.driver %q (set networkPolicy.database.port to override)" $d) }}
 {{- end -}}
 {{- end -}}
 
