@@ -44,6 +44,11 @@ expressible there; use a CNI-specific policy (CiliumNetworkPolicy `toFQDNs`, Cal
 | clamav | DNS, 80/443 public (signature updates) |
 | redis (in-cluster) | DNS |
 
+## Upgrade notes
+
+- `networkPolicy.workflows.ports` is renamed `networkPolicy.workflows.customerEgressPorts`.
+- `networkPolicy.enabled` now defaults to true.
+
 ## Adding ports
 
 Steps that dial other services need their port added to the worker list, e.g. rsync 873,

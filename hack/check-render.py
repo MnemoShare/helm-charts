@@ -6,7 +6,8 @@
 2. Any egress rule to a public ipBlock (0.0.0.0/0 or any non-RFC1918 CIDR) is
    covered by (1); reported separately for clarity.
 3. An endPort range must never target a /0 ipBlock.
-4. Every app pod (component api, workflow-worker, ices, mcp, email-gateway,
+4. Referenced ServiceAccounts are rendered.
+5. Every app pod (component api, workflow-worker, ices, mcp, email-gateway,
    inbound-gateway, sftp-gateway) sets automountServiceAccountToken: false, and
    no Role/RoleBinding is rendered.
 """
@@ -39,6 +40,13 @@ for d in docs:
         comp = tpl["metadata"].get("labels", {}).get("app.kubernetes.io/component")
         if comp in APP_COMPONENTS and tpl["spec"].get("automountServiceAccountToken") is not False:
             errors.append(f"{kind}/{name} (component={comp}): automountServiceAccountToken is not false")
+
+sas = {d["metadata"]["name"] for d in docs if d.get("kind") == "ServiceAccount"}
+for d in docs:
+    if d.get("kind") in ("Deployment", "StatefulSet", "Job"):
+        sa = d["spec"]["template"]["spec"].get("serviceAccountName")
+        if sa and sa not in sas and not sa.endswith("-format-migration"):
+            errors.append(f"{d['kind']}/{d['metadata']['name']}: ServiceAccount {sa} is referenced but not rendered")
 
 if errors:
     print("\n".join("FAIL: " + e for e in errors))
