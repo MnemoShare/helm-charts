@@ -559,6 +559,15 @@ helm upgrade mnemoshare mnemoshare/mnemoshare \
   --values my-values.yaml
 ```
 
+### Upgrade note: shell-free probes and init containers (chart 1.27.2)
+
+Probes and init containers no longer use `/bin/sh`, `pgrep` or `wget`. They call
+`<binary> healthcheck` and `mnemoshare-api wait-for`, so this chart version
+**requires an app image that contains those subcommands** (the release that includes
+app PR #4081, MNS-1549). Older images fail the probes (worker/ICES restart loops) and
+the MCP init container. Worker and ICES now expose a `health` container port (8081,
+`/healthz` and `/readyz`). Deploy the new app image first.
+
 ## Uninstalling
 
 ```bash
