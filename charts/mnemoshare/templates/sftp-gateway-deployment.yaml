@@ -35,11 +35,9 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      automountServiceAccountToken: false
       securityContext:
-        fsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
       - name: sftp-gateway
         image: "{{ .Values.sftpGateway.image.repository | default .Values.image.repository }}:{{ .Values.sftpGateway.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
@@ -138,10 +136,7 @@ spec:
         resources:
           {{- toYaml .Values.sftpGateway.resources | nindent 10 }}
         securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop: ["ALL"]
+          {{- toYaml .Values.securityContext | nindent 12 }}
       volumes:
       - name: host-key
         secret:

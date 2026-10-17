@@ -36,6 +36,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -52,6 +53,7 @@ spec:
         # (default: "*"; "background,messaging" on db2) — see the FILTERED_PROCESS env below.
         command: ["/usr/local/bin/worker"]
         env:
+        {{- include "mnemoshare.vault.k8sTokenEnv" . | nindent 8 }}
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
           value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
@@ -302,6 +304,7 @@ spec:
           {{- toYaml .Values.workflowWorker.resources | nindent 12 }}
         {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled (include "mnemoshare.keyguard.enabled" .) }}
         volumeMounts:
+        {{- include "mnemoshare.vault.k8sTokenMount" . | nindent 8 }}
         {{- if .Values.diskBuffer.enabled }}
         - name: disk-buffer
           mountPath: /mnt/disk-buffer
@@ -336,6 +339,7 @@ spec:
       {{- end }}
       {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled (include "mnemoshare.keyguard.enabled" .) }}
       volumes:
+      {{- include "mnemoshare.vault.k8sTokenVolume" . | nindent 6 }}
       {{- if .Values.workflowWorker.tmpVolume.enabled }}
       - name: tmp
         emptyDir:
