@@ -815,7 +815,7 @@ Worker/ICES probes and the MCP init container no longer use `/bin/sh`, `pgrep` o
 They call `<executable> healthcheck` and `<api executable> wait-for`, so this chart
 version **requires an app image whose binaries contain those subcommands** (MNS-1549,
 app PR #4081 and its 1.x port). Older images fail the probes (restart loops) and the MCP
-init container. Worker and ICES now expose a `health` container port (8081, `/healthz`
+init container. Worker and ICES now expose a `health` container port (8082, `/healthz`
 and `/readyz`). The format-migration and migration-operation Jobs still use a shell.
 
 ## Uninstalling

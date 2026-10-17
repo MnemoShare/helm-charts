@@ -61,6 +61,9 @@ spec:
         command:
           {{- toYaml $icesCommand | nindent 10 }}
         env:
+        # 8081 is the KeyGuard sidecar's port in the same pod network namespace.
+        - name: HEALTH_ADDR
+          value: ":8082"
         {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
         {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # Tenant Identity — required for dispatch keyspace isolation.
@@ -264,7 +267,7 @@ spec:
         {{- end }}
         ports:
         - name: health
-          containerPort: 8081
+          containerPort: 8082
           protocol: TCP
         livenessProbe:
           exec:
@@ -275,7 +278,7 @@ spec:
           failureThreshold: 3
         readinessProbe:
           exec:
-            command: [{{ first $icesCommand | quote }}, "healthcheck", "--url", "http://127.0.0.1:8081/readyz"]
+            command: [{{ first $icesCommand | quote }}, "healthcheck", "--url", "http://127.0.0.1:8082/readyz"]
           initialDelaySeconds: 10
           periodSeconds: 15
           timeoutSeconds: 5
