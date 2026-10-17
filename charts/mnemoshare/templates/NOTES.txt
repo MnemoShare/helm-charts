@@ -41,3 +41,18 @@ mTLS (HARDWARE KEY AUTHENTICATION)
   Verify your nginx-ingress controller service only exposes ports 80 and 443:
     kubectl get svc -n ingress-nginx ingress-nginx-controller
 {{- end }}
+
+{{- if .Values.networkPolicy.enabled }}
+
+NETWORK POLICIES
+----------------
+  Egress is default-deny with explicit ports per component (see EGRESS.md in the chart).
+  Upgrading from < 1.27.0: policies are now ON by default. Set networkPolicy.database.cidrs,
+  networkPolicy.redis.cidrs and networkPolicy.smtp.cidrs to narrow database/Redis/SMTP
+  destinations (unset = those ports only, any destination); add ports for workflow steps
+  via networkPolicy.workflowWorker.customerEgressPorts. Opt out: networkPolicy.enabled=false.
+  Renamed: networkPolicy.workflows.ports -> networkPolicy.workflows.customerEgressPorts.
+{{- else }}
+
+WARNING: networkPolicy.enabled=false - no pod-level network isolation is applied.
+{{- end }}

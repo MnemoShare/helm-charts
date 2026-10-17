@@ -74,7 +74,7 @@ spec:
   policyTypes:
     - Egress
   egress:
-    {{- include "mnemoshare.workloadEgressRules" . | nindent 4 }}
+    {{- include "mnemoshare.workloadEgressRules" (dict "root" . "component" "api") | nindent 4 }}
 {{- if and .Values.workflowWorker .Values.workflowWorker.enabled }}
 ---
 # Allow egress from the EXTERNAL workflow-worker pods (business_plus / enterprise).
@@ -105,7 +105,7 @@ spec:
   policyTypes:
     - Egress
   egress:
-    {{- include "mnemoshare.workloadEgressRules" . | nindent 4 }}
+    {{- include "mnemoshare.workloadEgressRules" (dict "root" . "component" "workflowWorker") | nindent 4 }}
 {{- end }}
 {{- if .Values.ices.enabled }}
 ---
@@ -130,25 +130,40 @@ spec:
   policyTypes:
     - Egress
   egress:
-    {{- include "mnemoshare.workloadEgressRules" . | nindent 4 }}
-    # Google Pub/Sub + Gmail API (external, 443). ICES-only: the shared
-    # workloadEgressRules must NOT carry this rule — it is included by the
-    # api/worker policies too, and those pods have no business reaching
-    # Pub/Sub or Gmail when ICES hosts mail monitoring.
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8       # RFC1918
-              - 172.16.0.0/12    # RFC1918
-              - 192.168.0.0/16   # RFC1918
-              - 169.254.0.0/16   # Cloud IMDS SSRF gate
-              - 100.64.0.0/10    # Tailscale CGNAT
-      ports:
-        - protocol: TCP
-          port: 443
+    {{- include "mnemoshare.workloadEgressRules" (dict "root" . "component" "ices") | nindent 4 }}
+    # Google Pub/Sub + Gmail API (ICES only; must not live in the shared rules)
+    {{- include "mnemoshare.np.rule" (dict "ports" (list 443) "public" true) | nindent 4 }}
 {{- end }}
 ---
+{{- if eq (include "mnemoshare.stepCAMode" .) "inCluster" }}
+# In-cluster Step-CA: reachable from this release's app pods only. Selected by
+# default-deny, so without this the API cannot sign certificates.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-step-ca
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: step-ca
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 9000
+  egress:
+    {{- include "mnemoshare.np.dns" . | nindent 4 }}
+---
+{{- end }}
 {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
 # ClamAV NetworkPolicy - only allow traffic from MnemoShare pods
 apiVersion: networking.k8s.io/v1
@@ -412,18 +427,8 @@ spec:
             matchLabels:
               {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
   egress:
-    # DNS resolution (kube-dns + MX lookups for upstream relay)
-    - to:
-        - namespaceSelector: {}
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-    # MnemoShare API (gateway-to-API: delivery-status, audit)
+    {{- include "mnemoshare.np.dns" . | nindent 4 }}
+    # MnemoShare API (delivery-status, audit)
     - to:
         - podSelector:
             matchLabels:
@@ -432,38 +437,15 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
-    # ClamAV ICAP (embedded) for attachment scanning
-    {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: clamav
-      ports:
-        - protocol: TCP
-          port: 1344
+    {{- include "mnemoshare.np.icap" . | nindent 4 }}
+    {{- include "mnemoshare.np.dlpServices" . | nindent 4 }}
+    {{- if or .Values.emailGateway.relay.db.uri .Values.emailGateway.relay.db.existingSecret }}
+    # Relay state database (RELAY_DB_URI)
+    {{- $nm := .Values.networkPolicy.mongodb }}
+    {{- include "mnemoshare.np.rule" (dict "ports" (list (include "mnemoshare.np.dbPort" .)) "cidrs" (include "mnemoshare.np.cidrs" (dict "cidr" $nm.cidr "cidrs" (.Values.networkPolicy.database.cidrs | default list)) | fromJsonArray) "anyDest" true) | nindent 4 }}
     {{- end }}
-    # Upstream SMTP relay (external). Excepts mirror the api-egress SMTP
-    # rule — RFC1918 + IMDS + Tailscale CGNAT.
-    {{- if .Values.networkPolicy.smtp.enabled }}
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8       # RFC1918
-              - 172.16.0.0/12    # RFC1918
-              - 192.168.0.0/16   # RFC1918
-              - 169.254.0.0/16   # Cloud IMDS SSRF gate
-              - 100.64.0.0/10    # Tailscale CGNAT
-      ports:
-        - protocol: TCP
-          port: 25
-        - protocol: TCP
-          port: 465
-        - protocol: TCP
-          port: 587
-        - protocol: TCP
-          port: 2525
-    {{- end }}
+    {{- include "mnemoshare.np.smtp" . | nindent 4 }}
+    {{- include "mnemoshare.np.customer" (dict "root" . "component" "emailGateway") | nindent 4 }}
 {{- end }}
 {{- if and .Values.inboundGateway .Values.inboundGateway.enabled }}
 ---
@@ -502,18 +484,8 @@ spec:
             matchLabels:
               {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
   egress:
-    # DNS resolution
-    - to:
-        - namespaceSelector: {}
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-    # MnemoShare API (gateway-to-API: inbound message upload, audit)
+    {{- include "mnemoshare.np.dns" . | nindent 4 }}
+    # MnemoShare API (inbound message upload, audit)
     - to:
         - podSelector:
             matchLabels:
@@ -522,50 +494,14 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
-    # ClamAV ICAP (embedded) for attachment scanning
-    {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: clamav
-      ports:
-        - protocol: TCP
-          port: 1344
+    {{- include "mnemoshare.np.database" . | nindent 4 }}
+    {{- include "mnemoshare.np.storage" . | nindent 4 }}
+    {{- include "mnemoshare.np.icap" . | nindent 4 }}
+    {{- include "mnemoshare.np.dlpServices" . | nindent 4 }}
+    {{- if .Values.inboundGateway.relayHost }}
+    # Post-scan relay (INBOUND_RELAY_HOST): in-cluster or external, SMTP ports only
+    {{- include "mnemoshare.np.rule" (dict "ports" (.Values.networkPolicy.smtp.ports | default (list 25 465 587 2525)) "anyDest" true) | nindent 4 }}
     {{- end }}
-    # In-cluster MinIO — same storage pre-flight as the external-S3 rule
-    # below; without it the gateway crashes on boot when minio.enabled=true.
-    {{- if .Values.minio.enabled }}
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: minio
-      ports:
-        - protocol: TCP
-          port: 9000
-    {{- end }}
-    # Public HTTPS — inbound-gateway writes raw .eml messages to S3 and on
-    # startup verifies the bucket exists. Without this rule the gateway
-    # crashes on boot with "failed to create default storage: i/o timeout".
-    # Cached connections on pre-existing pods can mask this gap — see
-    # mnemoshare-saas-infra/manifests/demo/LESSONS_LEARNED.md.
-    {{- if .Values.networkPolicy.s3.enabled }}
-    - to:
-        {{- if .Values.networkPolicy.s3.cidr }}
-        - ipBlock:
-            cidr: {{ .Values.networkPolicy.s3.cidr }}
-        {{- else }}
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8       # RFC1918
-              - 172.16.0.0/12    # RFC1918
-              - 192.168.0.0/16   # RFC1918
-              - 169.254.0.0/16   # Cloud IMDS SSRF gate
-              - 100.64.0.0/10    # Tailscale CGNAT
-        {{- end }}
-      ports:
-        - protocol: TCP
-          port: 443
-    {{- end }}
+    {{- include "mnemoshare.np.customer" (dict "root" . "component" "inboundGateway") | nindent 4 }}
 {{- end }}
 {{- end }}
