@@ -61,8 +61,9 @@ formatMigrations:
   backoffLimit: 1
   activeDeadlineSeconds: 1800
   networkPolicy:
-    # Required when chart-level networkPolicy.enabled=true. CIDRs must match
-    # the CNI's observed destinations (service IP before DNAT or endpoint IP).
+    # Optional narrowing for the hook pods when networkPolicy.enabled=true. CIDRs
+    # must match the CNI's observed destinations (service IP before DNAT or
+    # endpoint IP). Empty: database port / Kubernetes API 443,6443 to any destination.
     databaseCIDRs: []
     databasePort: 0
     kubernetesApiTargets: []
@@ -952,6 +953,17 @@ siem:
 # or manage these CA systems. You must have an existing deployment.
 # ============================================================================
 
+# Vault "kubernetes" auth for the app (Vault Transit KMS / PKI). App pods mount no
+# default ServiceAccount token; when enabled, a short-lived audience-bound token
+# is projected on api and workflow-worker pods and VAULT_K8S_TOKEN_PATH points
+# the app at it. Vault's auth role must bind this audience.
+vault:
+  kubernetesAuth:
+    enabled: false
+    audience: "vault"
+    expirationSeconds: 3600
+    tokenPath: /var/run/secrets/mnemoshare/vault/token
+
 # HashiCorp Vault PKI - External CA Integration
 # https://developer.hashicorp.com/vault/docs/secrets/pki
 vaultPKI:
@@ -1440,8 +1452,7 @@ ices:
   # required for scanning to work.
   tmpVolume:
     enabled: true
-    # Optional sizeLimit on the tmpfs-backed emptyDir.
-    sizeLimit: ""
+    sizeLimit: "1Gi"
 
   # Resource requests/limits.
   resources:
@@ -1829,16 +1840,70 @@ inboundGateway:
 # Restricts pod-to-pod communication using Kubernetes NetworkPolicies.
 # Requires a CNI plugin that supports NetworkPolicy (Calico, Cilium, etc.)
 networkPolicy:
-  # Enable/disable network policies.
+  # Enable/disable network policies. ON by default: a protection that ships
+  # off protects nothing. This chart ships a default-deny plus one egress policy
+  # per component (api, workflow-worker, ices, mcp, email-gateway,
+  # inbound-gateway, sftp-gateway, step-ca, clamav, redis); every egress rule
+  # lists explicit ports and none allows "any port". Requires a CNI that
+  # enforces networking.k8s.io/v1 NetworkPolicy (Calico, Cilium, EKS/GKE/AKS/
+  # DOKS network-policy add-ons). Per-component destinations: EGRESS.md.
   #
-  # MSC-489 / HITRUST r2: this chart ships a complete default-deny + per-component
-  # allow set (API ingress/egress, worker, redis, clamav, mcp, sftp-gateway,
-  # email-gateway, step-ca). It defaults OFF so installs on clusters without a
-  # NetworkPolicy-enforcing CNI aren't given a false sense of isolation, and to
-  # avoid breaking connectivity before an operator validates the allow set on
-  # their CNI. For a regulated/HITRUST posture, set this to `true` after
-  # confirming pod-to-pod + egress connectivity on your cluster.
-  enabled: false
+  # Opt out (not recommended): networkPolicy.enabled=false. Upgrade note: with no
+  # CIDR set, database/Redis egress is allowed to ANY destination on the DB/Redis
+  # port only; set the cidrs below to narrow it.
+  enabled: true
+
+  # Customer-facing destinations the workers dial (SFTP/FTP connectors, webhooks,
+  # SIEM, LLM). Ports are per component below; peers are shared here. Private
+  # ranges are never reachable via publicInternet: list them in `cidrs` (e.g. a
+  # partner SFTP server behind a VPN).
+  customerEgress:
+    publicInternet: true
+    cidrs: []
+
+  # Customer-facing TCP ports by component. Add ports for steps you use
+  # (rsync 873, database_connect 5432/3306/1433/1521/50000/27017, AS2 4080, ...).
+  # When workflowWorker.enabled=false the API hosts the engines and also gets the
+  # workflowWorker list.
+  # customerEgressCIDRs adds peers (e.g. private partner ranges) for that component
+  # on top of customerEgress.cidrs.
+  api:
+    customerEgressPorts: [443]
+    customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
+  workflowWorker:
+    customerEgressPorts: [21, 22, 443, 990]
+    customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
+  ices:
+    customerEgressPorts: [443]
+    customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
+  emailGateway:
+    customerEgressPorts: [443]
+    customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
+  inboundGateway:
+    customerEgressPorts: [443]
+    customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
+
+  # Database egress. Port derives from database.driver (mongodb 27017, postgres
+  # 5432, mysql 3306, mssql 1433, oracle 1521, db2 50000) unless `port` is set.
+  # With no cidrs the port is allowed to any destination.
+  database:
+    enabled: true
+    port: 0
+    cidrs: []
+
+  # External Redis/Sentinel destination (no cidrs = those ports, any destination).
+  redis:
+    cidrs: []
 
   # Namespace where ingress controller runs (for allowing ingress traffic)
   ingressNamespace: "ingress-nginx"
@@ -1864,29 +1929,31 @@ networkPolicy:
   #           port: 8080
   extraApiIngress: []
 
-  # MongoDB access configuration
+  # Legacy database knobs (kept for upgrades; prefer networkPolicy.database).
   mongodb:
-    # Enable egress to MongoDB
+    # Set false to drop database egress entirely (e.g. sidecar-proxied DB)
     enabled: true
-    # MongoDB port
     port: 27017
-    # CIDR block for MongoDB (leave empty to allow all, set for external MongoDB)
-    # Example: "10.0.0.0/8" for internal, "0.0.0.0/0" for external
+    # Single CIDR; empty = database port to any destination
     cidr: ""
 
   # S3 access configuration (when not using in-cluster MinIO)
   s3:
     # Enable egress to S3
     enabled: true
-    # CIDR block for S3 (leave empty to allow public internet for AWS/GCS)
+    # CIDR for S3 / a private VPC endpoint (empty = public internet, ports below)
     cidr: ""
+    cidrs: []
+    # 443 for AWS/GCS/Spaces; 9000 for self-hosted MinIO on a public address
+    ports: [443, 9000]
 
   # License server access
   licenseServer:
     # Enable egress to license server
     enabled: true
-    # CIDR block (leave empty to allow public internet)
+    # CIDR block (leave empty to allow public internet on 443)
     cidr: ""
+    cidrs: []
     # In-cluster license server reachability (optional). Leave empty on a
     # self-hosted install that validates against the public license endpoint
     # (the cidr/443 rule above already covers that). Set to the namespace of
@@ -1945,6 +2012,7 @@ networkPolicy:
   # empty namespace degrades to every namespace on :1344 (fine single-tenant).
   icap:
     namespace: ""
+    cidrs: []
 
   # OAuth/SSO providers access
   oauth:
@@ -1953,27 +2021,27 @@ networkPolicy:
 
   # External SMTP relay access (Gmail, Office365, SES, custom mail servers, etc.)
   smtp:
-    # Enable egress to external SMTP servers on ports 25, 465, 587, 2525.
+    # Enable egress to external SMTP servers on `ports`.
     # Required if you configure outbound email via Settings → Email → SMTP/ESMTP.
     enabled: true
+    ports: [25, 465, 587, 2525]
+    # Extra private relays (public internet is always included)
+    cidrs: []
 
-  # Workflow engine egress — broad outbound (RFC1918-deny only)
+  # DEPRECATED. Formerly opened every TCP port to the public internet. It no
+  # longer does: when true it appends `customerEgressPorts` to the api/workflowWorker customer
+  # lists. Prefer networkPolicy.<component>.customerEgressPorts.
   workflows:
-    # Enable broad outbound TCP egress (0.0.0.0/0 minus RFC1918) for workflow
-    # executors that dial arbitrary customer-supplied host:port: call_api,
-    # webhook, database_connect (PostgreSQL/MySQL/MSSQL/Oracle/MongoDB/DB2),
-    # sftp_*, ftps_*, rsync, as2_send, swift_*, ebics_*, oftp2, llm_prompt, etc.
-    #
-    # Off by default. Enable when the tenant has the Workflows feature licensed
-    # and you want the iPaaS-style egress posture (broad outbound, RFC1918-only
-    # deny). The substantive boundary in this mode lives at L7+ (DLP, audit
-    # chain, anomaly detection) — see MnemoCompliance MNC-1 (SC-7 Boundary
-    # Protection control narrative) for the rationale and compensating controls.
-    #
-    # If you keep this off but enable workflows in the application, customer-
-    # authored steps that dial outside the narrow port allowlist (443, SMTP)
-    # will fail at the network layer.
     enabled: false
+    # FTP/FTPS passive mode: data connections use server-chosen high ports, which a
+    # fixed list cannot cover. Opt in with the FTP servers' CIDRs (required; there
+    # is no public-any fallback). Rendered with endPort (Kubernetes >= 1.25) on
+    # api (when it hosts the engines) and workflow-worker.
+    ftpPassive:
+      enabled: false
+      cidrs: []
+      portRange: {start: 1024, end: 65535}
+    customerEgressPorts: [21, 22, 80, 443, 873, 990, 1433, 1521, 3306, 4080, 5432, 27017, 50000]
 
 # ============================================================================
 # MCP Admin Server - AI-Assisted Configuration Management
