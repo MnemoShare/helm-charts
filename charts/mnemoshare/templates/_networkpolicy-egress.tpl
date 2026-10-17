@@ -36,7 +36,7 @@ no `to` (any destination, restricted to ports). Renders nothing without ports.
   to:
     {{- range $cidrs }}
     - ipBlock:
-        cidr: {{ . }}
+        cidr: {{ . | quote }}
     {{- end }}
     {{- if .public }}
     {{- include "mnemoshare.np.publicPeer" . | nindent 4 }}
@@ -119,7 +119,7 @@ no `to` (any destination, restricted to ports). Renders nothing without ports.
     {{- end }}
     {{- range ((.Values.networkPolicy.icap | default dict).cidrs | default list) }}
     - ipBlock:
-        cidr: {{ . }}
+        cidr: {{ . | quote }}
     {{- end }}
   ports:
     - protocol: TCP
@@ -369,7 +369,7 @@ args: root, component (api|workflowWorker|ices|emailGateway|inboundGateway)
   to:
     {{- range $ftp.cidrs }}
     - ipBlock:
-        cidr: {{ . }}
+        cidr: {{ . | quote }}
     {{- end }}
 {{- end }}
 {{- end -}}
