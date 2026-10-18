@@ -47,6 +47,9 @@ spec:
         # own FILTERED_PROCESS internally, so none is set on this pod.
         command: ["/usr/local/bin/ices"]
         env:
+        # 8081 is the KeyGuard sidecar's port in the same pod network namespace.
+        - name: HEALTH_ADDR
+          value: ":8082"
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
           value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
@@ -254,26 +257,20 @@ spec:
         {{- include "mnemoshare.keyguard.volumeMountsMain" . | nindent 8 }}
         {{- end }}
         {{- end }}
+        ports:
+        - name: health
+          containerPort: 8082
+          protocol: TCP
         livenessProbe:
           exec:
-            command:
-            - /bin/sh
-            - -c
-            # Anchored full-cmdline match: bare `pgrep ices` matches the probe's
-            # own `/bin/sh -c ...` cmdline (contains "ices") → false-positive
-            # even when the binary is dead. `-f` + ^...$ works on both procps
-            # and busybox pgrep and cannot match the probe shell.
-            - "pgrep -f '^/usr/local/bin/ices$'"
+            command: ["/usr/local/bin/ices", "healthcheck"]
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           exec:
-            command:
-            - /bin/sh
-            - -c
-            - "pgrep -f '^/usr/local/bin/ices$'"
+            command: ["/usr/local/bin/ices", "healthcheck", "--url", "http://127.0.0.1:8082/readyz"]
           initialDelaySeconds: 10
           periodSeconds: 15
           timeoutSeconds: 5
