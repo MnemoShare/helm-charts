@@ -1,18 +1,4 @@
 {{- /*
-Validation (MNS-1159): apiFilteredProcess is the worker-less escape hatch.
-Setting it while the workflow-worker is enabled makes BOTH pods consume the
-same dispatch events (duplicate scans, scan_status races) — fail at template
-time; "none" is allowed only alongside an enabled worker. On a worker-less
-install "none" would leave ZERO engines running (uploads stuck at
-scan_status=pending forever), so that combination fails too.
-*/}}
-{{- if and .Values.workflowWorker.enabled .Values.apiFilteredProcess (ne .Values.apiFilteredProcess "none") }}
-{{- fail "apiFilteredProcess must be empty (or \"none\") when workflowWorker.enabled=true: the worker already hosts every engine; hosting engines on the API pod too double-processes dispatch events. Narrow workflowWorker.filteredProcess instead if you need a custom engine split." }}
-{{- end }}
-{{- if and (not .Values.workflowWorker.enabled) (eq (.Values.apiFilteredProcess | default "") "none") }}
-{{- fail "apiFilteredProcess=none is only safe when workflowWorker.enabled=true. With no external worker, none leaves zero engines running — files stall at scan_status=pending forever. Omit apiFilteredProcess to use the derived default." }}
-{{- end }}
-{{- /*
 Validation: when stepCA.mode=external (new tri-state, no legacy fallback)
 and mTLS is enabled on the api, the app needs a concrete CA URL to reach
 the external Step-CA. Without it, neither branch of the CA_SMALLSTEP_URL
@@ -36,8 +22,8 @@ metadata:
     app.kubernetes.io/component: api
     mnemoshare.io/database-writer: "true"
 spec:
-  {{- if not .Values.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
+  {{- if or (not .Values.autoscaling.enabled) (eq (include "mnemoshare.migrationOperationDown" .) "true") }}
+  replicas: {{ if eq (include "mnemoshare.migrationOperationDown" .) "true" }}0{{ else }}{{ .Values.replicaCount }}{{ end }}
   {{- end }}
   selector:
     matchLabels:
@@ -45,8 +31,9 @@ spec:
       app.kubernetes.io/component: api
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        mnemoshare.com/deployment-executable: {{ include "mnemoshare.apiExecutable" . }}
+      {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
@@ -59,14 +46,18 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
       - name: {{ .Chart.Name }}
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: {{ include "mnemoshare.applicationImage" (dict "root" . "name" "api") | quote }}
+        image: {{ include "mnemoshare.writerImage" (dict "root" . "name" "api") | quote }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
+        {{- if not (include "mnemoshare.apiEmbeddedWorkers" .) }}
+        command: [{{ include "mnemoshare.apiExecutable" . | quote }}]
+        {{- end }}
         ports:
         - name: http
           containerPort: {{ .Values.service.targetPort }}
@@ -77,6 +68,7 @@ spec:
           protocol: TCP
         {{- end }}
         env:
+        {{- include "mnemoshare.vault.k8sTokenEnv" . | nindent 8 }}
         # Tenant Identity — required for dispatch keyspace isolation (MNI-26 onwards).
         # cmd/api fatals at boot if CUSTOMER_ID is empty when a dispatch backend that
         # needs tenant scoping (currently the Mongo backend) is constructed. The
@@ -86,44 +78,13 @@ spec:
         # backend is added or activated.
         - name: CUSTOMER_ID
           value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
-        # Engine hosting on the API pod (MNS-1159). With no external
-        # workflow-worker the API pod IS the worker: it must host every
-        # engine — background (scans; MSC-441), messaging (the workflows
-        # engine executes IN-PROCESS here, using the database-backed inproc
-        # dispatch queue when Redis is absent), and kmsrotation (Settings
-        # rotate/rewrap + scheduled rotation). So:
-        #   - workflow-worker enabled -> it hosts every engine ("*"); the API
-        #     stays "none" (pure HTTP) to avoid double-processing.
-        #   - no worker (the chart default) -> the API hosts "*" itself.
-        #     db2 exception: on app releases to date the kmsrotation engine
-        #     refuses that backend at boot even under "*", so db2 gets
-        #     "background,messaging". WARNING: an apiFilteredProcess override
-        #     of "*" (or any list naming "kmsrotation") on db2 crash-loops
-        #     those app versions — only widen on an app release that lifts
-        #     the db2 rotation restriction (MNS-1159).
-        # Override via .Values.apiFilteredProcess (guarded: rejected alongside
-        # an enabled worker, and "none" is rejected on worker-less installs).
-        - name: FILTERED_PROCESS
-        {{- if .Values.apiFilteredProcess }}
-          value: {{ .Values.apiFilteredProcess | quote }}
-        {{- else if .Values.workflowWorker.enabled }}
-          value: "none"
-        {{- else if eq .Values.database.driver "db2" }}
-          value: "background,messaging"
-        {{- else }}
-          value: "*"
-        {{- end }}
-        {{- if .Values.ices.enabled }}
-        # Standalone ICES hosts mail-monitoring; suppress the embedded
-        # mail-monitoring engine here so it is registered exactly once.
-        - name: ICES_STANDALONE
-          value: "true"
-        {{- end }}
-        {{- if not .Values.ices.enabled }}
-        # No standalone ICES: the API pod's embedded mail-monitoring engine
-        # needs the webhook/interval env when mailMonitoring.enabled.
-        {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
-        {{- end }}
+        # Helm releases are never the local development posture. Keep this
+        # explicit so the application cannot activate development-only key
+        # behavior merely because ENVIRONMENT was omitted.
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
+        {{- /* Mail-monitoring env is owned by cloud-worker: rendered only while this
+               container's executable hosts it (embedded workers), never in API-only mode. */}}
+        {{- include "mnemoshare.mailMonitoringEnvFor" (dict "root" . "executable" (include "mnemoshare.apiExecutable" .)) | nindent 8 }}
         # Database Configuration (v0.6.0+ supports MongoDB, PostgreSQL, SQLite)
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}
@@ -196,11 +157,6 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.jwt }}{{ .Values.existingSecrets.jwt }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: jwt-ec-private-key
-        # MSC-493: the app reads JWT_EXPIRY_HOURS (integer hours); the old
-        # JWT_EXPIRATION ("24h") was never read by the backend, so token
-        # lifetime silently fell back to the 1-year code default.
-        - name: JWT_EXPIRY_HOURS
-          value: {{ .Values.jwt.expiryHours | quote }}
         {{- if ne (include "mnemoshare.redisMode" .) "disabled" }}
         # Redis - for workflow task enqueueing (manual triggers)
         # Note: REDIS_PASSWORD must be defined BEFORE REDIS_URL for $(REDIS_PASSWORD) substitution to work
@@ -271,31 +227,7 @@ spec:
               name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: old-encryption-key
         {{- end }}
-        # License
-        - name: LICENSE_KEY
-          valueFrom:
-            secretKeyRef:
-              name: {{ if .Values.existingSecrets.license }}{{ .Values.existingSecrets.license }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
-              key: license-key
-        {{- if .Values.license.deploymentId }}
-        # Explicit deployment ID override (optional - infrastructure-based ID is recommended)
-        - name: DEPLOYMENT_ID
-          value: {{ .Values.license.deploymentId | quote }}
-        {{- end }}
-        # Infrastructure-based deployment ID generation
-        # Combines namespace name + cluster UID for deterministic, portable deployment IDs
-        # - Same namespace + cluster = same deployment ID (allows pod scaling)
-        # - Different namespace or cluster = different deployment ID
-        # - Copying database doesn't copy deployment ID
-        - name: NAMESPACE_UID
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        {{- $kubeSystemNs := (lookup "v1" "Namespace" "" "kube-system") }}
-        {{- if $kubeSystemNs }}
-        - name: KUBE_SYSTEM_UID
-          value: {{ $kubeSystemNs.metadata.uid | quote }}
-        {{- end }}
+        {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
         # Pod identity for peer discovery (multi-replica license sync)
         - name: POD_IP
           valueFrom:
@@ -324,18 +256,10 @@ spec:
           value: {{ $mcpExternalUrl | quote }}
         {{- end }}
         {{- end }}
-        - name: MAX_FILE_SIZE
-          value: {{ .Values.files.maxSize | quote }}
-        - name: DEFAULT_LINK_EXPIRATION
-          value: {{ .Values.files.defaultLinkExpiration | quote }}
         {{- if .Values.cors.allowedOrigins }}
-        - name: CORS_ALLOWED_ORIGINS
+        - name: CORS_ORIGINS
           value: {{ .Values.cors.allowedOrigins | quote }}
         {{- end }}
-        - name: RATE_LIMIT_REQUESTS
-          value: {{ .Values.rateLimit.requests | quote }}
-        - name: RATE_LIMIT_WINDOW
-          value: {{ .Values.rateLimit.window | quote }}
         # SendGrid (optional)
         {{- if or .Values.sendgrid.apiKey .Values.existingSecrets.sendgrid }}
         - name: SENDGRID_API_KEY
@@ -361,11 +285,6 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.turnstile }}{{ .Values.existingSecrets.turnstile }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: turnstile-secret-key
-        {{- end }}
-        # Session inactivity timeout (seconds before warning modal appears)
-        {{- if .Values.session }}
-        - name: INACTIVITY_TIMEOUT_SECONDS
-          value: {{ .Values.session.inactivityTimeoutSeconds | default 300 | quote }}
         {{- end }}
         # ClamAV ICAP endpoint
         {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
@@ -524,6 +443,7 @@ spec:
         resources:
           {{- toYaml .Values.resources | nindent 12 }}
         volumeMounts:
+        {{- include "mnemoshare.vault.k8sTokenMount" . | nindent 8 }}
         # Writable temp directory (required for readOnlyRootFilesystem)
         - name: tmp
           mountPath: /tmp
@@ -550,6 +470,7 @@ spec:
       {{- include "mnemoshare.keyguard.sidecarContainer" . | nindent 6 }}
       {{- end }}
       volumes:
+      {{- include "mnemoshare.vault.k8sTokenVolume" . | nindent 6 }}
       # Temporary directory for runtime files
       - name: tmp
         emptyDir:

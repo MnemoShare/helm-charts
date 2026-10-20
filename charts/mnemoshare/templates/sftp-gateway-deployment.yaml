@@ -1,6 +1,6 @@
 {{- if .Values.sftpGateway.enabled }}
-{{- include "mnemoshare.validateSFTPContractV2" . }}
-{{- $process := include "mnemoshare.deploymentProcessV2" (dict "root" . "id" "sftp-gateway") | fromJson }}
+{{- include "mnemoshare.validateSFTPContract" . }}
+{{- $process := include "mnemoshare.deploymentDefaultProfile" (dict "root" . "id" "sftp-gateway") | fromJson }}
 {{- $hostKeySecret := .Values.sftpGateway.hostKey.existingSecret -}}
 {{- $internalSecret := .Values.sftpGateway.internalApiSecret.existingSecret -}}
 apiVersion: apps/v1
@@ -37,15 +37,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      automountServiceAccountToken: false
       {{- if .Values.dnsConfig }}
       dnsConfig:
         {{- toYaml .Values.dnsConfig | nindent 8 }}
       {{- end }}
       securityContext:
-        fsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
       - name: sftp-gateway
         image: {{ include "mnemoshare.contractApplicationImage" . | quote }}
@@ -59,6 +57,7 @@ spec:
           containerPort: {{ $process.probe.port }}
           protocol: TCP
         env:
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         - name: SFTP_GATEWAY_LISTEN_ADDR
           value: ":2222"
         - name: SFTP_GATEWAY_HOST_KEY_PATH
@@ -134,10 +133,7 @@ spec:
         resources:
           {{- toYaml .Values.sftpGateway.resources | nindent 10 }}
         securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop: ["ALL"]
+          {{- toYaml .Values.securityContext | nindent 12 }}
       volumes:
       - name: host-key
         secret:

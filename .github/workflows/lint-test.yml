@@ -30,11 +30,31 @@ jobs:
         with:
           python-version: '3.x'
 
+      # The chart must be checked against the application-generated
+      # deployment contract, not a second hand-maintained env allowlist.
+      - name: Checkout application deployment contract
+        uses: actions/checkout@v4
+        with:
+          repository: MnemoShare/mnemoshare
+          # Keep the checker on the exact application revision represented by
+          # the vendored migration/deployment contracts in this chart.
+          ref: 7070157deb1a343f7d853e43a981485adf55f4ce
+          path: application
+          # The application repository is private; this workflow's GITHUB_TOKEN
+          # is scoped to helm-charts. Same org credential the application's
+          # publish-helm workflow uses for its cross-repository checkout.
+          token: ${{ secrets.GH_FULL_PAT }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: application/go.mod
+
       - name: Set up chart-testing
         uses: helm/chart-testing-action@v2.6.1
 
       - name: Install deployment contract schema validator
-        run: python -m pip install jsonschema==4.25.1
+        run: python -m pip install jsonschema==4.25.1 pyyaml==6.0.2
 
       - name: Add Helm repositories
         run: |
@@ -44,6 +64,10 @@ jobs:
 
       - name: Run chart-testing (lint)
         run: ct lint --target-branch main --charts charts/mnemoshare
+
+      - name: Egress and service-account-token render guards
+        if: github.event_name == 'pull_request'
+        run: hack/render-matrix.sh
 
       - name: Validate chart templates (default — sftpGateway disabled)
         if: github.event_name == 'pull_request'
@@ -62,9 +86,116 @@ jobs:
             --set encryption.key="test-encryption-key-exactly-32by" \
             --set license.key="test-license-key" \
             --set appUrl="https://test.example.com" \
+            --set cors.allowedOrigins="https://ci.example.com" \
             --set ingress.enabled=false \
-            > /dev/null
+            > /tmp/mnemoshare-rendered.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-rendered.yaml)
+          grep -q 'name: CORS_ORIGINS' /tmp/mnemoshare-rendered.yaml
+          if grep -q 'name: CORS_ALLOWED_ORIGINS' /tmp/mnemoshare-rendered.yaml; then
+            echo 'legacy CORS_ALLOWED_ORIGINS must not be rendered'
+            exit 1
+          fi
           echo "✓ Default-path chart templates rendered successfully"
+
+      - name: Validate dev-shaped chart render against application contract
+        if: github.event_name == 'pull_request'
+        run: |
+          # Keep one render close to the development topology: automatic
+          # migration orchestration, an enabled workflow worker, and an
+          # external Redis endpoint. This is intentionally separate from the
+          # minimal default render so a CI-only profile cannot hide dead env.
+          helm template dev charts/mnemoshare \
+            --set customerId=ci-test \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set mongodb.external.enabled=true \
+            --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
+            --set s3.bucket=test --set s3.accessKey=test --set s3.secretKey=test \
+            --set-string jwt.ecPrivateKey=test \
+            --set encryption.key=test-encryption-key-exactly-32by \
+            --set license.key=test --set appUrl=https://dev.example.com \
+            --set ingress.enabled=false \
+            --set formatMigrations.mode=automatic \
+            --set workflowWorker.enabled=true \
+            --set redis.mode=external \
+            --set redis.external.host=redis.example.com \
+            --set redis.external.password=test \
+            > /tmp/mnemoshare-dev-shaped.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-dev-shaped.yaml)
+          echo "✓ Dev-shaped chart render passed the application contract"
+
+      - name: Validate API-only chart render against application contract
+        if: github.event_name == 'pull_request'
+        run: |
+          # api.embeddedWorkers=false: the API container runs the API
+          # executable alone and the dedicated worker supervises every worker
+          # process. Both containers must carry only env their own executable
+          # owns, with the integration surface on each.
+          helm template apionly charts/mnemoshare \
+            --set customerId=ci-test \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set mongodb.external.enabled=true \
+            --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
+            --set s3.bucket=test --set s3.accessKey=test --set s3.secretKey=test \
+            --set-string jwt.ecPrivateKey=test \
+            --set encryption.key=test-encryption-key-exactly-32by \
+            --set license.key=test --set appUrl=https://dev.example.com \
+            --set ingress.enabled=false \
+            --set formatMigrations.mode=automatic \
+            --set api.embeddedWorkers=false \
+            --set workflowWorker.enabled=true \
+            --set 'workflowWorker.command[0]=/usr/local/bin/run-workers' \
+            --set redis.mode=external \
+            --set redis.external.host=redis.example.com \
+            --set redis.external.password=test \
+            --set richMedia.url=http://media.example.com \
+            --set dlp.tikaUrl=http://tika.example.com \
+            --set dlp.presidioUrl=http://presidio.example.com \
+            --set dlp.presidioApiKey=test \
+            --set dlp.aiEnabled=true \
+            > /tmp/mnemoshare-api-only.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-api-only.yaml)
+          echo "✓ API-only chart render passed the application contract"
+
+      - name: Validate cloud-worker pool render against application contract
+        if: github.event_name == 'pull_request'
+        run: |
+          # run-core-workers in the dedicated worker, cloud-worker only in the
+          # ices pool, mail-monitoring env on the pool alone, metrics listeners
+          # and the KEDA backlog trigger on both. Every container must carry
+          # only env its own executable owns.
+          helm template pool charts/mnemoshare \
+            --set customerId=ci-test \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set mongodb.external.enabled=true \
+            --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
+            --set s3.bucket=test --set s3.accessKey=test --set s3.secretKey=test \
+            --set-string jwt.ecPrivateKey=test \
+            --set encryption.key=test-encryption-key-exactly-32by \
+            --set license.key=test --set appUrl=https://dev.example.com \
+            --set ingress.enabled=false \
+            --set formatMigrations.mode=automatic \
+            --set api.embeddedWorkers=false \
+            --set workflowWorker.enabled=true \
+            --set 'workflowWorker.command[0]=/usr/local/bin/run-core-workers' \
+            --set workflowWorker.metrics.enabled=true \
+            --set workflowWorker.autoscaling.enabled=true \
+            --set workflowWorker.autoscaling.prometheus.serverAddress=http://prometheus.monitoring.svc:9090 \
+            --set ices.enabled=true \
+            --set ices.metrics.enabled=true \
+            --set ices.autoscaling.enabled=true \
+            --set ices.autoscaling.prometheus.serverAddress=http://prometheus.monitoring.svc:9090 \
+            --set mailMonitoring.enabled=true \
+            --set redis.mode=external \
+            --set redis.external.host=redis.example.com \
+            --set redis.external.password=test \
+            --set richMedia.url=http://media.example.com \
+            --set dlp.tikaUrl=http://tika.example.com \
+            --set dlp.presidioUrl=http://presidio.example.com \
+            --set dlp.presidioApiKey=test \
+            --set dlp.aiEnabled=true \
+            > /tmp/mnemoshare-pool.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-pool.yaml)
+          echo "✓ Cloud-worker pool render passed the application contract"
 
       - name: Validate format migration orchestration
         run: bash charts/mnemoshare/tests/format-migrations.sh
@@ -72,21 +203,116 @@ jobs:
       - name: Validate migration contract updater
         run: bash charts/mnemoshare/tests/update-migration-result-contract-test.sh
 
-      - name: Validate deployment contract v2 consumer
+      - name: Validate deployment contract v1 consumer
         run: bash charts/mnemoshare/tests/deployment-contract.sh
 
-      - name: Validate deployment contract v2 updater
+      - name: Validate deployment contract v1 updater
         run: bash charts/mnemoshare/tests/update-deployment-contract-test.sh
 
-      - name: Validate deployment contract v3 emailgateway consumer
-        run: bash charts/mnemoshare/tests/deployment-contract-v3.sh
+      - name: Validate deployment contract v1 profiled consumer
+        run: bash charts/mnemoshare/tests/deployment-contract-profiled.sh
 
-      - name: Validate deployment contract v3 updater
-        run: bash charts/mnemoshare/tests/update-deployment-contract-v3-test.sh
+      - name: Validate migration operation v1 consumer
+        run: bash charts/mnemoshare/tests/migration-operation.sh
+
+      # The pinned application commit only moves when the vendored contracts are
+      # re-pinned, and the application's dev/demo pipelines already publish an
+      # image for it built from the same Dockerfile and context, so pull that
+      # instead of recompiling (~15 min). Build only when no image exists.
+      - name: Provide application image for in-image migration execution
+        if: github.event_name == 'pull_request'
+        env:
+          GHCR_TOKEN: ${{ secrets.GH_FULL_PAT }}
+        run: |
+          set -euo pipefail
+          target=mnemoshare-chart-migration-ci:${GITHUB_SHA}
+          pinned=$(git -C application rev-parse HEAD)
+          if echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null; then
+            for tag in "dev-$pinned" "demo-$pinned"; do
+              if docker pull --quiet "ghcr.io/mnemoshare/mnemoshare:$tag"; then
+                docker tag "ghcr.io/mnemoshare/mnemoshare:$tag" "$target"
+                echo "Using prebuilt ghcr.io/mnemoshare/mnemoshare:$tag"
+                exit 0
+              fi
+            done
+            echo "::warning::No prebuilt application image for $pinned; building from source"
+          else
+            echo "::warning::GHCR login failed (expired GH_FULL_PAT or missing read:packages?); building from source"
+          fi
+          docker build --file application/Dockerfile --tag "$target" application
+
+      - name: Execute rendered migration Jobs inside application image
+        if: github.event_name == 'pull_request'
+        env:
+          MIGRATION_IMAGE: mnemoshare-chart-migration-ci:${{ github.sha }}
+        run: bash charts/mnemoshare/tests/migration-image-execution.sh
+
+      - name: Validate migration operation v1 updater
+        run: bash charts/mnemoshare/tests/update-migration-operation-test.sh
+
+      - name: Validate contract-gated optional renders
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          deployment=charts/mnemoshare/tests/contracts/deployment/v1
+          deployment_commit=$(sed -n 's/^commit=//p' "$deployment/UPSTREAM")
+          deployment_fingerprint=$(jq -r .fingerprint "$deployment/contract.json")
+          digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          helm template profiled charts/mnemoshare \
+            --set customerId=ci-test \
+            --set image.digest="$digest" \
+            --set deploymentContract.sourceCommit="$deployment_commit" \
+            --set deploymentContract.contractFingerprint="$deployment_fingerprint" \
+            --set deploymentContract.imageDigest="$digest" \
+            --set emailGateway.enabled=true \
+            --set emailGateway.mode=gateway \
+            > /tmp/mnemoshare-profiled.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-profiled.yaml)
+
+          # Relay mode with a relay database selects a profile that serves the
+          # email-relay-mongo external universe, so the automatic migration Job
+          # also plans, applies and verifies that universe.
+          helm template relay charts/mnemoshare \
+            --set customerId=ci-test \
+            --set image.digest="$digest" \
+            --set deploymentContract.sourceCommit="$deployment_commit" \
+            --set deploymentContract.contractFingerprint="$deployment_fingerprint" \
+            --set deploymentContract.imageDigest="$digest" \
+            --set emailGateway.enabled=true \
+            --set emailGateway.mode=relay \
+            --set emailGateway.relay.spoolSharedKey=spool \
+            --set emailGateway.relay.db.uri=mongodb://relay:27017/relay \
+            > /tmp/mnemoshare-relay.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-relay.yaml)
+
+          operation=charts/mnemoshare/tests/contracts/migration-operation/v1
+          operation_fingerprint=$(jq -r .fingerprint "$operation/contract.json")
+          # The checker requires the rendered migration image to equal the
+          # governed writer image. Automatic mode makes this CI fixture a
+          # target-image-consistent operation render; operator mode is
+          # intentionally tested by the chart consumer, where old writers
+          # may coexist with an externally supplied target image.
+          helm template operation charts/mnemoshare \
+            --set customerId=ci-test \
+            --set formatMigrations.mode=automatic \
+            --set image.digest="$digest" \
+            --set migrationOperation.enabled=true \
+            --set migrationOperation.phase=plan \
+            --set migrationOperation.contractFingerprint="$operation_fingerprint" \
+            --set migrationOperation.operationId=ci-operation \
+            --set migrationOperation.targetImage.repository=mnemoshare/mnemoshare \
+            --set migrationOperation.targetImage.digest="$digest" \
+            --set migrationOperation.transport.existingClaim=ci-migration \
+            --set migrationOperation.planDigest=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+            --set migrationOperation.verifiedPlanDigest=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+            > /tmp/mnemoshare-operation.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-operation.yaml)
 
       - name: Validate chart templates (sftpGateway enabled)
         if: github.event_name == 'pull_request'
         run: |
+          deployment_commit=$(sed -n 's/^commit=//p' charts/mnemoshare/tests/contracts/deployment/v1/UPSTREAM)
+          deployment_fingerprint=$(jq -er .fingerprint charts/mnemoshare/tests/contracts/deployment/v1/contract.json)
           # Render the sftpGateway-enabled path so the new deployment,
           # service, secret derivation, NetworkPolicy block, and the
           # encryption.key fail-fast guard are exercised in CI. Catches
@@ -96,9 +322,9 @@ jobs:
             --set customerId="ci-test" \
             --set formatMigrations.mode=disabled \
             --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-            --set deploymentContractV2.sourceCommit=aba43f7911586189a6e056bb1c9dcab7258b21d4 \
-            --set deploymentContractV2.contractFingerprint=e73dd2b91c7de17428fbfe1c4984758aa9a3894c6aadced0531f0ff591b67836 \
-            --set deploymentContractV2.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set deploymentContract.sourceCommit="$deployment_commit" \
+            --set deploymentContract.contractFingerprint="$deployment_fingerprint" \
+            --set deploymentContract.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \
@@ -117,6 +343,8 @@ jobs:
       - name: Validate chart templates (keyguard enabled)
         if: github.event_name == 'pull_request'
         run: |
+          deployment_commit=$(sed -n 's/^commit=//p' charts/mnemoshare/tests/contracts/deployment/v1/UPSTREAM)
+          deployment_fingerprint=$(jq -er .fingerprint charts/mnemoshare/tests/contracts/deployment/v1/contract.json)
           # Render the keyguard-enabled path so the federation-sidecar
           # injection, cert-manager Certificate, projected SA token
           # volume, AWS-SDK env vars, and the keyguard volumes block
@@ -125,6 +353,10 @@ jobs:
           helm template mnemoshare charts/mnemoshare \
             --set customerId="ci-test" \
             --set formatMigrations.mode=disabled \
+            --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set deploymentContract.sourceCommit="$deployment_commit" \
+            --set deploymentContract.contractFingerprint="$deployment_fingerprint" \
+            --set deploymentContract.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \
@@ -139,8 +371,9 @@ jobs:
             --set keyguard.idpEndpoint="https://idp.mnemoshare.com:8443" \
             --set keyguard.roleArn="arn:aws:iam::686592509310:role/ci-test" \
             --set keyguard.cert.issuerName="step-ca-cluster-issuer" \
-            > /dev/null
-          echo "✓ keyguard-enabled chart templates rendered successfully"
+            > /tmp/mnemoshare-keyguard-rendered.yaml
+          (cd application && go run ./tools/deploymentcheck -rendered /tmp/mnemoshare-keyguard-rendered.yaml)
+          echo "✓ keyguard-enabled chart templates rendered and checked"
 
       - name: Validate chart templates (keyguard + workflow-worker, both variants)
         if: github.event_name == 'pull_request'
@@ -429,9 +662,9 @@ jobs:
             --set customerId="ci-test" \
             --set formatMigrations.mode=disabled \
             --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-            --set deploymentContractV2.sourceCommit=aba43f7911586189a6e056bb1c9dcab7258b21d4 \
-            --set deploymentContractV2.contractFingerprint=e73dd2b91c7de17428fbfe1c4984758aa9a3894c6aadced0531f0ff591b67836 \
-            --set deploymentContractV2.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --set deploymentContract.sourceCommit=fbe8a553d041855f6763b19bf7c618e85e5c6402 \
+            --set deploymentContract.contractFingerprint=0e907f6cdb54423774cbe102acf0b73c440cebb0e82172eeed42371360009256 \
+            --set deploymentContract.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
             --set s3.bucket="test-bucket" \

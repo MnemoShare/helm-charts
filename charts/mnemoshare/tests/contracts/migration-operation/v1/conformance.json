@@ -1,0 +1,35 @@
+{
+  "contract": "mnemoshare.migration-operation.v1",
+  "fingerprintAlgorithm": "SHA-256 over RFC 8785 JCS of the contract with fingerprint set to the empty string",
+  "commands": [
+    "pre-1-reset-format-ledger --exclusive --confirm-before-first-1.0 --status \u003cstatus-file\u003e --termination-file \u003cstatus-dir\u003e/termination.json --termination-message-file \u003ctermination-message-file\u003e --max-inactivity 5m --absolute-deadline 6h",
+    "plan --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --output \u003cplan-file\u003e --result \u003cresult-file\u003e",
+    "apply --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e --exclusive --bootstrap-policy provision-untracked --status \u003cstatus-file\u003e --termination-file \u003cstatus-dir\u003e/termination.json --termination-message-file \u003ctermination-message-file\u003e",
+    "verify --contract embedded --expect-contract-fingerprint \u003ccontract-fingerprint\u003e --plan \u003cplan-file\u003e --expect-plan-digest \u003cplan-digest\u003e",
+    "status --file \u003cstatus-file\u003e --termination-file \u003cstatus-dir\u003e/termination.json --termination-message-file \u003ctermination-message-file\u003e --max-inactivity 5m --absolute-deadline 6h"
+  ],
+  "schemaOwnership": "exclusive-operation",
+  "bootstrapPolicy": "provision-untracked",
+  "governedProcessCount": 10,
+  "universeIds": [
+    "email-relay-mongo",
+    "primary"
+  ],
+  "deploymentContractBytes": {
+    "v1/README.md": "405f2d8e9902a40b6aee973f47c6869bba7cec9331b315c5d993b5d6c69f3288",
+    "v1/SHA256SUMS": "e44815d72712851727d796fec1d6a93570c7a303251bab1132a01a1791cfc132",
+    "v1/conformance.json": "f5d7fb3ee63b106b111c382bebc3c02c3e434b89ccd02b6e33072a3638dabf26",
+    "v1/contract.json": "253c7ac380c0ea6ec77c27a6f6c01c3ad6f3704fd05c397ef7601211d1dc39d1",
+    "v1/schema.json": "ed6b6dc8ac004b2e2caead9efb68ea5a8d1d0a2eda40d2c5439577a94f27f678"
+  },
+  "lifecycle": [
+    "plan-all",
+    "down",
+    "apply-verify-all",
+    "up"
+  ],
+  "planningModes": [
+    "ordinary",
+    "legacy-bootstrap"
+  ]
+}

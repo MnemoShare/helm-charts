@@ -1,6 +1,6 @@
 {{- if .Values.mcp.enabled }}
-{{- include "mnemoshare.validateMCPContractV2" . }}
-{{- $process := include "mnemoshare.deploymentProcessV2" (dict "root" . "id" "mcp-admin") | fromJson }}
+{{- include "mnemoshare.validateMCPContract" . }}
+{{- $process := include "mnemoshare.deploymentDefaultProfile" (dict "root" . "id" "mcp-admin") | fromJson }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,6 +25,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      automountServiceAccountToken: false
       {{- if .Values.dnsConfig }}
       dnsConfig:
         {{- toYaml .Values.dnsConfig | nindent 8 }}
@@ -85,6 +86,8 @@ spec:
           containerPort: {{ $process.probe.port }}
           protocol: TCP
         env:
+        {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # MCP API Key - Required for authentication
         - name: MNEMOSHARE_MCP_KEY
           valueFrom:

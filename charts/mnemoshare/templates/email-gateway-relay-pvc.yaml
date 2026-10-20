@@ -1,25 +1,23 @@
 {{- if .Values.emailGateway.enabled }}
-{{- $facts := include "mnemoshare.emailGatewayV3" . | fromJson }}
-{{- if gt (len ($facts.profile.durable_resources | default list)) 0 }}
-{{- if and .Values.emailGateway.relay.persistence.enabled (not .Values.emailGateway.relay.persistence.existingClaim) }}
+{{- $spool := include "mnemoshare.emailGatewaySpool" . | fromJson }}
+{{- if and $spool.persistence $spool.persistence.enabled (not $spool.persistence.existingClaim) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "mnemoshare.fullname" . }}-relay-spool
+  name: {{ include "mnemoshare.fullname" . }}-{{ $spool.claimSuffix }}
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: email-gateway
 spec:
   accessModes:
-    {{- range .Values.emailGateway.relay.persistence.accessModes }}
+    {{- range $spool.persistence.accessModes }}
     - {{ . }}
     {{- end }}
   resources:
     requests:
-      storage: {{ .Values.emailGateway.relay.persistence.size }}
-  {{- if .Values.emailGateway.relay.persistence.storageClass }}
-  storageClassName: {{ .Values.emailGateway.relay.persistence.storageClass | quote }}
+      storage: {{ $spool.persistence.size }}
+  {{- if $spool.persistence.storageClass }}
+  storageClassName: {{ $spool.persistence.storageClass | quote }}
   {{- end }}
-{{- end }}
 {{- end }}
 {{- end }}

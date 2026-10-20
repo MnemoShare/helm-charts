@@ -145,10 +145,15 @@ supplies the dedicated executable at this stable path (and `/bin/sh` for the
 decision-bound apply dispatch):
 
 ```text
-/usr/local/bin/mnemoshare-migrate plan --contract embedded --result /migration/result.json --output /migration/plan.json
-/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-plan-digest DIGEST [--exclusive]
-/usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-plan-digest DIGEST
+/usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint FINGERPRINT --result /migration/artifacts/result.json --output /migration/artifacts/plan.json
+/usr/local/bin/mnemoshare-migrate apply --contract embedded --expect-contract-fingerprint FINGERPRINT --expect-plan-digest DIGEST --exclusive --bootstrap-policy provision-untracked --status /run/mnemoshare-migration/status/status.json --termination-file /run/mnemoshare-migration/status/termination.json --termination-message-file /run/mnemoshare-migration/termination-message
+/usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint FINGERPRINT --expect-plan-digest DIGEST
 ```
+
+The vendored migration-operation v1 bundle is still unreleased and is refreshed
+in full from one exact application commit, including its README and schema.
+Once v1 is first released, every artifact freezes and grammar changes require
+a new contract version.
 
 The result must be exactly a `decision` plus a 64-character lowercase hexadecimal
 `planDigest`; extra fields, malformed digests, and unknown decisions fail closed
@@ -160,6 +165,10 @@ actions without that flag.
 After a maintenance drain, failures intentionally leave the application plane
 down so a retry can continue forward with the same target image. Failed hook
 Jobs are retained for diagnosis.
+Apply has no Kubernetes `activeDeadlineSeconds`: the application-owned progress
+watchdog must write its canonical terminal status before the container exits.
+`migrationOperation.uninstrumentedActiveDeadlineSeconds` separately bounds the
+plan and verify Jobs, which do not publish progress snapshots.
 
 Target identity, sticky decision, plan digest, and replica census are captured
 in an immutable, target-keyed ConfigMap before the first scale-down. Retries
@@ -178,8 +187,8 @@ writer replica census and scale-down set; they are still included in the
 post-drain pod-termination fence before migration begins. Divergent legacy MCP
 or SFTP image, command, transport, port, or logging values fail explicitly.
 
-The chart vendors deployment contract v2 from application commit
-`aba43f7911586189a6e056bb1c9dcab7258b21d4`. Because chart `appVersion` 0.18.11
+The chart vendors deployment contract v1 from application commit
+`fbe8a553d041855f6763b19bf7c618e85e5c6402`. Because chart `appVersion` 0.18.11
 predates that commit, enabling MCP or SFTP requires the exact `sourceCommit`,
 vendored `contractFingerprint`, and an explicit `imageDigest` equal to global
 `image.digest`. MCP/SFTP always render that repository@digest, even outside
@@ -267,6 +276,11 @@ upgrade to this chart before uninstalling.
 | `image.digest` | Immutable application/writer digest required by automatic format migrations | Pinned for the chart `appVersion` |
 | `ingress.enabled` | Enable ingress | `true` |
 | `autoscaling.enabled` | Enable HPA | `false` |
+| `api.embeddedWorkers` | API pod also runs the background, cloud and workflow workers. Set `false` to run the API alone when other workloads host them (see [API-only pods](#api-only-pods)) | `true` |
+| `workflowWorker.command` | Dedicated worker command: `run-workers` (all three workers) or `run-core-workers` (background + workflow, with cloud-worker in the [pool](#cloud-worker-pool)) | `workflow-worker` alone |
+| `ices.enabled` | Render the cloud-worker pool (see [Cloud-worker pool](#cloud-worker-pool)) | `false` |
+| `ices.metrics.enabled` / `workflowWorker.metrics.enabled` | Serve Prometheus metrics (claimable outbox backlog) from the pool / worker pods | `false` |
+| `ices.autoscaling.prometheus.serverAddress` / `workflowWorker.autoscaling.prometheus.serverAddress` | Prometheus server for the KEDA backlog trigger (empty keeps the legacy triggers) | `""` |
 | `sendgrid.apiKey` | SendGrid API key for emails | `""` |
 | `platformEmail.transport` | Tiered outbound email transport (`smtp` or `ses`; empty = auto) | `""` |
 | `platformEmail.fromAddress` | Tiered outbound email from-address (empty disables) | `""` |
@@ -339,6 +353,123 @@ sesAdmin:                     # SESv2 management for domain-authenticated sendin
 sesEvents:
   webhookToken: "xxx"         # enables /api/v1/webhooks/ses-events
 ```
+
+### API-only pods
+
+By default every API replica runs the image's `run-api-worker` supervisor: the
+API plus `background-worker`, `cloud-worker` and `workflow-worker`. An install
+that also enables the dedicated worker (`workflowWorker.enabled`) with the
+`run-workers` supervisor then runs the workers once per API replica and once
+more per worker replica.
+
+To run the workers only in the dedicated worker:
+
+```yaml
+api:
+  embeddedWorkers: false
+workflowWorker:
+  enabled: true
+  command: ["/usr/local/bin/run-workers"]
+```
+
+The API container then runs `/usr/local/bin/mnemoshare-api` directly. The
+render fails unless every one of `background-worker`, `cloud-worker` and
+`workflow-worker` keeps a resident host (an enabled workload with
+`replicas >= 1`, or KEDA `minReplicas >= 1`): the dedicated worker with a
+supervisor that hosts them, and/or the [cloud-worker pool](#cloud-worker-pool).
+The default worker command (`workflow-worker` alone) is refused because the
+background and cloud workers would have no host. Which processes a command
+hosts is read from the vendored deployment contract, never guessed.
+
+In this mode the dedicated worker receives the `richMedia`, `dlp` and `kms`
+integration env, and `PRESIDIO_ENABLED`, `PRESIDIO_API_KEY` and
+`DLP_AI_ENABLED` are rendered on the worker instead of the API pod. Values
+supplied through the API's `extraEnv` are not copied: repeat any the workers
+need under `workflowWorker.extraEnv`. Size the worker for the whole background
+load, since the API replicas no longer share it.
+
+### Cloud-worker pool
+
+The `ices` workload is the cloud-worker pool: a stateless Deployment of the
+application's `cloud-worker` executable (Google and Microsoft mail engines —
+Pub/Sub receiver, mailbox and integration polls, remediation, sweepers — plus
+the shared messaging engine). Replicas share work through `messaging_outbox`
+claims, per-mailbox leases and one Redis leader lock, so the pool scales
+horizontally. The engine set is fixed in the binary; nothing in the chart
+selects it.
+
+To run `cloud-worker` only in the pool, with background and workflow work on
+the StatefulSet:
+
+```yaml
+api:
+  embeddedWorkers: false
+workflowWorker:
+  enabled: true
+  command: ["/usr/local/bin/run-core-workers"]   # background-worker + workflow-worker
+ices:
+  enabled: true
+  replicas: 2
+```
+
+The render refuses to leave any worker process without a host: with
+`run-core-workers`, `ices.enabled=false` (or a pool with no resident replica)
+fails naming `cloud-worker`. `run-workers` remains valid with or without the
+pool; the pool then adds cloud-worker capacity beside the worker's own.
+
+Mail-monitoring settings (`mailMonitoring.*`: `GOOGLE_WEBHOOK_URL`,
+`MICROSOFT_WEBHOOK_URL`, `GOOGLE_INTERNAL_MAIL_INTERVAL_SEC`) are rendered on
+every container whose command hosts `cloud-worker` — the API pod while
+`api.embeddedWorkers` is on, a worker running `run-workers`, the pool — and
+on no other container, because the application contract check refuses env a
+container's executable does not own. `GOOGLE_INTERNAL_MAIL_WATCH_INTERVAL_SEC`
+and `GOOGLE_MAIL_ENROLLMENT_INTERVAL_SEC` are no longer rendered: no
+executable in the vendored contract reads them.
+
+#### Autoscaling the pool on outbox backlog
+
+Every pool replica's Pub/Sub receiver drains its subscription into
+`messaging_outbox` rows almost immediately, so the Pub/Sub subscription size
+under-reports the mail work waiting for the pool. The worker binaries expose
+the real signal when their metrics listener is on:
+
+- `mnemoshare_dispatch_backlog_rows{process,engine,kind}` — claimable rows
+  (pending, due, unclaimed or past the claim lease) per wire type the process
+  handles;
+- `mnemoshare_dispatch_backlog_oldest_age_seconds{process,engine}` — age of
+  the oldest such row.
+
+```yaml
+ices:
+  metrics:
+    enabled: true            # CLOUD_WORKER_METRICS_ADDR=:9091 + prometheus.io/* annotations
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    prometheus:
+      serverAddress: http://prometheus.monitoring.svc:9090
+      threshold: "20"        # claimable rows per replica
+    subscriptionName: ""     # optional secondary gcp-pubsub trigger
+```
+
+The default query is
+`sum(mnemoshare_dispatch_backlog_rows{namespace="<release namespace>",process="cloud-worker",engine=~"google|microsoft"})`;
+override `prometheus.query` when your Prometheus labels pods differently or
+to narrow it to specific wire types. Without `prometheus.serverAddress` the
+chart keeps the Pub/Sub trigger alone (today's behaviour). `minReplicas` must
+stay >= 1 and defaults to 2 so a rollout never leaves the pool without a
+receiver and leader. Load behaviour of the backlog trigger has not been
+measured; tune `threshold` against your own traffic.
+
+The same metric drives the dedicated worker through
+`workflowWorker.metrics.enabled` and
+`workflowWorker.autoscaling.prometheus.serverAddress` (default query
+`process="workflow-worker"`). Without it the worker keeps its legacy Redis
+list triggers, which on this application line never measure backlog: Redis
+carries only Asynq doorbells (one task per outbox row, consumed as soon as a
+worker listens) on keyspaced `<customerId>:dispatch-default` /
+`-high` queues, not the `asynq:{default,critical,low}:pending` lists the
+triggers watch.
 
 ### Custom Resource Limits
 
@@ -716,11 +847,11 @@ curl http://localhost:8080/health
 
 Commercial - License required to run. Get a license at https://mnemoshare.com/pricing
 
-### Email gateway deployment contract v3
+### Email gateway deployment contract v1
 
-Enabling `emailGateway` requires `deploymentContractV3.sourceCommit`,
-`deploymentContractV3.contractFingerprint`, and an explicit
-`deploymentContractV3.imageDigest` equal to the global `image.digest`. The
+Enabling `emailGateway` requires `deploymentContract.sourceCommit`,
+`deploymentContract.contractFingerprint`, and an explicit
+`deploymentContract.imageDigest` equal to the global `image.digest`. The
 chart checks the declared source and vendored contract identities and renders
 the gateway from that immutable image. It cannot prove that an image was built
 from the declared source without an external build-provenance attestation.
@@ -733,3 +864,16 @@ spool rotation key supplied inline or through
 also requires its MongoDB configuration and selects the token-bearing profile.
 When that profile owns the `email-relay-mongo` universe, automatic migrations
 plan it before drain and apply it exclusively in the existing migration hook.
+
+When the vendored contract declares the `gateway-spool` durable resource for the
+`gateway` profile, gateway mode also gets an encrypted file spool: a
+ReadWriteOnce PVC (`emailGateway.spool.persistence.*`, or
+`emailGateway.spool.persistence.existingClaim`) mounted at
+`emailGateway.spool.dir` (must equal the contract path,
+`/var/spool/mnemo-gateway`) and exported as `GATEWAY_SPOOL_DIR`. The
+Deployment uses the `Recreate` strategy and rendering fails unless
+`emailGateway.replicas` is exactly 1. The root filesystem stays read-only; the
+mount is the only writable path. Master-key rotation census participation is
+optional in gateway mode: set `emailGateway.relay.existingSpoolKeySecret` (or
+`spoolSharedKey`) and `emailGateway.relay.existingAdminKeySecret` (or
+`adminKey`), and add `RELAY_SPOOL_REGISTRY_URL` via `emailGateway.extraEnv`.

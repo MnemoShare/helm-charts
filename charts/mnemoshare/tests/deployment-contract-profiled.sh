@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-contract_dir=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v3
-expected_commit=0dd4f8eb13b9afb35a586f4ac7bc8618d25d7886
-expected_fingerprint=23dc67fb882b463fbc1bd05d0732d2a5aadc86b3070b228dd5f62cb204319cc6
+contract_dir=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v1
+expected_commit=$(sed -n 's/^commit=//p' "${contract_dir}/UPSTREAM")
+expected_fingerprint=$(jq -er .fingerprint "${contract_dir}/contract.json")
 
 test "$(sed -n 's/^repository=//p' "${contract_dir}/UPSTREAM")" = https://github.com/MnemoShare/mnemoshare.git
 test "$(sed -n 's/^commit=//p' "${contract_dir}/UPSTREAM")" = "$expected_commit"
-test "$(sed -n 's/^path=//p' "${contract_dir}/UPSTREAM")" = contracts/deployment/v3
+test "$(sed -n 's/^path=//p' "${contract_dir}/UPSTREAM")" = contracts/deployment/v1
 test "$(sed -n 's/^sha256sums=//p' "${contract_dir}/UPSTREAM")" = "$(sha256sum "${contract_dir}/SHA256SUMS" | cut -d' ' -f1)"
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
 jq -e --arg fingerprint "$expected_fingerprint" '
-  .provenance.schema == "mnemoshare.deployment-contract.v3"
+  .provenance.schema == "mnemoshare.deployment-contract.v1"
   and .fingerprint == $fingerprint
   and ([.executables[] | select(.id == "emailgateway" and .path == "/usr/local/bin/email-gateway") ] | length == 1)
 ' "${contract_dir}/contract.json" >/dev/null
@@ -83,16 +83,16 @@ digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 base=(
   --set customerId=test
   --set image.digest="$digest"
-  --set deploymentContractV3.sourceCommit="$expected_commit"
-  --set deploymentContractV3.contractFingerprint="$expected_fingerprint"
-  --set deploymentContractV3.imageDigest="$digest"
+  --set deploymentContract.sourceCommit="$expected_commit"
+  --set deploymentContract.contractFingerprint="$expected_fingerprint"
+  --set deploymentContract.imageDigest="$digest"
   --set emailGateway.enabled=true
 )
 
 render_profile() {
   local expected=$1; shift
   local render deployment
-  render=$(helm template contract-v3 "$chart_dir" "${base[@]}" "$@")
+  render=$(helm template contract-v4 "$chart_dir" "${base[@]}" "$@")
   deployment=$(awk '/# Source: mnemoshare\/templates\/email-gateway-deployment.yaml/{active=1;next} active&&/^---$/{exit} active{print}' <<<"$render")
   grep -Fq "mnemoshare.com/deployment-profile: \"${expected}\"" <<<"$deployment"
   grep -Fq "image: \"mnemoshare/mnemoshare@${digest}\"" <<<"$deployment"
@@ -107,8 +107,14 @@ render_profile() {
 }
 
 gateway=$(render_profile gateway --set emailGateway.mode=gateway)
+tagged=$(render_profile gateway --set emailGateway.mode=gateway --set image.tag=dev-abc)
+grep -Fq "image: \"mnemoshare/mnemoshare@${digest}\"" <<<"$tagged"
+api_deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1;next} active&&/^---$/{exit} active{print}' <<<"$gateway")
+grep -A1 -F 'name: ENVIRONMENT' <<<"$api_deployment" | grep -Fq 'value: "production"'
 ! grep -Fq -- '--universe email-relay-mongo' <<<"$gateway"
-grep -Fq 'type: RollingUpdate' <<<"$gateway"
+if ! jq -e '[.executables[] | select(.id == "emailgateway") | .profiles[] | select(.id == "gateway") | .durable_resources[]? | select(.id == "gateway-spool")] | length == 1' "${contract_dir}/contract.json" >/dev/null; then
+  grep -Fq 'type: RollingUpdate' <<<"$gateway"
+fi
 inbound=$(render_profile inbound-relay --set emailGateway.mode=inbound-relay --set emailGateway.relay.spoolSharedKey=spool)
 grep -Fq 'persistentVolumeClaim:' <<<"$inbound"
 grep -Fq 'type: Recreate' <<<"$inbound"
@@ -128,14 +134,37 @@ grep -Fq 'stored_external_digest="$(kubectl get "${state_resource}" -o jsonpath=
 grep -Fq 'replanned email-relay-mongo digest drifted from durable target plan' <<<"$tokens"
 grep -Fq 'fresh install with an empty writer census found existing application pods' <<<"$tokens"
 grep -Fq 'app.kubernetes.io/component in (api,workflow-worker,ices,inbound-gateway,email-gateway,sftp-gateway,mcp)' <<<"$tokens"
-primary_apply_line=$(grep -n -- '--expect-plan-digest "$(cat /migration/plan-digest)"' <<<"$tokens" | tail -1 | cut -d: -f1)
-relay_apply_line=$(grep -n -- '--universe email-relay-mongo --expect-plan-digest "$(cat /migration/email-relay-plan-digest)"' <<<"$tokens" | tail -1 | cut -d: -f1)
+primary_apply_line=$(grep -n -m1 -- '/usr/local/bin/mnemoshare-migrate apply' <<<"$tokens" | cut -d: -f1)
+relay_apply_line=$(grep -n -m1 -- '--universe email-relay-mongo --plan' <<<"$tokens" | cut -d: -f1)
+test -n "$primary_apply_line"
+test -n "$relay_apply_line"
 test "$primary_apply_line" -lt "$relay_apply_line"
+# Every rendered container that runs the migration CLI, for either universe,
+# carries the production posture the application deployment checker requires.
+for render in "$dkim" "$tokens"; do
+  python3 -c '
+import sys, yaml
+seen = 0
+for document in yaml.safe_load_all(sys.stdin):
+    spec = (document or {}).get("spec") or {}
+    template = spec.get("template") or ((spec.get("jobTemplate") or {}).get("spec") or {}).get("template") or {}
+    pod = template.get("spec") or {}
+    for container in (pod.get("initContainers") or []) + (pod.get("containers") or []):
+        if "/usr/local/bin/mnemoshare-migrate" not in " ".join((container.get("command") or []) + (container.get("args") or [])):
+            continue
+        seen += 1
+        environment = {item["name"]: item.get("value") for item in container.get("env") or []}
+        if environment.get("ENVIRONMENT") != "production":
+            sys.exit("%s/%s runs mnemoshare-migrate without ENVIRONMENT=production" % (document["metadata"]["name"], container["name"]))
+if not seen:
+    sys.exit("no mnemoshare-migrate container rendered")
+' <<<"$render"
+done
 
 expect_failure() {
 	local expected=$1 output
 	shift
-  if output=$(helm template bad-v3 "$chart_dir" "${base[@]}" "$@" 2>&1); then
+  if output=$(helm template bad-v4 "$chart_dir" "${base[@]}" "$@" 2>&1); then
     echo "invalid emailgateway configuration rendered: $*" >&2
     exit 1
   fi
@@ -152,13 +181,31 @@ expect_failure 'must include port 25' --set emailGateway.mode=gateway --set emai
 expect_failure 'duplicate port 25' --set emailGateway.mode=gateway --set-string 'emailGateway.listenPorts=25:plain\,25:starttls'
 expect_failure 'not canonically spelled as 25' --set emailGateway.mode=gateway --set-string 'emailGateway.listenPorts=025:plain\,25:starttls'
 expect_failure 'invalid listener' --set emailGateway.mode=gateway --set emailGateway.listenPorts=25:bogus
-expect_failure 'collides with deployment-contract v3 probe port 8080' --set emailGateway.mode=gateway --set-string 'emailGateway.listenPorts=25:plain\,8080:plain'
+expect_failure 'collides with deployment-contract v4 probe port 8080' --set emailGateway.mode=gateway --set-string 'emailGateway.listenPorts=25:plain\,8080:plain'
 expect_failure 'may not override' --set emailGateway.extraEnv[0].name=HEALTH_PORT --set emailGateway.extraEnv[0].value=9999
-expect_failure 'sourceCommit must equal' --set deploymentContractV3.sourceCommit=deadbeef
-expect_failure 'must equal the global image.digest' --set deploymentContractV3.imageDigest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-expect_failure 'sourceCommit must equal' --set deploymentContractV3.sourceCommit=
+expect_failure 'sourceCommit must equal' --set deploymentContract.sourceCommit=deadbeef
+expect_failure 'must equal the application image digest selected for this operation' --set deploymentContract.imageDigest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+derived_identity=$(render_profile gateway --set deploymentContract.sourceCommit=)
+grep -Eq 'image: "mnemoshare/mnemoshare@sha256:[a-f0-9]{64}"' <<<"$derived_identity"
 expect_failure 'image.digest pinned as sha256' --set image.digest=
 
+if jq -e '[.executables[] | select(.id == "emailgateway") | .profiles[] | select(.id == "gateway") | .durable_resources[]? | select(.id == "gateway-spool")] | length == 1' "${contract_dir}/contract.json" >/dev/null; then
+  gateway_deployment=$(awk '/# Source: mnemoshare\/templates\/email-gateway-deployment.yaml/{active=1;next} active&&/^---$/{exit} active{print}' <<<"$gateway")
+  grep -Fq 'type: Recreate' <<<"$gateway_deployment"
+  grep -Fq 'name: GATEWAY_SPOOL_DIR' <<<"$gateway_deployment"
+  grep -Fq 'mountPath: /var/spool/mnemo-gateway' <<<"$gateway_deployment"
+  grep -Fq 'claimName: contract-v4-mnemoshare-gateway-spool' <<<"$gateway_deployment"
+  grep -Fq 'name: contract-v4-mnemoshare-gateway-spool' <<<"$gateway"
+  ! grep -Fq 'name: RELAY_SPOOL_SHARED_KEY' <<<"$gateway_deployment"
+  gateway_census=$(render_profile gateway --set emailGateway.mode=gateway --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.adminKey=admin)
+  grep -Fq 'name: RELAY_SPOOL_SHARED_KEY' <<<"$gateway_census"
+  grep -Fq 'name: RELAY_ADMIN_KEY' <<<"$gateway_census"
+  gateway_claim=$(render_profile gateway --set emailGateway.mode=gateway --set emailGateway.spool.persistence.enabled=false --set emailGateway.spool.persistence.existingClaim=external-gateway-spool)
+  grep -Fq 'claimName: external-gateway-spool' <<<"$gateway_claim"
+  expect_failure 'replicas exactly 1' --set emailGateway.mode=gateway --set emailGateway.replicas=2
+  expect_failure 'durable path /var/spool/mnemo-gateway' --set emailGateway.mode=gateway --set emailGateway.spool.dir=/tmp/spool
+  expect_failure 'durable spool' --set emailGateway.mode=gateway --set emailGateway.spool.persistence.enabled=false
+fi
 existing_claim=$(render_profile inbound-relay --set emailGateway.mode=inbound-relay --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.persistence.enabled=false --set emailGateway.relay.persistence.existingClaim=external-spool)
 grep -Fq 'claimName: external-spool' <<<"$existing_claim"
 
@@ -175,7 +222,6 @@ grep -Fq 'name: snapshot-email-relay-mongo-credentials' <<<"$external_secret"
 grep -Fq 'source="relay-db"' <<<"$external_secret"
 grep -Fq 'email-relay-mongo credential snapshot identity mismatch' <<<"$external_secret"
 
-expect_failure 'networkPolicyCIDRs' --set emailGateway.mode=relay --set emailGateway.smtpAuthRequired=false --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.db.uri=mongodb://relay --set networkPolicy.enabled=true --set formatMigrations.networkPolicy.databaseCIDRs[0]=10.0.0.1/32 --set formatMigrations.networkPolicy.kubernetesApiTargets[0].cidr=10.0.0.2/32 --set formatMigrations.networkPolicy.kubernetesApiTargets[0].port=443
 no_store_networked=$(render_profile relay-no-store --set emailGateway.mode=relay --set emailGateway.smtpAuthRequired=false --set emailGateway.relay.spoolSharedKey=spool --set networkPolicy.enabled=true --set formatMigrations.networkPolicy.databaseCIDRs[0]=10.0.0.1/32 --set formatMigrations.networkPolicy.kubernetesApiTargets[0].cidr=10.0.0.2/32 --set formatMigrations.networkPolicy.kubernetesApiTargets[0].port=443)
 ! grep -Fq 'email-relay-mongo automatic migration requires' <<<"$no_store_networked"
 networked=$(render_profile relay-dkim --set emailGateway.mode=relay --set emailGateway.smtpAuthRequired=false --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.db.uri=mongodb://relay --set networkPolicy.enabled=true --set formatMigrations.networkPolicy.databaseCIDRs[0]=10.0.0.1/32 --set formatMigrations.networkPolicy.kubernetesApiTargets[0].cidr=10.0.0.2/32 --set formatMigrations.networkPolicy.kubernetesApiTargets[0].port=443 --set emailGateway.relay.db.networkPolicyCIDRs[0]=10.0.0.3/32 --set emailGateway.relay.db.networkPolicyPort=27019)
@@ -185,10 +231,10 @@ grep -Fq 'port: 8080' <<<"$networked"
 ! grep -Fq 'port: 8081' <<<"$networked"
 
 coexist=$(helm template coexist "$chart_dir" "${base[@]}" \
-  --set deploymentContractV2.sourceCommit=aba43f7911586189a6e056bb1c9dcab7258b21d4 \
-  --set deploymentContractV2.contractFingerprint=e73dd2b91c7de17428fbfe1c4984758aa9a3894c6aadced0531f0ff591b67836 \
-  --set deploymentContractV2.imageDigest="$digest" \
+  --set deploymentContract.sourceCommit="$expected_commit" \
+  --set deploymentContract.contractFingerprint="$expected_fingerprint" \
+  --set deploymentContract.imageDigest="$digest" \
   --set mcp.enabled=true --set mcp.apiKey.key=test)
 test "$(grep -Fc "image: \"mnemoshare/mnemoshare@${digest}\"" <<<"$coexist")" -ge 2
 
-echo 'deployment contract v3 consumer tests passed'
+echo 'deployment contract v1 consumer tests passed'

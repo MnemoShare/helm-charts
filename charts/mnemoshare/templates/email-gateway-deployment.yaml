@@ -25,25 +25,26 @@
 {{- if eq $port 25 }}{{- $hasSMTPPort = true }}{{- end }}
 {{- end }}
 {{- if not $hasSMTPPort }}{{- fail "emailGateway.listenPorts must include port 25 while the Service targets the fixed smtp port" }}{{- end }}
-{{- include "mnemoshare.requireDeploymentContractV3Identity" . }}
-{{- $facts := include "mnemoshare.emailGatewayV3" . | fromJson }}
-{{- if hasKey $seenListenPorts (printf "%d" ($facts.profile.probe.port | int)) }}{{- fail (printf "emailGateway.listenPorts SMTP listener collides with deployment-contract v3 probe port %d" ($facts.profile.probe.port | int)) }}{{- end }}
-{{- if and ($facts.profile.liveness_probe.port | int) (hasKey $seenListenPorts (printf "%d" ($facts.profile.liveness_probe.port | int))) }}{{- fail (printf "emailGateway.listenPorts SMTP listener collides with deployment-contract v3 liveness port %d" ($facts.profile.liveness_probe.port | int)) }}{{- end }}
-{{- include "mnemoshare.validateEmailGatewayExtraEnvV3" . }}
+{{- include "mnemoshare.requireDeploymentContractIdentity" . }}
+{{- $facts := include "mnemoshare.emailGateway" . | fromJson }}
+{{- if hasKey $seenListenPorts (printf "%d" ($facts.profile.probe.port | int)) }}{{- fail (printf "emailGateway.listenPorts SMTP listener collides with deployment-contract v4 probe port %d" ($facts.profile.probe.port | int)) }}{{- end }}
+{{- if and ($facts.profile.liveness_probe.port | int) (hasKey $seenListenPorts (printf "%d" ($facts.profile.liveness_probe.port | int))) }}{{- fail (printf "emailGateway.listenPorts SMTP listener collides with deployment-contract v4 liveness port %d" ($facts.profile.liveness_probe.port | int)) }}{{- end }}
+{{- include "mnemoshare.validateEmailGatewayExtraEnv" . }}
 {{- $durables := $facts.profile.durable_resources | default list }}
 {{- $durableProfile := gt (len $durables) 0 }}
 {{- $durable := dict }}
 {{- if $durableProfile }}
 {{- if ne (.Values.emailGateway.replicas | int) 1 }}{{- fail (printf "emailgateway durable profile %s requires replicas exactly 1 for exclusive spool ownership" $facts.profile.id) }}{{- end }}
-{{- if ne (len $durables) 1 }}{{- fail (printf "emailgateway profile %s declares an unsupported durable-resource count" $facts.profile.id) }}{{- end }}
-{{- $durable = first $durables }}
-{{- if or (ne $durable.id "relay-spool") (ne $durable.kind "filesystem") (ne $durable.path_environment "RELAY_SPOOL_DIR") }}{{- fail (printf "emailgateway profile %s declares an unsupported durable resource" $facts.profile.id) }}{{- end }}
-{{- if ne .Values.emailGateway.relay.spoolDir $durable.path }}{{- fail (printf "emailGateway.relay.spoolDir must equal deployment-contract v3 durable path %s" $durable.path) }}{{- end }}
+{{- $spool := include "mnemoshare.emailGatewaySpool" . | fromJson }}
+{{- $durable = $spool }}
+{{- if ne .Values.emailGateway.mode "gateway" }}{{- if eq $spool.section "spool" }}{{- fail "durable gateway-spool is only valid in gateway mode" }}{{- end }}{{- end }}
+{{- if ne $spool.dir $spool.path }}{{- fail (printf "emailGateway.%s must equal deployment-contract v4 durable path %s" $spool.dirKey $spool.path) }}{{- end }}
+{{- if and (not $spool.persistence.enabled) (not $spool.persistence.existingClaim) }}
+{{- fail (printf "emailGateway %s profiles require %s.persistence.enabled=true or %s.persistence.existingClaim for the durable spool" $spool.section $spool.section $spool.section) }}
 {{- end }}
-{{- if and $durableProfile (not .Values.emailGateway.relay.persistence.enabled) (not .Values.emailGateway.relay.persistence.existingClaim) }}
-{{- fail "emailGateway relay profiles require relay.persistence.enabled=true or relay.persistence.existingClaim for the durable spool" }}
 {{- end }}
-{{- $relayClaim := .Values.emailGateway.relay.persistence.existingClaim | default (printf "%s-relay-spool" (include "mnemoshare.fullname" .)) }}
+{{- $spoolClaim := "" }}
+{{- if $durableProfile }}{{- $spoolClaim = $durable.persistence.existingClaim | default (printf "%s-%s" (include "mnemoshare.fullname" .) $durable.claimSuffix) }}{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -54,7 +55,7 @@ metadata:
     {{- include "mnemoshare.labels" . | nindent 4 }}
     app.kubernetes.io/component: email-gateway
 spec:
-  replicas: {{ .Values.emailGateway.replicas }}
+  replicas: {{ if eq (include "mnemoshare.migrationOperationDown" .) "true" }}0{{ else }}{{ .Values.emailGateway.replicas }}{{ end }}
   strategy:
     type: {{ ternary "Recreate" "RollingUpdate" $durableProfile }}
   selector:
@@ -72,6 +73,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      automountServiceAccountToken: false
       securityContext:
         {{- $podSC := deepCopy .Values.podSecurityContext }}
         {{- if $hasLowPort }}
@@ -88,7 +90,7 @@ spec:
       - name: email-gateway
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: {{ include "mnemoshare.contractV3ApplicationImage" . | quote }}
+        image: {{ if and .Values.migrationOperation .Values.migrationOperation.enabled (eq .Values.migrationOperation.phase "up") }}{{ include "mnemoshare.writerImage" (dict "root" . "name" "email-gateway") | quote }}{{ else }}{{ include "mnemoshare.contractApplicationImage" . | quote }}{{ end }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command: [{{ $facts.executable.path | quote }}]
         ports:
@@ -99,6 +101,8 @@ spec:
           containerPort: {{ $facts.profile.probe.port }}
           protocol: TCP
         env:
+        {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         - name: GATEWAY_MODE
           value: {{ .Values.emailGateway.mode | quote }}
         {{- if $tlsSecret }}
@@ -288,9 +292,30 @@ spec:
           value: {{ .Values.emailGateway.relay.spoolSharedKey | quote }}
         {{- end }}
         {{- end }}
-        # Health port
-        - name: HEALTH_PORT
-          value: {{ $facts.profile.probe.port | quote }}
+        {{- if and $durableProfile (eq .Values.emailGateway.mode "gateway") }}
+        - name: GATEWAY_SPOOL_DIR
+          value: {{ $durable.path | quote }}
+        {{- if .Values.emailGateway.relay.existingAdminKeySecret }}
+        - name: RELAY_ADMIN_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.relay.existingAdminKeySecret }}
+              key: relay-admin-key
+        {{- else if .Values.emailGateway.relay.adminKey }}
+        - name: RELAY_ADMIN_KEY
+          value: {{ .Values.emailGateway.relay.adminKey | quote }}
+        {{- end }}
+        {{- if .Values.emailGateway.relay.existingSpoolKeySecret }}
+        - name: RELAY_SPOOL_SHARED_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.emailGateway.relay.existingSpoolKeySecret }}
+              key: relay-spool-shared-key
+        {{- else if .Values.emailGateway.relay.spoolSharedKey }}
+        - name: RELAY_SPOOL_SHARED_KEY
+          value: {{ .Values.emailGateway.relay.spoolSharedKey | quote }}
+        {{- end }}
+        {{- end }}
         # Encryption key for internal API secret derivation
         - name: ENCRYPTION_KEY
           valueFrom:
@@ -331,7 +356,7 @@ spec:
           readOnly: true
         {{- end }}
         {{- if $durableProfile }}
-        - name: relay-spool
+        - name: {{ $durable.claimSuffix }}
           mountPath: {{ $durable.path }}
         {{- end }}
         {{- end }}
@@ -343,9 +368,9 @@ spec:
           secretName: {{ $tlsSecret }}
       {{- end }}
       {{- if $durableProfile }}
-      - name: relay-spool
+      - name: {{ $durable.claimSuffix }}
         persistentVolumeClaim:
-          claimName: {{ $relayClaim }}
+          claimName: {{ $spoolClaim }}
       {{- end }}
       {{- end }}
       {{- with .Values.emailGateway.nodeSelector }}

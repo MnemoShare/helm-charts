@@ -1,69 +1,90 @@
 {{/*
-mnemoshare.workloadEgressRules — SINGLE SOURCE OF TRUTH for the egress rules
-shared by every MnemoShare workload that runs the app binary and therefore
-needs the exact same outbound reachability: the API pods (api-egress) AND the
-external workflow-worker pods (workflow-worker-egress).
-
-WHY THIS EXISTS (read before editing — this decision has been re-discovered the
-hard way more than once, most recently MSA-46):
-
-  The "worker" binary is the SAME process the API embeds. Depending on tier it
-  runs in one of two topologies, but its egress needs are IDENTICAL to the API's:
-
-    team          -> NO external worker. The API pod hosts every engine
-                     in-process (FILTERED_PROCESS=*, MNS-1159): background
-                     (virus scan / DLP / email queueing), messaging (the
-                     workflows engine, license-gated OFF on this tier but
-                     hosted), and kmsrotation (rotate/rewrap). Any egress a
-                     new engine needs on this tier belongs in api-egress —
-                     component=api IS the worker here.
-    business      -> "workflows" feature ON but still EMBEDDED in the API pod.
-                     Again covered by api-egress.
-    business_plus -> "workflows" scaled OUT: a dedicated workflow-worker
-                     StatefulSet (component=workflow-worker) using Redis for
-                     leader election + task assignment. THESE PODS ARE NOT
-                     component=api, so api-egress does NOT select them, and the
-                     default-deny policy (which selects ALL mnemoshare pods)
-                     blackholes their egress unless a matching worker policy
-                     exists. That was MSA-46: worker pods could not reach
-                     Mongo / Redis / ICAP / rich-media / the KeyGuard federation
-                     listener, so scans and workflow steps silently failed.
-    enterprise    -> same as business_plus, more replicas.
-
-  RULE: the external workflow-worker's egress policy MUST mirror the API's,
-  because it does everything the API's background engine does (Mongo, S3,
-  ClamAV/ICAP, Redis, rich-media/Tika/Presidio, Step-CA, license-server, the
-  KeyGuard federation sidecar egress, SMTP/SendGrid, etc.). Rather than keep two
-  copies in sync by hand (they always drift), both api-egress and
-  workflow-worker-egress `include` this template. Edit rules HERE, once.
+Egress building blocks. Invariant: every rendered egress rule carries explicit
+`ports:`. Nothing here may emit an any-port rule (hack/check-egress.py enforces).
 */}}
-{{- define "mnemoshare.workloadEgressRules" -}}
-# DNS resolution
-- to:
-    - namespaceSelector: {}
-      podSelector:
-        matchLabels:
-          k8s-app: kube-dns
-  ports:
-    - protocol: UDP
-      port: 53
+
+{{- define "mnemoshare.np.privateExcept" -}}
+- 10.0.0.0/8
+- 172.16.0.0/12
+- 192.168.0.0/16
+- 169.254.0.0/16
+- 100.64.0.0/10
+{{- end -}}
+
+{{/* Public internet minus private ranges, IMDS (169.254/16) and Tailscale CGNAT. */}}
+{{- define "mnemoshare.np.publicPeer" -}}
+- ipBlock:
+    cidr: 0.0.0.0/0
+    except:
+      {{- include "mnemoshare.np.privateExcept" . | nindent 6 }}
+{{- end -}}
+
+{{/*
+mnemoshare.np.rule - args: ports (list), public (bool), cidrs (list), anyDest (bool).
+Peers: public => internet (plus cidrs); else cidrs only; else, only when anyDest,
+no `to` (any destination, restricted to ports). Renders nothing without ports.
+*/}}
+{{- define "mnemoshare.np.rule" -}}
+{{- $cidrs := .cidrs | default list -}}
+{{- if and .ports (or .public $cidrs .anyDest) }}
+- ports:
+    {{- range .ports }}
     - protocol: TCP
-      port: 53
-# MongoDB (external or in-cluster)
-{{- if .Values.networkPolicy.mongodb.enabled }}
-- to:
-    {{- if .Values.networkPolicy.mongodb.cidr }}
-    - ipBlock:
-        cidr: {{ .Values.networkPolicy.mongodb.cidr }}
-    {{- else }}
-    - namespaceSelector: {}
+      port: {{ . }}
     {{- end }}
-  ports:
-    - protocol: TCP
-      port: {{ .Values.networkPolicy.mongodb.port | default 27017 }}
+  {{- if or .public $cidrs }}
+  to:
+    {{- range $cidrs }}
+    - ipBlock:
+        cidr: {{ . | quote }}
+    {{- end }}
+    {{- if .public }}
+    {{- include "mnemoshare.np.publicPeer" . | nindent 4 }}
+    {{- end }}
+  {{- end }}
 {{- end }}
-# S3/MinIO
+{{- end -}}
+
+{{/* Merge a legacy single `cidr` string and a `cidrs` list into one JSON list. */}}
+{{- define "mnemoshare.np.cidrs" -}}
+{{- $out := list -}}
+{{- if .cidr }}{{ $out = append $out .cidr }}{{ end -}}
+{{- range (.cidrs | default list) }}{{ $out = append $out . }}{{ end -}}
+{{- $out | uniq | toJson -}}
+{{- end -}}
+
+{{/* Default database port by database.driver (JSON-free: prints the number). */}}
+{{- define "mnemoshare.np.dbPort" -}}
+{{- $np := .Values.networkPolicy -}}
+{{- $d := .Values.database.driver | default "mongodb" -}}
+{{- if and $np.database $np.database.port -}}{{ $np.database.port }}
+{{- else if eq $d "mongodb" -}}{{ $np.mongodb.port | default 27017 }}
+{{- else if eq $d "postgres" -}}5432
+{{- else if eq $d "mysql" -}}3306
+{{- else if eq $d "mssql" -}}1433
+{{- else if eq $d "oracle" -}}1521
+{{- else if eq $d "db2" -}}50000
+{{- else if eq $d "sqlite" -}}0
+{{- else -}}{{ fail (printf "networkPolicy: unknown database.driver %q (set networkPolicy.database.port to override)" $d) }}
+{{- end -}}
+{{- end -}}
+
+{{/* Database egress. sqlite is local. No CIDR => that port to any destination. */}}
+{{- define "mnemoshare.np.database" -}}
+{{- $np := .Values.networkPolicy -}}
+{{- $d := .Values.database.driver | default "mongodb" -}}
+{{- if and (ne $d "sqlite") $np.mongodb.enabled (or (not $np.database) (ne ($np.database.enabled | toString) "false")) }}
+# Database ({{ $d }})
+{{- $c := dict "cidr" $np.mongodb.cidr "cidrs" (($np.database | default dict).cidrs) }}
+{{- include "mnemoshare.np.rule" (dict "ports" (list (include "mnemoshare.np.dbPort" .)) "cidrs" (include "mnemoshare.np.cidrs" $c | fromJsonArray) "anyDest" true) }}
+{{- end }}
+{{- end -}}
+
+{{/* Object storage: in-cluster MinIO, else S3-compatible endpoint. */}}
+{{- define "mnemoshare.np.storage" -}}
+{{- $np := .Values.networkPolicy -}}
 {{- if .Values.minio.enabled }}
+# In-cluster MinIO
 - to:
     - podSelector:
         matchLabels:
@@ -71,33 +92,16 @@ hard way more than once, most recently MSA-46):
   ports:
     - protocol: TCP
       port: 9000
-{{- else if .Values.networkPolicy.s3.enabled }}
-- to:
-    {{- if .Values.networkPolicy.s3.cidr }}
-    - ipBlock:
-        cidr: {{ .Values.networkPolicy.s3.cidr }}
-    {{- else }}
-    # Allow all egress to S3 (typically AWS/GCS public endpoints).
-    # Excepts: RFC1918 (cluster pod/service CIDRs), 169.254.0.0/16
-    # (cloud IMDS SSRF gate — AWS/GCP/Azure/DO metadata at port 80),
-    # 100.64.0.0/10 (Tailscale CGNAT — must traverse the tailscale ns).
-    - ipBlock:
-        cidr: 0.0.0.0/0
-        except:
-          - 10.0.0.0/8       # RFC1918
-          - 172.16.0.0/12    # RFC1918
-          - 192.168.0.0/16   # RFC1918
-          - 169.254.0.0/16   # Cloud IMDS SSRF gate
-          - 100.64.0.0/10    # Tailscale CGNAT
-    {{- end }}
-  ports:
-    - protocol: TCP
-      port: 443
-    - protocol: TCP
-      port: 9000
+{{- else if $np.s3.enabled }}
+# S3-compatible object storage
+{{- $cidrs := include "mnemoshare.np.cidrs" $np.s3 | fromJsonArray }}
+{{- include "mnemoshare.np.rule" (dict "ports" ($np.s3.ports | default (list 443 9000)) "public" (not $cidrs) "cidrs" $cidrs) }}
 {{- end }}
-# ClamAV ICAP (embedded)
+{{- end -}}
+
+{{- define "mnemoshare.np.icap" -}}
 {{- if eq (include "mnemoshare.icapMode" .) "inCluster" }}
+# ClamAV ICAP (embedded)
 - to:
     - podSelector:
         matchLabels:
@@ -105,9 +109,8 @@ hard way more than once, most recently MSA-46):
   ports:
     - protocol: TCP
       port: 1344
-{{- end }}
+{{- else if eq (include "mnemoshare.icapMode" .) "external" }}
 # ClamAV ICAP (external)
-{{- if eq (include "mnemoshare.icapMode" .) "external" }}
 - to:
     {{- if and .Values.networkPolicy.icap .Values.networkPolicy.icap.namespace }}
     - namespaceSelector:
@@ -116,12 +119,19 @@ hard way more than once, most recently MSA-46):
     {{- else }}
     - namespaceSelector: {}
     {{- end }}
+    {{- range ((.Values.networkPolicy.icap | default dict).cidrs | default list) }}
+    - ipBlock:
+        cidr: {{ . | quote }}
+    {{- end }}
   ports:
     - protocol: TCP
       port: 1344
 {{- end }}
-# Redis (embedded)
+{{- end -}}
+
+{{- define "mnemoshare.np.redis" -}}
 {{- if eq (include "mnemoshare.redisMode" .) "inCluster" }}
+# Redis (embedded)
 - to:
     - podSelector:
         matchLabels:
@@ -129,27 +139,19 @@ hard way more than once, most recently MSA-46):
   ports:
     - protocol: TCP
       port: 6379
+{{- else if eq (include "mnemoshare.redisMode" .) "external" }}
+# Redis (external); Sentinel port is needed for redis-sentinel:// discovery
+{{- $r := (.Values.networkPolicy.redis | default dict) }}
+{{- $ports := list (.Values.redis.external.port | default 6379) }}
+{{- if .Values.redis.external.sentinelPort }}{{ $ports = append $ports .Values.redis.external.sentinelPort }}{{ end }}
+{{- include "mnemoshare.np.rule" (dict "ports" $ports "cidrs" (include "mnemoshare.np.cidrs" $r | fromJsonArray) "anyDest" true) }}
 {{- end }}
-# Redis (external)
-{{- if eq (include "mnemoshare.redisMode" .) "external" }}
-- to:
-    - namespaceSelector: {}
-  ports:
-    - protocol: TCP
-      port: {{ .Values.redis.external.port | default 6379 }}
-    {{- if .Values.redis.external.sentinelPort }}
-    # Sentinel discovery port — required for redis-sentinel:// URLs. Without
-    # this the client reaches the master on 6379 but cannot discover it via
-    # Sentinel, so HA connections fail (e.g. shared Sentinel for Business+/
-    # external workflow-worker tenants).
-    - protocol: TCP
-      port: {{ .Values.redis.external.sentinelPort }}
-    {{- end }}
-{{- end }}
+{{- end -}}
+
+{{/* In-cluster rich-media / Tika / Presidio. targetPort, not Service port. */}}
+{{- define "mnemoshare.np.dlpServices" -}}
 {{- if .Values.richMedia.url }}
-# Rich-media file-preview service (in-cluster, cross-namespace). The port is
-# the service's targetPort: Cilium enforces egress against the targetPort,
-# not the Service port, so the Service's :80 → targetPort :8080 lands on 8080.
+# Rich-media file-preview service
 - to:
     {{- if and .Values.networkPolicy.richMedia .Values.networkPolicy.richMedia.namespace }}
     - namespaceSelector:
@@ -163,7 +165,7 @@ hard way more than once, most recently MSA-46):
       port: {{ .Values.networkPolicy.richMedia.port | default 8080 }}
 {{- end }}
 {{- if .Values.dlp.tikaUrl }}
-# Apache Tika text/metadata extraction (in-cluster, cross-namespace).
+# Apache Tika
 - to:
     {{- if and .Values.networkPolicy.tika .Values.networkPolicy.tika.namespace }}
     - namespaceSelector:
@@ -177,7 +179,7 @@ hard way more than once, most recently MSA-46):
       port: {{ .Values.networkPolicy.tika.port | default 9998 }}
 {{- end }}
 {{- if .Values.dlp.presidioUrl }}
-# Presidio NER DLP scanning (in-cluster, cross-namespace).
+# Presidio
 - to:
     {{- if and .Values.networkPolicy.presidio .Values.networkPolicy.presidio.namespace }}
     - namespaceSelector:
@@ -190,6 +192,23 @@ hard way more than once, most recently MSA-46):
     - protocol: TCP
       port: {{ .Values.networkPolicy.presidio.port | default 3000 }}
 {{- end }}
+{{- end -}}
+
+{{- define "mnemoshare.np.dns" -}}
+# DNS
+- to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+{{- end -}}
+
+{{- define "mnemoshare.np.stepCA" -}}
 # Step CA (for mTLS)
 #
 # ⚠ The two Step-CA deployments carry OPPOSITE labels. Verified against the
@@ -249,26 +268,14 @@ hard way more than once, most recently MSA-46):
     - protocol: TCP
       port: {{ $stepCANP.port | default 9000 }}
 {{- end }}
-# License server (external via public endpoint, or via ingress controller for in-cluster hairpin)
-{{- if .Values.networkPolicy.licenseServer.enabled }}
-- to:
-    {{- if .Values.networkPolicy.licenseServer.cidr }}
-    - ipBlock:
-        cidr: {{ .Values.networkPolicy.licenseServer.cidr }}
-    {{- else }}
-    - ipBlock:
-        cidr: 0.0.0.0/0
-        except:
-          - 10.0.0.0/8       # RFC1918
-          - 172.16.0.0/12    # RFC1918
-          - 192.168.0.0/16   # RFC1918
-          - 169.254.0.0/16   # Cloud IMDS SSRF gate
-          - 100.64.0.0/10    # Tailscale CGNAT
-    {{- end }}
-  ports:
-    - protocol: TCP
-      port: 443
-# Allow traffic to ingress controller for license server hairpin NAT
+{{- end -}}
+
+{{- define "mnemoshare.np.licenseServer" -}}
+{{- $ls := .Values.networkPolicy.licenseServer -}}
+{{- if $ls.enabled }}
+# License server (public endpoint, or ingress-controller hairpin)
+{{- $cidrs := include "mnemoshare.np.cidrs" $ls | fromJsonArray }}
+{{- include "mnemoshare.np.rule" (dict "ports" (list 443) "public" (not $cidrs) "cidrs" $cidrs) }}
 - to:
     - namespaceSelector:
         matchLabels:
@@ -276,35 +283,28 @@ hard way more than once, most recently MSA-46):
   ports:
     - protocol: TCP
       port: 443
-{{- if .Values.networkPolicy.licenseServer.internalNamespace }}
-# Internal license server (in-cluster service). Two ports, both to the
-# license-server pods — either MUST be reachable or the instance latches into
-# admin-only mode. Harmless on self-hosted clusters where this namespace does
-# not exist (matches no pods).
-#   - internalPort (8090): verified in-cluster mode validates against
-#     http://license-server.<ns>:8090 directly.
-#   - externalTargetPort (8443): when verified in-cluster mode is NOT active the
-#     app falls back to the public URL (license.mnemoshare.com), which
-#     split-horizon-resolves to the license-server ClusterIP. The Service maps
-#     443 -> targetPort 8443 and Cilium enforces egress against the *targetPort*,
-#     not the Service port — so the public-URL path is only reachable if 8443 is
-#     allowed here.
+{{- if $ls.internalNamespace }}
+# In-cluster license server. 8443 is the Service's targetPort: Cilium enforces
+# egress against targetPort, and the public-URL fallback lands there.
 - to:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: {{ .Values.networkPolicy.licenseServer.internalNamespace }}
+          kubernetes.io/metadata.name: {{ $ls.internalNamespace }}
       podSelector:
         matchLabels:
           app.kubernetes.io/name: license-server
   ports:
     - protocol: TCP
-      port: {{ .Values.networkPolicy.licenseServer.internalPort | default 8090 }}
-    {{- if .Values.networkPolicy.licenseServer.externalTargetPort }}
+      port: {{ $ls.internalPort | default 8090 }}
+    {{- if $ls.externalTargetPort }}
     - protocol: TCP
-      port: {{ .Values.networkPolicy.licenseServer.externalTargetPort }}
+      port: {{ $ls.externalTargetPort }}
     {{- end }}
 {{- end }}
 {{- end }}
+{{- end -}}
+
+{{- define "mnemoshare.np.keyguard" -}}
 # KeyGuard federation listener (MSC-381). The federation-sidecar mints AWS
 # web-identity tokens against the idp-lite federation listener (mTLS). The
 # sidecar has a readiness probe, so without this egress it times out and
@@ -319,77 +319,119 @@ hard way more than once, most recently MSA-46):
     - protocol: TCP
       port: {{ .Values.keyguard.federationPort | default 8443 }}
 {{- end }}
-# SendGrid / AWS SES API (external, 443)
-{{- if or .Values.sendgrid.apiKey (eq .Values.platformEmail.transport "ses") .Values.platformEmail.ses.region .Values.sesAdmin.region }}
-- to:
-    - ipBlock:
-        cidr: 0.0.0.0/0
-        except:
-          - 10.0.0.0/8       # RFC1918
-          - 172.16.0.0/12    # RFC1918
-          - 192.168.0.0/16   # RFC1918
-          - 169.254.0.0/16   # Cloud IMDS SSRF gate
-          - 100.64.0.0/10    # Tailscale CGNAT
-  ports:
-    - protocol: TCP
-      port: 443
-{{- end }}
-# OAuth/SSO providers (external)
-{{- if .Values.networkPolicy.oauth.enabled }}
-- to:
-    - ipBlock:
-        cidr: 0.0.0.0/0
-        except:
-          - 10.0.0.0/8       # RFC1918
-          - 172.16.0.0/12    # RFC1918
-          - 192.168.0.0/16   # RFC1918
-          - 169.254.0.0/16   # Cloud IMDS SSRF gate
-          - 100.64.0.0/10    # Tailscale CGNAT
-  ports:
-    - protocol: TCP
-      port: 443
-{{- end }}
-# External SMTP (customer-configured outbound mail relays — Gmail, Office365, SES, etc.)
+{{- end -}}
+
+{{/*
+Outbound mail: SMTP relays (customer-configured) on smtp.ports.
+*/}}
+{{- define "mnemoshare.np.smtp" -}}
 {{- if .Values.networkPolicy.smtp.enabled }}
-- to:
-    - ipBlock:
-        cidr: 0.0.0.0/0
-        except:
-          - 10.0.0.0/8       # RFC1918
-          - 172.16.0.0/12    # RFC1918
-          - 192.168.0.0/16   # RFC1918
-          - 169.254.0.0/16   # Cloud IMDS SSRF gate
-          - 100.64.0.0/10    # Tailscale CGNAT
-  ports:
-    - protocol: TCP
-      port: 25
-    - protocol: TCP
-      port: 465
-    - protocol: TCP
-      port: 587
-    - protocol: TCP
-      port: 2525
+# SMTP relays
+{{- include "mnemoshare.np.rule" (dict "ports" (.Values.networkPolicy.smtp.ports | default (list 25 465 587 2525)) "public" true "cidrs" (.Values.networkPolicy.smtp.cidrs | default list)) }}
 {{- end }}
-# Workflow engine — broad egress for customer-authored workflow steps
-# (call_api, webhook, database_connect, sftp_*, ftps_*, as2_send, swift_*,
-# ebics_*, oftp2, llm_prompt, etc.) which accept arbitrary host:port.
-# An L4 port allowlist is theatrical for a workflows-enabled tenant, so
-# the substantive boundary moves up the stack to DLP, audit chain, and
-# anomaly detection. Private ranges are excluded for cluster + IMDS
-# isolation; UDP is denied (TCP-only) to block DNS exfil and QUIC.
-# Off by default for self-hosted; flip to true if the tenant has Workflows
-# licensed and you want the iPaaS-style egress posture.
-{{- if and .Values.networkPolicy.workflows .Values.networkPolicy.workflows.enabled }}
-- to:
+{{- end -}}
+
+{{/*
+Customer-facing egress ports for a component (JSON list). The API pod hosts the
+engines when no external workflow-worker exists, so it inherits the worker list.
+Deprecated networkPolicy.workflows.enabled appends workflows.customerEgressPorts (never any-port).
+args: root, component (api|workflowWorker|ices|emailGateway|inboundGateway)
+*/}}
+{{- define "mnemoshare.np.customerPorts" -}}
+{{- $np := .root.Values.networkPolicy -}}
+{{- $own := (index $np .component | default dict).customerEgressPorts | default list -}}
+{{- $ports := $own -}}
+{{- if and (eq .component "api") (or (include "mnemoshare.apiEmbeddedWorkers" .root) (not .root.Values.workflowWorker.enabled)) -}}
+{{- $ports = concat $ports ($np.workflowWorker.customerEgressPorts | default list) -}}
+{{- end -}}
+{{- if and (has .component (list "api" "workflowWorker")) $np.workflows $np.workflows.enabled -}}
+{{- $ports = concat $ports ($np.workflows.customerEgressPorts | default list) -}}
+{{- end -}}
+{{- $ports | uniq | toJson -}}
+{{- end -}}
+
+{{- define "mnemoshare.np.customer" -}}
+{{- $np := .root.Values.networkPolicy -}}
+{{- $ce := $np.customerEgress | default dict -}}
+{{- $public := ne ($ce.publicInternet | toString) "false" -}}
+{{- $own := (index $np .component | default dict).customerEgressCIDRs | default list -}}
+{{- $cidrs := concat ($ce.cidrs | default list) $own | uniq -}}
+# Customer-facing destinations (connectors, webhooks, SIEM, LLM): listed ports only
+{{- include "mnemoshare.np.rule" (dict "ports" (include "mnemoshare.np.customerPorts" . | fromJsonArray) "public" $public "cidrs" $cidrs) }}
+{{- $ftp := ($np.workflows | default dict).ftpPassive | default dict -}}
+{{- $workerClass := or (eq .component "workflowWorker") (and (eq .component "api") (or (include "mnemoshare.apiEmbeddedWorkers" .root) (not .root.Values.workflowWorker.enabled))) -}}
+{{- if and $ftp.enabled $workerClass }}
+{{- if not $ftp.cidrs }}{{ fail "networkPolicy.workflows.ftpPassive.cidrs is required when ftpPassive.enabled=true (no public-any fallback)" }}{{ end }}
+{{- $pr := $ftp.portRange | default dict }}
+# FTP/FTPS passive data connections: server-chosen high ports, restricted to the listed servers
+- ports:
+    - protocol: TCP
+      port: {{ $pr.start | default 1024 }}
+      endPort: {{ $pr.end | default 65535 }}
+  to:
+    {{- range $ftp.cidrs }}
     - ipBlock:
-        cidr: 0.0.0.0/0
-        except:
-          - 10.0.0.0/8       # RFC1918
-          - 172.16.0.0/12    # RFC1918
-          - 192.168.0.0/16   # RFC1918
-          - 169.254.0.0/16   # Link-local (cloud IMDS SSRF gate)
-          - 100.64.0.0/10    # Tailscale CGNAT
+        cidr: {{ . | quote }}
+    {{- end }}
+{{- end }}
+{{- end -}}
+
+{{- define "mnemoshare.np.https" -}}
+{{- if or .Values.sendgrid.apiKey (eq .Values.platformEmail.transport "ses") .Values.platformEmail.ses.region .Values.sesAdmin.region }}
+# SendGrid / AWS SES API
+{{- include "mnemoshare.np.rule" (dict "ports" (list 443) "public" true) }}
+{{- end }}
+{{- if .Values.networkPolicy.oauth.enabled }}
+# OAuth/SSO providers
+{{- include "mnemoshare.np.rule" (dict "ports" (list 443) "public" true) }}
+{{- end }}
+{{- end -}}
+
+{{/*
+mnemoshare.workloadEgressRules - egress for pods running the app binary with
+engines (api, workflow-worker, ices). The API hosts the engines when there is no
+external worker, so the destination set is identical; only customer ports differ.
+args: root, component
+*/}}
+{{- define "mnemoshare.workloadEgressRules" -}}
+{{- $r := .root -}}
+{{- include "mnemoshare.np.dns" $r }}
+{{ include "mnemoshare.np.database" $r }}
+{{ include "mnemoshare.np.storage" $r }}
+{{ include "mnemoshare.np.icap" $r }}
+{{ include "mnemoshare.np.redis" $r }}
+{{ include "mnemoshare.np.dlpServices" $r }}
+{{ include "mnemoshare.np.stepCA" $r }}
+{{ include "mnemoshare.np.licenseServer" $r }}
+{{ include "mnemoshare.np.keyguard" $r }}
+{{ include "mnemoshare.np.https" $r }}
+{{ include "mnemoshare.np.smtp" $r }}
+{{ include "mnemoshare.np.customer" . }}
+{{ include "mnemoshare.np.apiPods" $r }}
+{{ include "mnemoshare.np.extraEgress" . }}
+{{- end -}}
+
+{{/* Calls to the api Service (API_BASE_URL / MNEMOSHARE_API_URL); Service port 80 lands on targetPort. */}}
+{{- define "mnemoshare.np.apiPods" -}}
+# MnemoShare API pods (intra-release)
+- to:
+    - podSelector:
+        matchLabels:
+          {{- include "mnemoshare.selectorLabels" . | nindent 10 }}
+          app.kubernetes.io/component: api
   ports:
-    - protocol: TCP          # TCP only — block UDP egress
+    - protocol: TCP
+      port: {{ .Values.service.targetPort }}
+    {{- if .Values.mtls.enabled }}
+    - protocol: TCP
+      port: {{ .Values.mtls.port | default 8443 }}
+    {{- end }}
+{{- end -}}
+
+{{/* Operator-supplied raw egress rules for destinations the chart cannot model; hack/check-render.py still requires ports. args: root, component */}}
+{{- define "mnemoshare.np.extraEgress" -}}
+{{- with (index .root.Values.networkPolicy .component | default dict).extraEgress }}
+# networkPolicy.{{ $.component }}.extraEgress
+{{ toYaml . }}
 {{- end }}
 {{- end -}}

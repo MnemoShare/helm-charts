@@ -33,16 +33,9 @@ image:
 
 imagePullSecrets: []
 
-# Required immutable identity declaration when MCP or SFTP is enabled. The
-# chart verifies equality and digest addressing, not build provenance.
-deploymentContractV2:
-  sourceCommit: ""
-  contractFingerprint: ""
-  imageDigest: ""
-
-# Required immutable identity declaration when emailGateway is enabled. The
-# chart verifies equality and digest addressing, not build provenance.
-deploymentContractV3:
+# Required immutable identity declaration for every contract-governed peer.
+# The chart verifies equality and digest addressing, not build provenance.
+deploymentContract:
   sourceCommit: ""
   contractFingerprint: ""
   imageDigest: ""
@@ -68,8 +61,9 @@ formatMigrations:
   backoffLimit: 1
   activeDeadlineSeconds: 1800
   networkPolicy:
-    # Required when chart-level networkPolicy.enabled=true. CIDRs must match
-    # the CNI's observed destinations (service IP before DNAT or endpoint IP).
+    # Optional narrowing for the hook pods when networkPolicy.enabled=true. CIDRs
+    # must match the CNI's observed destinations (service IP before DNAT or
+    # endpoint IP). Empty: database port / Kubernetes API 443,6443 to any destination.
     databaseCIDRs: []
     databasePort: 0
     kubernetesApiTargets: []
@@ -111,6 +105,36 @@ securityContext:
   allowPrivilegeEscalation: false
   seccompProfile:
     type: RuntimeDefault
+
+# ============================================================================
+# API pod process layout
+# ============================================================================
+api:
+  # true (default): the API container runs the image default
+  # /usr/local/bin/run-api-worker, which supervises the API together with
+  # background-worker, cloud-worker and workflow-worker. Every API replica
+  # therefore runs a full set of workers.
+  #
+  # false: the API container runs only /usr/local/bin/mnemoshare-api and the
+  # worker processes live in the dedicated worker (workflowWorker) and/or the
+  # cloud-worker pool (ices). Use this when they already run there, so each API
+  # replica stops carrying three extra database-connected processes. Every one
+  # of background-worker, cloud-worker and workflow-worker must keep a resident
+  # host (a workload that is enabled with replicas >= 1, or KEDA minReplicas >=
+  # 1), derived from the vendored deployment contract:
+  #   - workflowWorker.command /usr/local/bin/run-workers hosts all three;
+  #   - workflowWorker.command /usr/local/bin/run-core-workers hosts
+  #     background-worker and workflow-worker, so ices.enabled=true must host
+  #     cloud-worker (see the ices block);
+  #   - the default worker command runs workflow-worker alone and is refused.
+  # The render fails naming the first process left without a host.
+  #
+  # In this mode the dedicated worker also receives the integration env
+  # (richMedia, dlp, kms) that the API pod's embedded workers used to read, and
+  # the worker-only names (PRESIDIO_ENABLED, PRESIDIO_API_KEY, DLP_AI_ENABLED)
+  # move off the API pod. Settings passed through the API's `extraEnv` do NOT
+  # follow: repeat any the workers need under workflowWorker.extraEnv.
+  embeddedWorkers: true
 
 service:
   type: ClusterIP
@@ -184,6 +208,40 @@ database:
   sqlite:
     path: "/var/lib/mnemoshare/mnemoshare.db"
 
+# Explicit migration-operation/v1 adapter for the external deployment
+# controller. The application refuses ordinary startup until this operation
+# has admitted the database format. Keep disabled until the controller owns
+# the plan -> down -> apply -> verify -> up sequence for this release.
+migrationOperation:
+  enabled: false
+  # External controllers may stage a destructive reset suspended, wait until
+  # the rendered zero-replica workloads are fully gone, then unsuspend it.
+  suspend: false
+  # Must match the immutable v1 contract embedded in targetImage.
+  contractFingerprint: ""
+  # One immutable phase per reconciliation. Failed attempts remain observable.
+  phase: ""
+  operationId: active
+  targetImage:
+    repository: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  # The controller provisions and retains this claim across plan/apply/verify.
+  transport:
+    existingClaim: ""
+  universe: primary
+  planDigest: ""
+  # Required before down when the configured deployment has the governed
+  # email-relay-mongo universe. This proves every universe was planned before
+  # any writer is drained.
+  externalPlanDigest: ""
+  verifiedPlanDigest: ""
+  verifiedExternalPlanDigest: ""
+  backoffLimit: 0
+  # Bounds the uninstrumented plan and verify Jobs. Apply deliberately omits a
+  # Kubernetes Job deadline and is governed by its canonical progress watchdog.
+  uninstrumentedActiveDeadlineSeconds: 1800
+
 # MongoDB configuration (when database.driver = "mongodb")
 mongodb:
   # If using external MongoDB
@@ -211,12 +269,6 @@ s3:
 # JWT authentication (ES256 / ECDSA P-256)
 jwt:
   ecPrivateKey: ""  # PEM-encoded EC P-256 private key for ES256 JWT signing (auto-generated if empty)
-  # Legacy single-token lifetime, in whole hours (env JWT_EXPIRY_HOURS). Governs
-  # the deprecated GenerateToken path (register/MFA-pending/device intermediate
-  # tokens); browser SSO/SAML now use short access + refresh pairs (MSC-486).
-  # Renamed from the old `expiration: "24h"`, which the backend never read
-  # (MSC-493) — tokens silently used the 1-year code default.
-  expiryHours: 24
 
 # Encryption
 encryption:
@@ -276,18 +328,18 @@ sesEvents:
   # SNS topic the SES event webhook validates against (non-secret).
   snsTopicArn: ""
 
-# Mail-monitoring (ICES) tuning for whichever engine hosts it — the worker when
-# ices.enabled=false, otherwise the standalone ices pod. Webhook URLs default to
+# Mail-monitoring tuning, owned by the cloud-worker executable. Rendered on
+# every container whose command hosts cloud-worker — the API pod while
+# api.embeddedWorkers is on, a worker running run-workers, the ices pool — and
+# on no other container. Webhook URLs default to
 # <appUrl>/api/v1/integrations/cloud/webhook/{google,microsoft}.
 mailMonitoring:
   # Off by default so SaaS/reconciler-driven deployments keep providing this via
-  # ConfigMap (envFrom). Self-hosted ICES users set enabled=true.
+  # ConfigMap (envFrom). Self-hosted mail-monitoring users set enabled=true.
   enabled: false
   googleWebhookUrl: ""      # empty = derive from appUrl
   microsoftWebhookUrl: ""   # empty = derive from appUrl
-  enrollmentIntervalSec: 60
   internalMailIntervalSec: 60
-  internalMailWatchIntervalSec: 90
 
   # ARC sealing for the lanes that MODIFY delivered mail — DLP redaction,
   # caution banners, link rewriting (MEM-155).
@@ -327,20 +379,8 @@ turnstile:
   # Private secret key (used for server-side validation)
   secretKey: ""
 
-# Session timeout configuration
-session:
-  # Inactivity timeout in seconds before showing logout warning
-  # After this period of no activity, a 30-second warning modal appears
-  # Default: 300 (5 minutes)
-  inactivityTimeoutSeconds: 300
-
 # Application URL
 appUrl: ""  # Required: https://mnemoshare.example.com
-
-# File upload settings
-files:
-  maxSize: "10737418240"  # 10GB in bytes
-  defaultLinkExpiration: "168h"  # 7 days
 
 # ============================================================================
 # Disk Buffer Configuration - Memory Management for Large File Uploads
@@ -398,11 +438,6 @@ diskBuffer:
 # CORS settings
 cors:
   allowedOrigins: ""  # Comma-separated list, e.g., "https://example.com,https://app.example.com"
-
-# Rate limiting
-rateLimit:
-  requests: 100
-  window: "1m"
 
 # Startup probe (MNS-1033).
 #
@@ -946,6 +981,17 @@ siem:
 # or manage these CA systems. You must have an existing deployment.
 # ============================================================================
 
+# Vault "kubernetes" auth for the app (Vault Transit KMS / PKI). App pods mount no
+# default ServiceAccount token; when enabled, a short-lived audience-bound token
+# is projected on api and workflow-worker pods and VAULT_K8S_TOKEN_PATH points
+# the app at it. Vault's auth role must bind this audience.
+vault:
+  kubernetesAuth:
+    enabled: false
+    audience: "vault"
+    expirationSeconds: 3600
+    tokenPath: /var/run/secrets/mnemoshare/vault/token
+
 # HashiCorp Vault PKI - External CA Integration
 # https://developer.hashicorp.com/vault/docs/secrets/pki
 vaultPKI:
@@ -1172,20 +1218,12 @@ redis:
 # ============================================================================
 # Processes inbound file transfers from SFTP/FTPS/rsync sources.
 # Requires Redis to be enabled for the job queue.
-# API-pod engine activation override (see templates/deployment.yaml).
-# Empty = derived: "none" when the workflow worker is enabled (the worker
-# hosts every engine), else "*" — with no external worker the API pod IS
-# the worker, hosting scans, the workflows engine (over the database-backed
-# inproc dispatch queue when Redis is absent — dispatchinproc.NewBackend in
-# cmd/worker/main.go, tested in internal/dispatch/inproc/backend_test.go),
-# and key rotation/rewrap in-process (MNS-1159;
-# db2 derives "background,messaging" because the kmsrotation engine
-# refuses that backend at boot — overriding with "*" or a list naming
-# "kmsrotation" on db2 crash-loops app releases to date, MNS-1159).
-# Set only for edge configs.
-apiFilteredProcess: ""
-
 workflowWorker:
+  # Pod termination grace. The worker binaries release their outbox claims and
+  # mailbox leases on SIGTERM within a 30 s shutdown budget; Kubernetes' default
+  # grace is also 30 s, so set this above 30 to leave headroom for that release.
+  # Unset keeps the Kubernetes default.
+  # terminationGracePeriodSeconds: 60
   # Enable/disable workflow worker deployment
   enabled: false
 
@@ -1199,11 +1237,23 @@ workflowWorker:
   # settings the typed knobs above don't cover).
   extraEnv: []
 
-  # Container entrypoint. Empty = /usr/local/bin/worker (the unified hosted
-  # binary). Application builds with the fixed worker process layout ship
-  # /usr/local/bin/run-workers instead (a supervisor over background-worker,
-  # cloud-worker and workflow-worker); set that here for such images.
+  # Container entrypoint. Empty = the contract's /usr/local/bin/workflow-worker
+  # alone. Supervisors from the vendored deployment contract:
+  #   /usr/local/bin/run-workers      background-worker + cloud-worker + workflow-worker
+  #   /usr/local/bin/run-core-workers background-worker + workflow-worker, for a
+  #                                   layout that runs cloud-worker only in the
+  #                                   ices pool (api.embeddedWorkers=false,
+  #                                   ices.enabled=true)
   command: []
+
+  # Prometheus metrics listener for the workflow-worker process in this
+  # container (WORKFLOW_WORKER_METRICS_ADDR=:<port>, pod scrape annotations).
+  # Serves mnemoshare_dispatch_backlog_rows / _oldest_age_seconds, the signal
+  # autoscaling.prometheus scales on. Requires a command that hosts
+  # workflow-worker (every supported command does).
+  metrics:
+    enabled: false
+    port: 9091
 
   # Number of worker replicas (scale for more concurrent processing)
   replicas: 2
@@ -1219,18 +1269,6 @@ workflowWorker:
 
   # Worker concurrency (tasks per worker)
   concurrency: 10
-
-  # Engine activation filter — selects which dispatch engines this pod
-  # hosts. Empty = derived by the template: "*" (every engine the app
-  # binary registers), or "background,messaging" on db2 — every engine
-  # except kmsrotation, whose backend db2's driver refuses at boot on app
-  # releases to date. Do NOT hardcode an
-  # engine list here: names drift across app versions and an unknown
-  # name is a boot fatal — the earlier "background,workflow" default
-  # fatals on app >= 0.16, where "workflow" was folded into "messaging".
-  # Whatever you set MUST include "background" or file uploads sit on
-  # the "Pending" scan_status badge forever (MNS-505).
-  filteredProcess: ""
 
   # Temporary directory for file processing
   # Leave empty to use system default
@@ -1293,8 +1331,15 @@ workflowWorker:
   # ============================================================================
   # KEDA Autoscaling (requires KEDA to be installed in the cluster)
   # ============================================================================
-  # Scales workflow workers based on Redis queue depth.
   # Install KEDA: helm install keda kedacore/keda --namespace keda --create-namespace
+  #
+  # With prometheus.serverAddress set, the worker scales on the claimable
+  # workflow backlog in messaging_outbox (metrics.enabled must be true). Without
+  # it the chart keeps its legacy Redis list triggers, which on this
+  # application line never measure backlog: Redis carries only Asynq doorbells
+  # (one task per outbox row, consumed as soon as a worker is listening) on
+  # keyspaced queues (<customerId>:dispatch-default / -high), not the
+  # asynq:{default,critical,low}:pending lists the triggers watch.
   autoscaling:
     # Enable KEDA-based autoscaling
     enabled: false
@@ -1305,14 +1350,30 @@ workflowWorker:
     # Maximum number of workers
     maxReplicas: 10
 
-    # Target queue length per worker replica
-    # If queue has 15 pending tasks and target is 5, KEDA will scale to 3 workers
+    # Outbox-backlog trigger (primary when serverAddress is set).
+    prometheus:
+      # Prometheus server KEDA queries, e.g. http://prometheus.monitoring.svc:9090.
+      # Empty keeps the legacy Redis triggers.
+      serverAddress: ""
+      # PromQL override. The default sums mnemoshare_dispatch_backlog_rows for
+      # process="workflow-worker" in this release's namespace and assumes the
+      # Prometheus kubernetes-pods discovery convention (prometheus.io/*
+      # annotations, a `namespace` label); override when yours differs.
+      query: ""
+      # Claimable rows per replica before another replica is added.
+      threshold: "20"
+      # Backlog that activates scaling from minReplicas.
+      activationThreshold: "0"
+      # Optional KEDA TriggerAuthentication name for an authenticated Prometheus.
+      authenticationRef: ""
+
+    # Legacy Redis trigger: target list length per worker replica.
     listLengthTarget: 5
 
-    # How often KEDA checks queue depth (seconds)
+    # How often KEDA checks the trigger (seconds)
     pollingInterval: 15
 
-    # How long to wait before scaling down after queue is empty (seconds)
+    # How long to wait before scaling down after the backlog clears (seconds)
     cooldownPeriod: 60
 
 # ============================================================================
@@ -1353,36 +1414,57 @@ threatFeed:
     name: ""
 
 # ============================================================================
-# ICES — Standalone Email-Security Service (mail monitoring)
+# ices — the cloud-worker pool (mail monitoring)
 # ============================================================================
-# Runs the dedicated `ices` binary (workerboot) as a stateless Deployment.
-# ICES hosts mail-monitoring: the BEC poller, the Pub/Sub subscriber, and the
-# mail-security sweepers. It shards across replicas via Redis + the worker
-# registry (no PVC).
+# A stateless Deployment of the application's cloud-worker executable: the
+# Google and Microsoft mail engines (Pub/Sub receiver, BEC poller, mailbox and
+# integration polls, remediation, sweepers) plus the shared messaging engine.
+# The engine set is fixed in the binary; nothing here selects it. Replicas
+# share work through messaging_outbox claims, per-mailbox leases and one Redis
+# leader lock, so the pool scales horizontally (no PVC).
 #
-# Enabling ices sets ICES_STANDALONE=true on the workflow worker, so the
-# worker's google engine drops mail-monitoring and it is hosted exactly once
-# by this dedicated pod.
+# The workload keeps its historical name `ices`. Two layouts host cloud-worker:
+#   - run-workers in the dedicated worker (cloud-worker runs there, and in
+#     every API pod while api.embeddedWorkers is true) — ices is then an
+#     additional pool, not the only host;
+#   - run-core-workers in the dedicated worker with api.embeddedWorkers=false:
+#     this pool is the ONLY cloud-worker host and the render refuses to drop
+#     it (ices.enabled=false or no resident replica fails).
+# Mail-monitoring env (mailMonitoring) is rendered here and on every other
+# cloud-worker host.
 #
 # Requires Redis and a real database (mongodb/postgres) — sqlite is rejected.
 ices:
-  # Enable the standalone ICES deployment.
+  # Pod termination grace. The worker binaries release their outbox claims and
+  # mailbox leases on SIGTERM within a 30 s shutdown budget; Kubernetes' default
+  # grace is also 30 s, so set this above 30 to leave headroom for that release.
+  # Unset keeps the Kubernetes default.
+  # terminationGracePeriodSeconds: 60
+  # Enable the cloud-worker pool.
   enabled: false
 
-  # Extra env injected verbatim onto the ices pod (escape valve).
+  # Extra env injected verbatim onto the pool pods (escape valve).
   extraEnv: []
 
-  # Container entrypoint. Empty = /usr/local/bin/ices. Application builds with
-  # the fixed worker process layout host mail monitoring in
-  # /usr/local/bin/cloud-worker and ship no ices binary; set that here for such
-  # images. The liveness/readiness probes follow this value.
+  # Container entrypoint. Empty = the vendored contract's cloud-worker
+  # executable (/usr/local/bin/cloud-worker). The liveness/readiness probes
+  # follow this value.
   command: []
+
+  # Prometheus metrics listener for the cloud-worker process
+  # (CLOUD_WORKER_METRICS_ADDR=:<port>, pod scrape annotations). Serves
+  # mnemoshare_dispatch_backlog_rows{process="cloud-worker",engine,kind} and
+  # mnemoshare_dispatch_backlog_oldest_age_seconds — the claimable mail-task
+  # backlog autoscaling.prometheus scales on.
+  metrics:
+    enabled: false
+    port: 9091
 
   # Number of replicas (ignored when autoscaling.enabled=true).
   replicas: 1
 
   image:
-    # Same image as the main app — `ices` is a separate entrypoint.
+    # Same image as the main app — cloud-worker is a separate entrypoint.
     # Empty chains to the global .Values.image.repository so a single
     # image.repository + image.tag drives every app-entrypoint component.
     repository: ""
@@ -1390,16 +1472,15 @@ ices:
     digest: ""  # Automatic mode defaults to and must equal image.digest.
     pullPolicy: IfNotPresent
 
-  # Log level for the ICES pod.
+  # Log level for the pool pods.
   logLevel: "info"
 
-  # Writable /tmp emptyDir. ICES does ICAP attachment scanning that spools
-  # decrypted streams to /tmp; the base image runs readOnlyRootFilesystem=true
-  # so the mount is required for scanning to work.
+  # Writable /tmp emptyDir. Attachment scanning spools decrypted streams to
+  # /tmp; the base image runs readOnlyRootFilesystem=true so the mount is
+  # required for scanning to work.
   tmpVolume:
     enabled: true
-    # Optional sizeLimit on the tmpfs-backed emptyDir.
-    sizeLimit: ""
+    sizeLimit: "1Gi"
 
   # Resource requests/limits.
   resources:
@@ -1417,26 +1498,51 @@ ices:
   tolerations: []
 
   # ==========================================================================
-  # KEDA Autoscaling (gcp-pubsub subscription backlog)
+  # KEDA Autoscaling (outbox backlog, Pub/Sub subscription backlog)
   # ==========================================================================
-  # Scales ICES on the backlog of its per-integration Pub/Sub PULL
-  # subscription. Requires KEDA installed in the cluster.
+  # Requires KEDA installed in the cluster and at least one trigger:
+  #   - prometheus.serverAddress (primary): claimable mail-task rows in
+  #     messaging_outbox, from the pool's own metrics (metrics.enabled=true).
+  #     The Pub/Sub receiver drains its subscription into outbox rows almost
+  #     immediately, so subscription size alone under-reports waiting work.
+  #   - subscriptionName (secondary): the Pub/Sub PULL subscription backlog.
+  # Both render when both are set.
   #
-  # minReplicas MUST be >= 1 — never 0: the always-on Pub/Sub subscriber and
-  # the leader-elected sweeper components need a resident pod at all times.
+  # minReplicas MUST be >= 1 — never 0: the always-on Pub/Sub receiver and the
+  # leader-elected sweeper components need a resident pod at all times. Keep
+  # it >= 2 in production so a rollout or node loss never leaves the pool
+  # without a receiver and leader; the pool defaults to 2.
   autoscaling:
     # Enable KEDA-based autoscaling.
     enabled: false
 
-    # Minimum replicas (>= 1, never 0 — see note above).
-    minReplicas: 1
+    # Minimum replicas (>= 1; 2 recommended — see note above).
+    minReplicas: 2
 
     # Maximum replicas.
     maxReplicas: 10
 
-    # REQUIRED when autoscaling.enabled: the fully-qualified per-integration
-    # Pub/Sub PULL subscription the gcp-pubsub trigger polls
-    # (e.g. "projects/<proj>/subscriptions/<sub>").
+    # Outbox-backlog trigger (primary when serverAddress is set).
+    prometheus:
+      # Prometheus server KEDA queries, e.g. http://prometheus.monitoring.svc:9090.
+      # Empty disables this trigger; subscriptionName must then be set.
+      serverAddress: ""
+      # PromQL override. The default sums mnemoshare_dispatch_backlog_rows for
+      # process="cloud-worker" and the google/microsoft engines in this
+      # release's namespace, assuming the Prometheus kubernetes-pods discovery
+      # convention (prometheus.io/* annotations, a `namespace` label).
+      # Narrow it to specific wire types with a kind=~"..." matcher.
+      query: ""
+      # Claimable rows per replica before another replica is added.
+      threshold: "20"
+      # Backlog that activates scaling from minReplicas.
+      activationThreshold: "0"
+      # Optional KEDA TriggerAuthentication name for an authenticated Prometheus.
+      authenticationRef: ""
+
+    # Fully-qualified per-integration Pub/Sub PULL subscription for the
+    # gcp-pubsub trigger (e.g. "projects/<proj>/subscriptions/<sub>"). Empty
+    # disables that trigger.
     subscriptionName: ""
 
     # Target undelivered messages per pod (SubscriptionSize mode).
@@ -1629,6 +1735,27 @@ emailGateway:
     # Existing secret with key: relay-admin-key
     existingAdminKeySecret: ""
 
+  # Gateway-mode durable spool: encrypted queue for accepted-but-undelivered
+  # outbound mail. Rendered only when the deployment contract declares the
+  # gateway-spool durable resource for the gateway profile. Forces a single
+  # replica and the Recreate strategy; the PVC is mounted at spool.dir and is
+  # the only writable path (the root filesystem stays read-only).
+  # To join the master-key rotation census in gateway mode, set
+  # relay.existingSpoolKeySecret (or relay.spoolSharedKey) and
+  # relay.existingAdminKeySecret (or relay.adminKey), and pass
+  # RELAY_SPOOL_REGISTRY_URL through emailGateway.extraEnv. All are optional.
+  spool:
+    # Must equal the contract's durable path.
+    dir: "/var/spool/mnemo-gateway"
+    persistence:
+      enabled: true
+      size: "10Gi"
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+      # Use an existing PVC instead of creating one
+      existingClaim: ""
+
   # Kubernetes Service (SMTP is L4 TCP — needs LoadBalancer/NLB, not Ingress)
   service:
     type: LoadBalancer
@@ -1741,16 +1868,70 @@ inboundGateway:
 # Restricts pod-to-pod communication using Kubernetes NetworkPolicies.
 # Requires a CNI plugin that supports NetworkPolicy (Calico, Cilium, etc.)
 networkPolicy:
-  # Enable/disable network policies.
+  # Enable/disable network policies. ON by default: a protection that ships
+  # off protects nothing. This chart ships a default-deny plus one egress policy
+  # per component (api, workflow-worker, ices, mcp, email-gateway,
+  # inbound-gateway, sftp-gateway, step-ca, clamav, redis); every egress rule
+  # lists explicit ports and none allows "any port". Requires a CNI that
+  # enforces networking.k8s.io/v1 NetworkPolicy (Calico, Cilium, EKS/GKE/AKS/
+  # DOKS network-policy add-ons). Per-component destinations: EGRESS.md.
   #
-  # MSC-489 / HITRUST r2: this chart ships a complete default-deny + per-component
-  # allow set (API ingress/egress, worker, redis, clamav, mcp, sftp-gateway,
-  # email-gateway, step-ca). It defaults OFF so installs on clusters without a
-  # NetworkPolicy-enforcing CNI aren't given a false sense of isolation, and to
-  # avoid breaking connectivity before an operator validates the allow set on
-  # their CNI. For a regulated/HITRUST posture, set this to `true` after
-  # confirming pod-to-pod + egress connectivity on your cluster.
-  enabled: false
+  # Opt out (not recommended): networkPolicy.enabled=false. Upgrade note: with no
+  # CIDR set, database/Redis egress is allowed to ANY destination on the DB/Redis
+  # port only; set the cidrs below to narrow it.
+  enabled: true
+
+  # Customer-facing destinations the workers dial (SFTP/FTP connectors, webhooks,
+  # SIEM, LLM). Ports are per component below; peers are shared here. Private
+  # ranges are never reachable via publicInternet: list them in `cidrs` (e.g. a
+  # partner SFTP server behind a VPN).
+  customerEgress:
+    publicInternet: true
+    cidrs: []
+
+  # Customer-facing TCP ports by component. Add ports for steps you use
+  # (rsync 873, database_connect 5432/3306/1433/1521/50000/27017, AS2 4080, ...).
+  # When workflowWorker.enabled=false the API hosts the engines and also gets the
+  # workflowWorker list.
+  # customerEgressCIDRs adds peers (e.g. private partner ranges) for that component
+  # on top of customerEgress.cidrs.
+  api:
+    customerEgressPorts: [443]
+    customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
+  workflowWorker:
+    customerEgressPorts: [21, 22, 443, 990]
+    customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
+  ices:
+    customerEgressPorts: [443]
+    customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
+  emailGateway:
+    customerEgressPorts: [443]
+    customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
+  inboundGateway:
+    customerEgressPorts: [443]
+    customerEgressCIDRs: []
+    # Raw NetworkPolicyEgressRule list appended verbatim (every rule needs ports).
+    extraEgress: []
+
+  # Database egress. Port derives from database.driver (mongodb 27017, postgres
+  # 5432, mysql 3306, mssql 1433, oracle 1521, db2 50000) unless `port` is set.
+  # With no cidrs the port is allowed to any destination.
+  database:
+    enabled: true
+    port: 0
+    cidrs: []
+
+  # External Redis/Sentinel destination (no cidrs = those ports, any destination).
+  redis:
+    cidrs: []
 
   # Namespace where ingress controller runs (for allowing ingress traffic)
   ingressNamespace: "ingress-nginx"
@@ -1776,29 +1957,31 @@ networkPolicy:
   #           port: 8080
   extraApiIngress: []
 
-  # MongoDB access configuration
+  # Legacy database knobs (kept for upgrades; prefer networkPolicy.database).
   mongodb:
-    # Enable egress to MongoDB
+    # Set false to drop database egress entirely (e.g. sidecar-proxied DB)
     enabled: true
-    # MongoDB port
     port: 27017
-    # CIDR block for MongoDB (leave empty to allow all, set for external MongoDB)
-    # Example: "10.0.0.0/8" for internal, "0.0.0.0/0" for external
+    # Single CIDR; empty = database port to any destination
     cidr: ""
 
   # S3 access configuration (when not using in-cluster MinIO)
   s3:
     # Enable egress to S3
     enabled: true
-    # CIDR block for S3 (leave empty to allow public internet for AWS/GCS)
+    # CIDR for S3 / a private VPC endpoint (empty = public internet, ports below)
     cidr: ""
+    cidrs: []
+    # 443 for AWS/GCS/Spaces; 9000 for self-hosted MinIO on a public address
+    ports: [443, 9000]
 
   # License server access
   licenseServer:
     # Enable egress to license server
     enabled: true
-    # CIDR block (leave empty to allow public internet)
+    # CIDR block (leave empty to allow public internet on 443)
     cidr: ""
+    cidrs: []
     # In-cluster license server reachability (optional). Leave empty on a
     # self-hosted install that validates against the public license endpoint
     # (the cidr/443 rule above already covers that). Set to the namespace of
@@ -1857,6 +2040,7 @@ networkPolicy:
   # empty namespace degrades to every namespace on :1344 (fine single-tenant).
   icap:
     namespace: ""
+    cidrs: []
 
   # OAuth/SSO providers access
   oauth:
@@ -1865,27 +2049,27 @@ networkPolicy:
 
   # External SMTP relay access (Gmail, Office365, SES, custom mail servers, etc.)
   smtp:
-    # Enable egress to external SMTP servers on ports 25, 465, 587, 2525.
+    # Enable egress to external SMTP servers on `ports`.
     # Required if you configure outbound email via Settings → Email → SMTP/ESMTP.
     enabled: true
+    ports: [25, 465, 587, 2525]
+    # Extra private relays (public internet is always included)
+    cidrs: []
 
-  # Workflow engine egress — broad outbound (RFC1918-deny only)
+  # DEPRECATED. Formerly opened every TCP port to the public internet. It no
+  # longer does: when true it appends `customerEgressPorts` to the api/workflowWorker customer
+  # lists. Prefer networkPolicy.<component>.customerEgressPorts.
   workflows:
-    # Enable broad outbound TCP egress (0.0.0.0/0 minus RFC1918) for workflow
-    # executors that dial arbitrary customer-supplied host:port: call_api,
-    # webhook, database_connect (PostgreSQL/MySQL/MSSQL/Oracle/MongoDB/DB2),
-    # sftp_*, ftps_*, rsync, as2_send, swift_*, ebics_*, oftp2, llm_prompt, etc.
-    #
-    # Off by default. Enable when the tenant has the Workflows feature licensed
-    # and you want the iPaaS-style egress posture (broad outbound, RFC1918-only
-    # deny). The substantive boundary in this mode lives at L7+ (DLP, audit
-    # chain, anomaly detection) — see MnemoCompliance MNC-1 (SC-7 Boundary
-    # Protection control narrative) for the rationale and compensating controls.
-    #
-    # If you keep this off but enable workflows in the application, customer-
-    # authored steps that dial outside the narrow port allowlist (443, SMTP)
-    # will fail at the network layer.
     enabled: false
+    # FTP/FTPS passive mode: data connections use server-chosen high ports, which a
+    # fixed list cannot cover. Opt in with the FTP servers' CIDRs (required; there
+    # is no public-any fallback). Rendered with endPort (Kubernetes >= 1.25) on
+    # api (when it hosts the engines) and workflow-worker.
+    ftpPassive:
+      enabled: false
+      cidrs: []
+      portRange: {start: 1024, end: 65535}
+    customerEgressPorts: [21, 22, 80, 443, 873, 990, 1433, 1521, 3306, 4080, 5432, 27017, 50000]
 
 # ============================================================================
 # MCP Admin Server - AI-Assisted Configuration Management
@@ -1916,7 +2100,7 @@ mcp:
   # Compatibility view of the now-fixed Kubernetes transport. Noncanonical
   # retained values fail with an explicit migration error.
   transport:
-    # Fixed by deployment contract v2.
+    # Fixed by deployment contract v1.
     type: "http"
 
     # HTTP transport settings (when transport.type = "http")
@@ -1953,7 +2137,7 @@ mcp:
   # Example: "https://mcp.example.com"
   externalUrl: ""
 
-  # Compatibility values fixed by deployment contract v2.
+  # Compatibility values fixed by deployment contract v1.
   logging:
     # Must remain info.
     level: "info"

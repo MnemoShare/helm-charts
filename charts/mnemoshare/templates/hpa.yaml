@@ -1,4 +1,4 @@
-{{- if .Values.autoscaling.enabled }}
+{{- if and .Values.autoscaling.enabled (ne (include "mnemoshare.migrationOperationDown" .) "true") }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:

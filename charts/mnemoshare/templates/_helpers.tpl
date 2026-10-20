@@ -32,66 +32,166 @@ Create a default fully qualified app name.
 {{- end }}
 {{- end }}
 
+{{/* Non-empty when the API pod supervises the worker processes itself (the image default). */}}
+{{- define "mnemoshare.apiEmbeddedWorkers" -}}
+{{- $api := .Values.api | default dict -}}
+{{- if or (not (hasKey $api "embeddedWorkers")) $api.embeddedWorkers -}}true{{- end -}}
+{{- end -}}
+
+{{/* Path of a contract executable by id. */}}
+{{- define "mnemoshare.contractExecutablePath" -}}
+{{- $contract := fromJson (required "vendored deployment contract is required" (.root.Files.Get "tests/contracts/deployment/v1/contract.json")) -}}
+{{- $path := "" -}}
+{{- range $contract.executables }}{{- if eq .id $.id }}{{- $path = .path }}{{- end }}{{- end -}}
+{{- required (printf "deployment contract declares no %s executable" .id) $path -}}
+{{- end -}}
+
+{{/*
+Process ids an executable hosts: an adapter's supervised processes, or the
+executable's own id. Empty when the vendored contract does not know the path,
+which is how an unknown command is refused as hosting nothing.
+Input: dict "root" . "executable" <path>
+*/}}
+{{- define "mnemoshare.contractProcesses" -}}
+{{- $contract := fromJson (required "vendored deployment contract is required" (.root.Files.Get "tests/contracts/deployment/v1/contract.json")) -}}
+{{- $hosted := list -}}
+{{- range $contract.adapters }}{{- if eq .executable $.executable }}{{- $hosted = .processes }}{{- end }}{{- end -}}
+{{- range $contract.executables }}{{- if eq .path $.executable }}{{- $hosted = list .id }}{{- end }}{{- end -}}
+{{- toJson $hosted -}}
+{{- end -}}
+
+{{/* Non-empty when the executable hosts the process. Input: dict "root" "executable" "process" */}}
+{{- define "mnemoshare.hostsProcess" -}}
+{{- if has .process (include "mnemoshare.contractProcesses" (dict "root" .root "executable" .executable) | fromJsonArray) }}true{{ end -}}
+{{- end -}}
+
+{{/* Executable the dedicated worker container runs (workflowWorker.command or the contract's workflow-worker). */}}
+{{- define "mnemoshare.workerExecutable" -}}
+{{- $command := "" -}}
+{{- with .Values.workflowWorker.command }}{{- $command = first . }}{{- end -}}
+{{- $command | default (include "mnemoshare.contractExecutablePath" (dict "root" . "id" "workflow-worker")) -}}
+{{- end -}}
+
+{{/* Executable the cloud-worker pool (ices) container runs (ices.command or the contract's cloud-worker). */}}
+{{- define "mnemoshare.icesExecutable" -}}
+{{- $command := "" -}}
+{{- with .Values.ices.command }}{{- $command = first . }}{{- end -}}
+{{- $command | default (include "mnemoshare.contractExecutablePath" (dict "root" . "id" "cloud-worker")) -}}
+{{- end -}}
+
+{{/* Non-empty when the dedicated worker renders with at least one resident replica. */}}
+{{- define "mnemoshare.workerResident" -}}
+{{- $w := .Values.workflowWorker -}}
+{{- if and $w.enabled (or (and (not $w.autoscaling.enabled) (ge (int $w.replicas) 1)) (and $w.autoscaling.enabled (ge (int $w.autoscaling.minReplicas) 1))) }}true{{ end -}}
+{{- end -}}
+
+{{/* Non-empty when the cloud-worker pool renders with at least one resident replica. */}}
+{{- define "mnemoshare.icesResident" -}}
+{{- $i := .Values.ices -}}
+{{- if and $i.enabled (or (and (not $i.autoscaling.enabled) (ge (int $i.replicas) 1)) (and $i.autoscaling.enabled (ge (int $i.autoscaling.minReplicas) 1))) }}true{{ end -}}
+{{- end -}}
+
+{{/*
+Every worker process the image-default adapter supervises beside the API must
+have a resident host somewhere in the render: the API pod (embedded workers),
+the dedicated worker, or the cloud-worker pool. Fails naming the first process
+left without one.
+*/}}
+{{- define "mnemoshare.requireWorkerHosts" -}}
+{{- $contract := fromJson (required "vendored deployment contract is required" (.Files.Get "tests/contracts/deployment/v1/contract.json")) -}}
+{{- $default := dict -}}
+{{- range $contract.adapters }}{{- if .image_default }}{{- $default = . }}{{- end }}{{- end -}}
+{{- $hosted := list -}}
+{{- if include "mnemoshare.apiEmbeddedWorkers" . }}{{- $hosted = concat $hosted $default.processes }}{{- end -}}
+{{- $workerExecutable := include "mnemoshare.workerExecutable" . -}}
+{{- if include "mnemoshare.workerResident" . }}{{- $hosted = concat $hosted (include "mnemoshare.contractProcesses" (dict "root" . "executable" $workerExecutable) | fromJsonArray) }}{{- end -}}
+{{- $icesExecutable := include "mnemoshare.icesExecutable" . -}}
+{{- if include "mnemoshare.icesResident" . }}{{- $hosted = concat $hosted (include "mnemoshare.contractProcesses" (dict "root" . "executable" $icesExecutable) | fromJsonArray) }}{{- end -}}
+{{- range $default.processes }}
+{{- if and (ne . "api") (not (has . $hosted)) -}}
+{{- fail (printf "api.embeddedWorkers=false leaves %s with no host. Give it one: workflowWorker.enabled=true with a resident replica and a command that hosts it (/usr/local/bin/run-workers hosts background-worker, cloud-worker and workflow-worker; /usr/local/bin/run-core-workers hosts background-worker and workflow-worker beside a cloud-worker pool), or ices.enabled=true with a resident replica for cloud-worker. Rendered: workflowWorker=%q resident=%v, ices=%q resident=%v" . $workerExecutable (ne (include "mnemoshare.workerResident" $) "") $icesExecutable (ne (include "mnemoshare.icesResident" $) "")) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Executable the API container runs, read from the vendored deployment contract.
+API-only mode is refused unless every worker process the image-default adapter
+would have supervised beside the API has another resident host.
+*/}}
+{{- define "mnemoshare.apiExecutable" -}}
+{{- include "mnemoshare.requireWorkerHosts" . -}}
+{{- $contract := fromJson (required "vendored deployment contract is required" (.Files.Get "tests/contracts/deployment/v1/contract.json")) -}}
+{{- $default := dict -}}
+{{- range $contract.adapters }}{{- if .image_default }}{{- $default = . }}{{- end }}{{- end -}}
+{{- if include "mnemoshare.apiEmbeddedWorkers" . -}}
+{{- required "deployment contract declares no image-default adapter" $default.executable -}}
+{{- else -}}
+{{- include "mnemoshare.contractExecutablePath" (dict "root" . "id" "api") -}}
+{{- end -}}
+{{- end -}}
+
 {{/* Bind contract-governed peers to a declared immutable application identity. */}}
 {{- define "mnemoshare.requireDeploymentContractIdentity" -}}
-{{- $expectedCommit := "aba43f7911586189a6e056bb1c9dcab7258b21d4" -}}
-{{- if ne .Values.deploymentContractV2.sourceCommit $expectedCommit -}}{{- fail (printf "deploymentContractV2.sourceCommit must equal vendored application commit %s" $expectedCommit) -}}{{- end -}}
-{{- $raw := required "vendored deployment contract is required" (.Files.Get "tests/contracts/deployment/v2/contract.json") -}}
+{{- $expectedCommit := trim (required "vendored deployment contract provenance is required" (.Files.Get "tests/contracts/deployment/v1/UPSTREAM")) -}}
+{{- $expectedCommit = regexFind "(?m)^commit=([a-f0-9]{40})$" $expectedCommit | trimPrefix "commit=" -}}
+{{- $sourceCommit := .Values.deploymentContract.sourceCommit | default $expectedCommit -}}
+{{- if ne $sourceCommit $expectedCommit -}}{{- fail (printf "deploymentContract.sourceCommit must equal vendored application commit %s" $expectedCommit) -}}{{- end -}}
+{{- $raw := required "vendored deployment contract is required" (.Files.Get "tests/contracts/deployment/v1/contract.json") -}}
 {{- $contract := fromJson $raw -}}
-{{- if ne .Values.deploymentContractV2.contractFingerprint $contract.fingerprint -}}{{- fail (printf "deploymentContractV2.contractFingerprint must equal vendored contract fingerprint %s" $contract.fingerprint) -}}{{- end -}}
-{{- $digest := required "deploymentContractV2.imageDigest is required for contract-governed MCP/SFTP" .Values.deploymentContractV2.imageDigest -}}
-{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}{{- fail "deploymentContractV2.imageDigest must be sha256:<64 lowercase hex>" -}}{{- end -}}
-{{- if ne $digest .Values.image.digest -}}{{- fail "deploymentContractV2.imageDigest must equal the global image.digest actually selected for contract-governed peers" -}}{{- end -}}
+{{- $fingerprint := .Values.deploymentContract.contractFingerprint | default $contract.fingerprint -}}
+{{- if ne $fingerprint $contract.fingerprint -}}{{- fail (printf "deploymentContract.contractFingerprint must equal vendored contract fingerprint %s" $contract.fingerprint) -}}{{- end -}}
+{{- $digest := include "mnemoshare.deploymentContractImageDigest" . -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}{{- fail "deploymentContract.imageDigest must be sha256:<64 lowercase hex>" -}}{{- end -}}
+{{- end -}}
+
+{{- define "mnemoshare.deploymentContractImageDigest" -}}
+{{- $selected := .Values.image.digest -}}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled -}}
+{{- $selected = required "migrationOperation.targetImage.digest is required when migrationOperation.enabled=true" .Values.migrationOperation.targetImage.digest -}}
+{{- end -}}
+{{- $declared := .Values.deploymentContract.imageDigest | default $selected -}}
+{{- if ne $declared $selected -}}{{- fail "deploymentContract.imageDigest must equal the application image digest selected for this operation" -}}{{- end -}}
+{{- $declared -}}
 {{- end -}}
 
 {{- define "mnemoshare.contractApplicationImage" -}}
-{{- printf "%s@%s" (required "image.repository is required" .Values.image.repository) .Values.deploymentContractV2.imageDigest -}}
+{{- $repository := required "image.repository is required" .Values.image.repository -}}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled -}}
+{{- $repository = required "migrationOperation.targetImage.repository is required when migrationOperation.enabled=true" .Values.migrationOperation.targetImage.repository -}}
+{{- end -}}
+{{- printf "%s@%s" $repository (include "mnemoshare.deploymentContractImageDigest" .) -}}
 {{- end -}}
 
-{{/* Bind v3 contract-governed peers to a declared immutable application identity. */}}
-{{- define "mnemoshare.requireDeploymentContractV3Identity" -}}
-{{- $expectedCommit := "0dd4f8eb13b9afb35a586f4ac7bc8618d25d7886" -}}
-{{- if ne .Values.deploymentContractV3.sourceCommit $expectedCommit -}}{{- fail (printf "deploymentContractV3.sourceCommit must equal vendored application commit %s" $expectedCommit) -}}{{- end -}}
-{{- $raw := required "vendored deployment contract v3 is required" (.Files.Get "tests/contracts/deployment/v3/contract.json") -}}
+{{/* Helm-managed application processes are always production posture. */}}
+{{- define "mnemoshare.productionEnvironment" -}}
+- name: ENVIRONMENT
+  value: "production"
+{{- end -}}
+
+{{- define "mnemoshare.deploymentExecutable" -}}
+{{- $raw := required "vendored tests/contracts/deployment/v1/contract.json is required" (.root.Files.Get "tests/contracts/deployment/v1/contract.json") -}}
 {{- $contract := fromJson $raw -}}
-{{- if ne .Values.deploymentContractV3.contractFingerprint $contract.fingerprint -}}{{- fail (printf "deploymentContractV3.contractFingerprint must equal vendored contract fingerprint %s" $contract.fingerprint) -}}{{- end -}}
-{{- $digest := required "deploymentContractV3.imageDigest is required for contract-governed emailgateway" .Values.deploymentContractV3.imageDigest -}}
-{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}{{- fail "deploymentContractV3.imageDigest must be sha256:<64 lowercase hex>" -}}{{- end -}}
-{{- if ne $digest .Values.image.digest -}}{{- fail "deploymentContractV3.imageDigest must equal the global image.digest actually selected for contract-governed peers" -}}{{- end -}}
-{{- end -}}
-
-{{- define "mnemoshare.contractV3ApplicationImage" -}}
-{{- printf "%s@%s" (required "image.repository is required" .Values.image.repository) .Values.deploymentContractV3.imageDigest -}}
-{{- end -}}
-
-{{- define "mnemoshare.deploymentExecutableV3" -}}
-{{- $raw := required "vendored tests/contracts/deployment/v3/contract.json is required" (.root.Files.Get "tests/contracts/deployment/v3/contract.json") -}}
-{{- $contract := fromJson $raw -}}
-{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v3" -}}{{- fail "vendored deployment contract is not v3" -}}{{- end -}}
+{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v1" -}}{{- fail "vendored deployment contract is not canonical v1" -}}{{- end -}}
 {{- $found := dict -}}
 {{- range $contract.executables -}}{{- if eq .id $.id -}}{{- $_ := set $found "executable" . -}}{{- end -}}{{- end -}}
 {{- if not (hasKey $found "executable") -}}{{- fail (printf "vendored deployment contract has no executable %s" .id) -}}{{- end -}}
 {{- toJson (get $found "executable") -}}
 {{- end -}}
 
-{{- define "mnemoshare.deploymentProfileV3" -}}
-{{- $executable := include "mnemoshare.deploymentExecutableV3" (dict "root" .root "id" .executable) | fromJson -}}
+{{- define "mnemoshare.deploymentProfile" -}}
+{{- $executable := include "mnemoshare.deploymentExecutable" (dict "root" .root "id" .executable) | fromJson -}}
 {{- $found := dict -}}
 {{- range $executable.profiles -}}{{- if eq .id $.profile -}}{{- $_ := set $found "profile" . -}}{{- end -}}{{- end -}}
 {{- if not (hasKey $found "profile") -}}{{- fail (printf "vendored deployment executable %s has no profile %s" .executable .profile) -}}{{- end -}}
 {{- toJson (get $found "profile") -}}
 {{- end -}}
 
-{{- define "mnemoshare.deploymentProcessV2" -}}
-{{- $raw := required "vendored tests/contracts/deployment/v2/contract.json is required" (.root.Files.Get "tests/contracts/deployment/v2/contract.json") -}}
-{{- $contract := fromJson $raw -}}
-{{- if ne $contract.provenance.schema "mnemoshare.deployment-contract.v2" -}}{{- fail "vendored deployment contract is not v2" -}}{{- end -}}
-{{- $found := dict -}}
-{{- range $contract.processes -}}{{- if eq .id $.id -}}{{- $_ := set $found "process" . -}}{{- end -}}{{- end -}}
-{{- if not (hasKey $found "process") -}}{{- fail (printf "vendored deployment contract has no process %s" .id) -}}{{- end -}}
-{{- $process := get $found "process" -}}
-{{- if ne $process.persistence "none" -}}{{- fail (printf "deployment process %s must remain persistence=none" .id) -}}{{- end -}}
-{{- toJson $process -}}
+{{- define "mnemoshare.deploymentDefaultProfile" -}}
+{{- $executable := include "mnemoshare.deploymentExecutable" (dict "root" .root "id" .id) | fromJson -}}
+{{- $profile := include "mnemoshare.deploymentProfile" (dict "root" .root "executable" .id "profile" $executable.default_profile) | fromJson -}}
+{{- $_ := set $profile "executable" $executable.path -}}
+{{- toJson $profile -}}
 {{- end -}}
 
 {{- define "mnemoshare.requireUnifiedComponentImage" -}}
@@ -99,32 +199,32 @@ Create a default fully qualified app name.
 {{- $component := .component -}}
 {{- $name := .name -}}
 {{- if and $component.repository (ne $component.repository $root.Values.image.repository) -}}
-{{- fail (printf "%s.image.repository is retired by deployment contract v2; use the unified image.repository" $name) -}}
+{{- fail (printf "%s.image.repository is retired by deployment contract v1; use the unified image.repository" $name) -}}
 {{- end -}}
 {{- if $component.tag -}}
-{{- fail (printf "%s.image.tag is retired by deployment contract v2; contract-governed peers require a digest" $name) -}}
+{{- fail (printf "%s.image.tag is retired by deployment contract v1; contract-governed peers require a digest" $name) -}}
 {{- end -}}
-{{- if and $component.digest (ne $component.digest $root.Values.deploymentContractV2.imageDigest) -}}
-{{- fail (printf "%s.image.digest is retired by deployment contract v2; use the unified image.digest" $name) -}}
+{{- if and $component.digest (ne $component.digest $root.Values.deploymentContract.imageDigest) -}}
+{{- fail (printf "%s.image.digest is retired by the deployment contract; use the unified image.digest" $name) -}}
 {{- end -}}
 {{- end -}}
 
-{{- define "mnemoshare.validateMCPContractV2" -}}
+{{- define "mnemoshare.validateMCPContract" -}}
 {{- include "mnemoshare.requireDeploymentContractIdentity" . -}}
 {{- include "mnemoshare.requireUnifiedComponentImage" (dict "root" . "component" .Values.mcp.image "name" "mcp") -}}
-{{- if ne .Values.mcp.transport.type "http" -}}{{- fail "mcp.transport.type is fixed to http by deployment contract v2; stdio Kubernetes deployments are no longer supported" -}}{{- end -}}
-{{- if ne (int .Values.mcp.transport.http.containerPort) 9222 -}}{{- fail "mcp.transport.http.containerPort is fixed to 9222 by deployment contract v2; vary only mcp.service.port" -}}{{- end -}}
+{{- if ne .Values.mcp.transport.type "http" -}}{{- fail "mcp.transport.type is fixed to http by deployment contract v1; stdio Kubernetes deployments are no longer supported" -}}{{- end -}}
+{{- if ne (int .Values.mcp.transport.http.containerPort) 9222 -}}{{- fail "mcp.transport.http.containerPort is fixed to 9222 by deployment contract v1; vary only mcp.service.port" -}}{{- end -}}
 {{- if and (hasKey .Values.mcp.transport.http "port") (ne (int .Values.mcp.transport.http.port) (int .Values.mcp.service.port)) -}}{{- fail "mcp.transport.http.port is retired; keep it equal to mcp.service.port while migrating values" -}}{{- end -}}
-{{- if ne .Values.mcp.logging.level "info" -}}{{- fail "mcp.logging.level is fixed to info by deployment contract v2" -}}{{- end -}}
-{{- if ne .Values.mcp.logging.format "json" -}}{{- fail "mcp.logging.format is fixed to json by deployment contract v2" -}}{{- end -}}
+{{- if ne .Values.mcp.logging.level "info" -}}{{- fail "mcp.logging.level is fixed to info by deployment contract v1" -}}{{- end -}}
+{{- if ne .Values.mcp.logging.format "json" -}}{{- fail "mcp.logging.format is fixed to json by deployment contract v1" -}}{{- end -}}
 {{- if and (not .Values.mcp.apiKey.existingSecret) (not .Values.mcp.apiKey.key) -}}{{- fail "mcp.enabled requires mcp.apiKey.existingSecret or mcp.apiKey.key; the chart will not render a dangling secretKeyRef" -}}{{- end -}}
 {{- end -}}
 
-{{- define "mnemoshare.validateSFTPContractV2" -}}
+{{- define "mnemoshare.validateSFTPContract" -}}
 {{- include "mnemoshare.requireDeploymentContractIdentity" . -}}
 {{- include "mnemoshare.requireUnifiedComponentImage" (dict "root" . "component" .Values.sftpGateway.image "name" "sftpGateway") -}}
 {{- $command := toJson .Values.sftpGateway.command -}}
-{{- if and (ne $command "[]") (ne $command "[\"/usr/local/bin/sftp-gateway\"]") -}}{{- fail "sftpGateway.command is fixed to [/usr/local/bin/sftp-gateway] by deployment contract v2" -}}{{- end -}}
+{{- if and (ne $command "[]") (ne $command "[\"/usr/local/bin/sftp-gateway\"]") -}}{{- fail "sftpGateway.command is fixed to [/usr/local/bin/sftp-gateway] by deployment contract v1" -}}{{- end -}}
 {{- end -}}
 
 {{/*
@@ -151,6 +251,7 @@ helm.sh/chart: {{ include "mnemoshare.chart" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{ include "mnemoshare.migrationOperationContractLabels" . }}
 {{- with .Values.commonLabels }}
 {{ toYaml . }}
 {{- end }}
@@ -163,6 +264,97 @@ Selector labels land in spec.selector.matchLabels which is immutable.
 {{- define "mnemoshare.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "mnemoshare.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Migration-operation/v1 is an explicit adapter for an external controller.
+The application owns the operation contract; the chart only renders the
+one-shot command and drains the governed writer workloads for maintenance
+phases. Ordinary startup remains fail-closed in the application.
+*/}}
+{{- define "mnemoshare.migrationOperationDown" -}}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled (has .Values.migrationOperation.phase (list "reset" "down" "apply" "verify")) }}true{{ else }}false{{ end }}
+{{- end }}
+
+{{/* Load the generated migration-operation/v1 contract owned by the application. */}}
+{{- define "mnemoshare.migrationOperationContract" -}}
+{{- $raw := required "vendored tests/contracts/migration-operation/v1/contract.json is required" (.Files.Get "tests/contracts/migration-operation/v1/contract.json") -}}
+{{- $contract := fromJson $raw -}}
+{{- if ne $contract.provenance.schema "mnemoshare.migration-operation.v1" -}}{{- fail "vendored migration operation contract is not v1" -}}{{- end -}}
+{{- if not (regexMatch "^[a-f0-9]{64}$" $contract.fingerprint) -}}{{- fail "vendored migration operation contract has an invalid fingerprint" -}}{{- end -}}
+{{- toJson $contract -}}
+{{- end }}
+
+{{- define "mnemoshare.migrationOperationExpectedContractFingerprint" -}}
+{{- $contract := include "mnemoshare.migrationOperationContract" . | fromJson -}}
+{{- $contract.fingerprint -}}
+{{- end }}
+
+{{/*
+Mark every rendered migration-operation phase with a label-safe identity.
+The full digest is an annotation on executable operation resources because a
+SHA-256 hex digest is one byte longer than Kubernetes permits in label values.
+These intentionally stay out of selectorLabels: selectors are immutable while
+an operation contract changes with a release.
+*/}}
+{{- define "mnemoshare.migrationOperationContractLabels" -}}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled -}}
+{{- $contract := include "mnemoshare.migrationOperationContract" . | fromJson -}}
+{{- $version := trimPrefix "mnemoshare.migration-operation." $contract.provenance.schema -}}
+mnemoshare.io/migration-operation-contract: {{ $version | quote }}
+mnemoshare.io/migration-operation-contract-id: {{ trunc 16 $contract.fingerprint | quote }}
+{{- end -}}
+{{- end }}
+
+{{- define "mnemoshare.migrationOperationContractAnnotations" -}}
+{{- if and .Values.migrationOperation .Values.migrationOperation.enabled -}}
+{{- $contract := include "mnemoshare.migrationOperationContract" . | fromJson -}}
+mnemoshare.io/migration-operation-contract-fingerprint: {{ $contract.fingerprint | quote }}
+{{- end -}}
+{{- end }}
+
+{{- define "mnemoshare.migrationOperationTargetImage" -}}
+{{- $target := required "migrationOperation.targetImage is required when migrationOperation.enabled=true" .Values.migrationOperation.targetImage -}}
+{{- $repo := required "migrationOperation.targetImage.repository is required when migrationOperation.enabled=true" $target.repository -}}
+{{- $digest := required "migrationOperation.targetImage.digest is required when migrationOperation.enabled=true" $target.digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}
+{{- fail "migrationOperation.targetImage.digest must be sha256:<64 lowercase hex>" -}}
+{{- end -}}
+{{- printf "%s@%s" $repo $digest -}}
+{{- end }}
+
+{{/* Resolve a writer image, pinning every governed writer to targetImage at up. */}}
+{{- define "mnemoshare.writerImage" -}}
+{{- $root := .root -}}
+{{- $component := .component | default dict -}}
+{{- $name := .name | default "application" -}}
+{{- if and $root.Values.migrationOperation $root.Values.migrationOperation.enabled (eq $root.Values.migrationOperation.phase "up") }}
+  {{- $target := $root.Values.migrationOperation.targetImage -}}
+  {{- $targetRepo := required "migrationOperation.targetImage.repository is required when migrationOperation.phase=up" $target.repository -}}
+  {{- $targetDigest := required "migrationOperation.targetImage.digest is required when migrationOperation.phase=up" $target.digest -}}
+  {{- $repo := $component.repository | default $targetRepo -}}
+  {{- $digest := $component.digest | default $targetDigest -}}
+  {{- $tag := $component.tag | default "" -}}
+  {{- if or (ne $repo $targetRepo) (ne $digest $targetDigest) (ne $tag "") -}}
+    {{- fail (printf "migrationOperation.phase=up requires %s to resolve exactly to %s@%s" $name $targetRepo $targetDigest) -}}
+  {{- end -}}
+  {{- printf "%s@%s" $targetRepo $targetDigest -}}
+{{- else if or (eq $root.Values.formatMigrations.mode "automatic") (eq $root.Values.formatMigrations.mode "operator") -}}
+  {{- include "mnemoshare.applicationImage" (dict "root" $root "component" $component "name" $name) -}}
+{{- else -}}
+  {{- $repo := $component.repository | default (required "image.repository is required" $root.Values.image.repository) -}}
+  {{- $digest := $component.digest | default "" -}}
+  {{- if and (eq $digest "") (eq ($component.repository | default "") "") (eq ($component.tag | default "") "") ($root.Values.image.digest | default "") }}
+    {{- $digest = $root.Values.image.digest -}}
+  {{- end -}}
+  {{- if $digest }}
+    {{- if $component.tag }}{{ fail (printf "%s cannot combine image.tag with image.digest" $name) }}{{ end }}
+    {{- printf "%s@%s" $repo $digest -}}
+  {{- else }}
+    {{- $tag := $component.tag | default $root.Values.image.tag | default $root.Chart.AppVersion -}}
+    {{- printf "%s:%s" $repo $tag -}}
+  {{- end }}
+{{- end -}}
 {{- end }}
 
 {{/*
@@ -327,6 +519,17 @@ callback-host validation. Resolution order:
 {{- end }}
 
 {{/*
+Integration env for the dedicated worker when it is the only host of the worker
+processes (api.embeddedWorkers=false). Emits nothing otherwise, so installs
+that keep the workers in the API pod render the worker exactly as before.
+*/}}
+{{- define "mnemoshare.workerIntegrationEnv" -}}
+{{- if not (include "mnemoshare.apiEmbeddedWorkers" .) -}}
+{{- include "mnemoshare.integrationEnv" (merge (dict "integrationForWorker" true) .) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 mnemoshare.integrationEnv emits env vars for the cross-service integration
 surface that cmd/api AND cmd/worker (background engine) both need: rich-media
 thumbnails, Apache Tika text extraction, Presidio NER, AI-powered DLP, and
@@ -346,8 +549,16 @@ Values consumed (all optional — only emitted when set):
   - .Values.dlp.aiEnabled, .Values.dlp.aiProvider, .Values.dlp.aiModel
   - .Values.dlp.aiApiKey OR .Values.dlp.existingAISecret
   - .Values.kms.envelopeEnabled
+
+PRESIDIO_ENABLED, PRESIDIO_API_KEY and DLP_AI_ENABLED are read only by the
+worker processes, and the deployment contract refuses env a container's
+executable does not own. They are therefore emitted on whichever pod hosts the
+workers: the API pod while api.embeddedWorkers is on, otherwise only the
+dedicated worker (which includes this helper through
+mnemoshare.workerIntegrationEnv).
 */}}
 {{- define "mnemoshare.integrationEnv" -}}
+{{- $hostsWorkers := or (include "mnemoshare.apiEmbeddedWorkers" .) .integrationForWorker -}}
 {{- with .Values.richMedia -}}
 {{- if .url }}
 - name: RICH_MEDIA_URL
@@ -370,17 +581,21 @@ Values consumed (all optional — only emitted when set):
   value: {{ .tikaUrl | quote }}
 {{- end }}
 {{- if .presidioUrl }}
+{{- if $hostsWorkers }}
 - name: PRESIDIO_ENABLED
   value: "true"
+{{- end }}
 - name: PRESIDIO_URL
   value: {{ .presidioUrl | quote }}
-{{- if .presidioApiKey }}
+{{- if and .presidioApiKey $hostsWorkers }}
 - name: PRESIDIO_API_KEY
   value: {{ .presidioApiKey | quote }}
 {{- end }}
 {{- end }}
+{{- if $hostsWorkers }}
 - name: DLP_AI_ENABLED
   value: {{ .aiEnabled | default false | quote }}
+{{- end }}
 {{- if .aiProvider }}
 - name: AI_PROVIDER
   value: {{ .aiProvider | quote }}
@@ -400,40 +615,7 @@ Values consumed (all optional — only emitted when set):
   value: {{ .aiApiKey | quote }}
 {{- end }}
 {{- end }}
-{{- /* KMS_ENVELOPE_ENABLED is emitted unconditionally; users who override
-       .Values.kms to {} or nil still get the safe default so the worker
-       decrypt path for existing v2-encrypted files is preserved. */}}
-{{- $envelope := true }}
-{{- if and .Values.kms (hasKey .Values.kms "envelopeEnabled") }}
-{{- $envelope = .Values.kms.envelopeEnabled }}
-{{- end }}
-- name: KMS_ENVELOPE_ENABLED
-  value: {{ $envelope | quote }}
-{{- /* DATA_PLANE_KMS_* (MSC-391). Defaults to the app's builtin MKEK when
-       provider is unset; SaaS tenants populate provider=aws_kms +
-       keyID=alias/msaas/<id> via the operator. Without these, the app
-       defaults to provider="" = Builtin, which means an envelopeEnabled=true
-       tenant SILENTLY routes through the builtin MKEK derived from
-       ENCRYPTION_KEY instead of the per-tenant CMK — bypassing the entire
-       KeyGuard isolation model. All four are emitted only when set, so
-       legacy / self-hosted installs without an explicit KMS block are
-       unaffected. */}}
-{{- if and .Values.kms .Values.kms.dataPlaneProvider }}
-- name: DATA_PLANE_KMS_PROVIDER
-  value: {{ .Values.kms.dataPlaneProvider | quote }}
-{{- end }}
-{{- if and .Values.kms .Values.kms.dataPlaneKeyID }}
-- name: DATA_PLANE_KMS_KEY_ID
-  value: {{ .Values.kms.dataPlaneKeyID | quote }}
-{{- end }}
-{{- if and .Values.kms .Values.kms.dataPlaneRegion }}
-- name: DATA_PLANE_KMS_REGION
-  value: {{ .Values.kms.dataPlaneRegion | quote }}
-{{- end }}
-{{- if and .Values.kms .Values.kms.dataPlaneLogicalKeyID }}
-- name: DATA_PLANE_KMS_LOGICAL_KEY_ID
-  value: {{ .Values.kms.dataPlaneLogicalKeyID | quote }}
-{{- end }}
+{{- include "mnemoshare.dataPlaneKMSEnv" . }}
 {{- if and .Values.kms .Values.kms.jwtSignerType }}
 - name: JWT_SIGNER_TYPE
   value: {{ .Values.kms.jwtSignerType | quote }}
@@ -588,8 +770,10 @@ api's surface or the engine silently can't send.
 {{- end }}
 
 {{/*
-Mail-monitoring env for whichever engine hosts it (worker when embedded, or the
-standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud/webhook/*.
+Mail-monitoring env, owned by cloud-worker. Rendered on every container whose
+executable hosts cloud-worker (mnemoshare.mailMonitoringEnvFor) and nowhere
+else: the application contract check refuses env a container's executable does
+not own. Webhook URLs default to <appUrl>/api/v1/integrations/cloud/webhook/*.
 */}}
 {{- define "mnemoshare.mailMonitoringEnv" -}}
 {{- if .Values.mailMonitoring.enabled }}
@@ -604,12 +788,8 @@ standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud
 - name: MICROSOFT_WEBHOOK_URL
   value: {{ .Values.mailMonitoring.microsoftWebhookUrl | default (printf "%s/api/v1/integrations/cloud/webhook/microsoft" $base) | quote }}
 {{- end }}
-- name: GOOGLE_MAIL_ENROLLMENT_INTERVAL_SEC
-  value: {{ .Values.mailMonitoring.enrollmentIntervalSec | default 60 | quote }}
 - name: GOOGLE_INTERNAL_MAIL_INTERVAL_SEC
   value: {{ .Values.mailMonitoring.internalMailIntervalSec | default 60 | quote }}
-- name: GOOGLE_INTERNAL_MAIL_WATCH_INTERVAL_SEC
-  value: {{ .Values.mailMonitoring.internalMailWatchIntervalSec | default 90 | quote }}
 {{- include "mnemoshare.mailMonitoringArcEnv" . }}
 {{- end }}
 {{- end }}
@@ -656,7 +836,35 @@ deployments, where one key already exists. ICES must be configurable on its own
 - name: ARC_PRIVATE_KEY
   value: {{ $inline | quote }}
 {{- end }}
+{{- end -}}
+
+{{/* mailMonitoringEnv for one container. Input: dict "root" . "executable" <path> */}}
+{{- define "mnemoshare.mailMonitoringEnvFor" -}}
+{{- if include "mnemoshare.hostsProcess" (dict "root" .root "executable" .executable "process" "cloud-worker") -}}
+{{- include "mnemoshare.mailMonitoringEnv" .root -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Metrics listener env for one worker process. Each worker executable owns its
+own address name, so a container supervising several processes can expose
+each on its own port. Refused when the container does not host the process.
+Input: dict "root" . "executable" <path> "process" <id> "name" <ENV> "port" <int>
+*/}}
+{{- define "mnemoshare.workerMetricsEnv" -}}
+{{- if not (include "mnemoshare.hostsProcess" (dict "root" .root "executable" .executable "process" .process)) -}}
+{{- fail (printf "metrics for %s cannot be enabled on a container running %q: that executable does not host %s" .process .executable .process) -}}
 {{- end }}
+- name: {{ .name }}
+  value: {{ printf ":%d" (int .port) | quote }}
+{{- end -}}
+
+{{/* Prometheus pod-discovery annotations for a metrics listener. Input: dict "port" <int> */}}
+{{- define "mnemoshare.metricsScrapeAnnotations" -}}
+prometheus.io/scrape: "true"
+prometheus.io/port: {{ .port | quote }}
+prometheus.io/path: "/metrics"
+{{- end -}}
 
 {{/*
 API callback env for a background engine (worker/ices) that calls the app API.
@@ -679,5 +887,106 @@ existingAPIKeySecret is set, else an inline apiKey.
 - name: MNEMOSHARE_API_KEY
   value: {{ .Values.workflowWorker.apiKey | quote }}
 {{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+License credential and deployment-ID inputs. Every runtime process that
+evaluates the license entitlement must receive identical values: the
+entitlement grant is bound to the credential digest and the deployment ID, so
+a process missing either rejects the grant the others committed.
+*/}}
+{{- define "mnemoshare.licenseEnv" -}}
+# License
+- name: LICENSE_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ if .Values.existingSecrets.license }}{{ .Values.existingSecrets.license }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+      key: license-key
+{{- if .Values.license.deploymentId }}
+# Explicit deployment ID override (optional - infrastructure-based ID is recommended)
+- name: DEPLOYMENT_ID
+  value: {{ .Values.license.deploymentId | quote }}
+{{- end }}
+# Infrastructure-based deployment ID generation
+# Combines namespace name + cluster UID for deterministic, portable deployment IDs
+# - Same namespace + cluster = same deployment ID (allows pod scaling)
+# - Different namespace or cluster = different deployment ID
+# - Copying database doesn't copy deployment ID
+- name: NAMESPACE_UID
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.namespace
+{{- $kubeSystemNs := (lookup "v1" "Namespace" "" "kube-system") }}
+{{- if $kubeSystemNs }}
+- name: KUBE_SYSTEM_UID
+  value: {{ $kubeSystemNs.metadata.uid | quote }}
+{{- end }}
+{{- end -}}
+
+{{/* Vault kubernetes-auth token, projected (the default SA token is not mounted). */}}
+{{- define "mnemoshare.vault.k8sTokenEnv" -}}
+{{- if .Values.vault.kubernetesAuth.enabled }}
+- name: VAULT_K8S_TOKEN_PATH
+  value: {{ .Values.vault.kubernetesAuth.tokenPath | quote }}
+{{- end }}
+{{- end -}}
+
+{{- define "mnemoshare.vault.k8sTokenMount" -}}
+{{- if .Values.vault.kubernetesAuth.enabled }}
+- name: vault-k8s-token
+  mountPath: {{ dir .Values.vault.kubernetesAuth.tokenPath }}
+  readOnly: true
+{{- end }}
+{{- end -}}
+
+{{- define "mnemoshare.vault.k8sTokenVolume" -}}
+{{- if .Values.vault.kubernetesAuth.enabled }}
+- name: vault-k8s-token
+  projected:
+    sources:
+      - serviceAccountToken:
+          path: {{ base .Values.vault.kubernetesAuth.tokenPath }}
+          audience: {{ .Values.vault.kubernetesAuth.audience | quote }}
+          expirationSeconds: {{ .Values.vault.kubernetesAuth.expirationSeconds | default 3600 }}
+{{- end }}
+{{- end -}}
+
+{{- /* Data-plane KMS env, shared by every process that reads or writes
+       envelope-encrypted content (API, workers, inbound gateway). */}}
+{{- define "mnemoshare.dataPlaneKMSEnv" -}}
+{{- /* KMS_ENVELOPE_ENABLED is emitted unconditionally; users who override
+       .Values.kms to {} or nil still get the safe default so the worker
+       decrypt path for existing v2-encrypted files is preserved. */}}
+{{- $envelope := true }}
+{{- if and .Values.kms (hasKey .Values.kms "envelopeEnabled") }}
+{{- $envelope = .Values.kms.envelopeEnabled }}
+{{- end }}
+- name: KMS_ENVELOPE_ENABLED
+  value: {{ $envelope | quote }}
+{{- /* DATA_PLANE_KMS_* (MSC-391). Defaults to the app's builtin MKEK when
+       provider is unset; SaaS tenants populate provider=aws_kms +
+       keyID=alias/msaas/<id> via the operator. Without these, the app
+       defaults to provider="" = Builtin, which means an envelopeEnabled=true
+       tenant SILENTLY routes through the builtin MKEK derived from
+       ENCRYPTION_KEY instead of the per-tenant CMK — bypassing the entire
+       KeyGuard isolation model. All four are emitted only when set, so
+       legacy / self-hosted installs without an explicit KMS block are
+       unaffected. */}}
+{{- if and .Values.kms .Values.kms.dataPlaneProvider }}
+- name: DATA_PLANE_KMS_PROVIDER
+  value: {{ .Values.kms.dataPlaneProvider | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.dataPlaneKeyID }}
+- name: DATA_PLANE_KMS_KEY_ID
+  value: {{ .Values.kms.dataPlaneKeyID | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.dataPlaneRegion }}
+- name: DATA_PLANE_KMS_REGION
+  value: {{ .Values.kms.dataPlaneRegion | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.dataPlaneLogicalKeyID }}
+- name: DATA_PLANE_KMS_LOGICAL_KEY_ID
+  value: {{ .Values.kms.dataPlaneLogicalKeyID | quote }}
 {{- end }}
 {{- end }}

@@ -6,9 +6,6 @@
 {{- if eq .Values.database.driver "sqlite" }}
 {{- fail "workflowWorker.enabled is not compatible with database.driver=sqlite. Use mongodb or postgres." }}
 {{- end }}
-{{- if and .Values.workflowWorker.filteredProcess (contains "workflow" .Values.workflowWorker.filteredProcess) }}
-{{- fail "workflowWorker.filteredProcess names the retired \"workflow\" engine (folded into \"messaging\" in app 0.16; an unknown engine name is a boot fatal). Remove the override to use the derived default, or replace \"workflow\" with \"messaging\"." }}
-{{- end }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -19,8 +16,8 @@ metadata:
     mnemoshare.io/database-writer: "true"
 spec:
   serviceName: {{ include "mnemoshare.fullname" . }}-worker
-  {{- if not .Values.workflowWorker.autoscaling.enabled }}
-  replicas: {{ .Values.workflowWorker.replicas }}
+  {{- if or (not .Values.workflowWorker.autoscaling.enabled) (eq (include "mnemoshare.migrationOperationDown" .) "true") }}
+  replicas: {{ if eq (include "mnemoshare.migrationOperationDown" .) "true" }}0{{ else }}{{ .Values.workflowWorker.replicas }}{{ end }}
   {{- end }}
   selector:
     matchLabels:
@@ -28,6 +25,10 @@ spec:
       app.kubernetes.io/component: workflow-worker
   template:
     metadata:
+      {{- if .Values.workflowWorker.metrics.enabled }}
+      annotations:
+        {{- include "mnemoshare.metricsScrapeAnnotations" (dict "port" .Values.workflowWorker.metrics.port) | nindent 8 }}
+      {{- end }}
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: workflow-worker
@@ -38,55 +39,28 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.workflowWorker.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
       - name: workflow-worker
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: {{ include "mnemoshare.applicationImage" (dict "root" . "component" .Values.workflowWorker.image "name" "workflowWorker") | quote }}
+        image: {{ include "mnemoshare.writerImage" (dict "root" . "component" .Values.workflowWorker.image "name" "workflow-worker") | quote }}
         imagePullPolicy: {{ .Values.workflowWorker.image.pullPolicy }}
-        # Override command to run cmd/worker (MNI-27 unified hosted-binary).
-        # Pre-MNI-27 this was /usr/local/bin/workflow-worker; that entrypoint was
-        # retired in MNI-27 PR#4 (commit e6e243d). cmd/worker hosts every engine
-        # at compile time and activates the configured subset via FILTERED_PROCESS.
-        # For this StatefulSet the active set is .Values.workflowWorker.filteredProcess
-        # (default: "*"; "background,messaging" on db2) — see the FILTERED_PROCESS env below.
+        # Override command to run the compiled workflow worker binary.
         command:
-          {{- toYaml (.Values.workflowWorker.command | default (list "/usr/local/bin/worker")) | nindent 10 }}
+          {{- toYaml (.Values.workflowWorker.command | default (list "/usr/local/bin/workflow-worker")) | nindent 10 }}
         env:
+        {{- include "mnemoshare.vault.k8sTokenEnv" . | nindent 8 }}
+        {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
           value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
-        # Engine activation filter (MNS-505 / MNS-1159). Defaults to "*" —
-        # host every engine the deployed app binary registers. Do NOT
-        # hardcode an engine list: names drift across app versions and an
-        # unknown name is a boot fatal — the previous "background,workflow"
-        # default fatals on app >= 0.16, where the "workflow" engine was
-        # folded into "messaging". "*" always includes "background" (so
-        # uploads never stick on the Pending scan badge) and "kmsrotation"
-        # (Settings rotate/rewrap + scheduled rotation).
-        # db2 exception: on app releases to date the kmsrotation engine
-        # refuses that backend at boot even in wildcard mode, so db2 gets an
-        # explicit list WITHOUT kmsrotation. WARNING: overriding
-        # .Values.workflowWorker.filteredProcess with "*" or any list naming
-        # "kmsrotation" on db2 crash-loops those app versions; only do so on
-        # an app release that lifts the db2 rotation restriction (MNS-1159).
-        - name: FILTERED_PROCESS
-        {{- if .Values.workflowWorker.filteredProcess }}
-          value: {{ .Values.workflowWorker.filteredProcess | quote }}
-        {{- else if eq .Values.database.driver "db2" }}
-          value: "background,messaging"
-        {{- else }}
-          value: "*"
-        {{- end }}
-        {{- if .Values.ices.enabled }}
-        # A dedicated ICES pod hosts mail-monitoring (BEC poller + pub/sub
-        # subscriber + sweepers). ICES_STANDALONE tells this worker's google
-        # engine to drop mail-monitoring so it is hosted exactly once.
-        - name: ICES_STANDALONE
-          value: "true"
-        {{- end }}
         # Database Configuration (supports MongoDB and PostgreSQL for distributed workers)
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}
@@ -235,9 +209,6 @@ spec:
         - name: S3_USE_SSL
           value: {{ .Values.s3.useSSL | quote }}
         {{- end }}
-        # API Base URL (for uploading files to MnemoShare)
-        - name: API_BASE_URL
-          value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}/api/v1"
         # App URL (for generating links in notifications)
         - name: APP_URL
           value: {{ .Values.appUrl | quote }}
@@ -267,16 +238,19 @@ spec:
         # extraction, Presidio NER, AI DLP, KMS envelope flag) — MUST match
         # the api Deployment's surface or the background engine will silently
         # skip integration work that the api previously did in-process.
-        # See templates/_helpers.tpl::mnemoshare.integrationEnv
-        {{- include "mnemoshare.integrationEnv" . | nindent 8 }}
+        {{- with include "mnemoshare.workerIntegrationEnv" . | trim }}{{- . | nindent 8 }}{{- end }}
         # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
         {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
         # API callback + platform email + embedded mail-monitoring — the worker's
         # background engines need the same surface the api serves in-process.
         {{- include "mnemoshare.workerApiCallbackEnv" . | nindent 8 }}
         {{- include "mnemoshare.platformEmailEnv" . | nindent 8 }}
-        {{- if not .Values.ices.enabled }}
-        {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
+        {{- /* Mail-monitoring env is owned by cloud-worker: rendered only when this
+               container's command hosts it (run-workers), not for run-core-workers
+               or workflow-worker alone. */}}
+        {{- include "mnemoshare.mailMonitoringEnvFor" (dict "root" . "executable" (include "mnemoshare.workerExecutable" .)) | nindent 8 }}
+        {{- if .Values.workflowWorker.metrics.enabled }}
+        {{- include "mnemoshare.workerMetricsEnv" (dict "root" . "executable" (include "mnemoshare.workerExecutable" .) "process" "workflow-worker" "name" "WORKFLOW_WORKER_METRICS_ADDR" "port" .Values.workflowWorker.metrics.port) | nindent 8 }}
         {{- end }}
         {{- with .Values.workflowWorker.extraEnv }}
         {{- toYaml . | nindent 8 }}
@@ -303,6 +277,7 @@ spec:
         resources:
           {{- toYaml .Values.workflowWorker.resources | nindent 12 }}
         volumeMounts:
+        {{- include "mnemoshare.vault.k8sTokenMount" . | nindent 8 }}
         - name: workflow-data
           mountPath: /mnt/workflow-data
         {{- if .Values.diskBuffer.enabled }}
@@ -336,8 +311,9 @@ spec:
       # KeyGuard federation-sidecar (MSC-371).
       {{- include "mnemoshare.keyguard.sidecarContainer" . | nindent 6 }}
       {{- end }}
-      {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled (include "mnemoshare.keyguard.enabled" .) }}
+      {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled .Values.vault.kubernetesAuth.enabled (include "mnemoshare.keyguard.enabled" .) }}
       volumes:
+      {{- include "mnemoshare.vault.k8sTokenVolume" . | nindent 6 }}
       {{- if .Values.workflowWorker.tmpVolume.enabled }}
       - name: tmp
         emptyDir:

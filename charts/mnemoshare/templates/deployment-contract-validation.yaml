@@ -1,0 +1,2 @@
+{{- /* Every render, including the default API-only shape, is contract-bound. */ -}}
+{{- include "mnemoshare.requireDeploymentContractIdentity" . -}}

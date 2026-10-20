@@ -3,6 +3,9 @@ set -euo pipefail
 
 chart_dir=${1:-charts/mnemoshare}
 "$(dirname "$0")/migration-result-contract.sh" "$chart_dir"
+migration_fingerprint=$(jq -er .fingerprint "$chart_dir/tests/contracts/migration-operation/v1/contract.json")
+deployment_commit=$(sed -n 's/^commit=//p' "$chart_dir/tests/contracts/deployment/v1/UPSTREAM")
+deployment_fingerprint=$(jq -er .fingerprint "$chart_dir/tests/contracts/deployment/v1/contract.json")
 base=(
   --set customerId=ci-test
   --set mongodb.external.enabled=true
@@ -17,12 +20,9 @@ base=(
   --set ingress.enabled=false
   --set autoscaling.enabled=true
   --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  --set deploymentContractV2.sourceCommit=aba43f7911586189a6e056bb1c9dcab7258b21d4
-  --set deploymentContractV2.contractFingerprint=e73dd2b91c7de17428fbfe1c4984758aa9a3894c6aadced0531f0ff591b67836
-  --set deploymentContractV2.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  --set deploymentContractV3.sourceCommit=0dd4f8eb13b9afb35a586f4ac7bc8618d25d7886
-  --set deploymentContractV3.contractFingerprint=23dc67fb882b463fbc1bd05d0732d2a5aadc86b3070b228dd5f62cb204319cc6
-  --set deploymentContractV3.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  --set deploymentContract.sourceCommit="$deployment_commit"
+  --set deploymentContract.contractFingerprint="$deployment_fingerprint"
+  --set deploymentContract.imageDigest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 )
 
 render=$(helm template test "$chart_dir" "${base[@]}" \
@@ -40,6 +40,20 @@ render=$(helm template test "$chart_dir" "${base[@]}" \
   --set sftpGateway.image.repository=mnemoshare/mnemoshare \
   --set mcp.enabled=true \
   --set mcp.apiKey.key=mcp_test)
+
+for source in deployment.yaml workflow-worker-deployment.yaml ices-deployment.yaml \
+  inbound-gateway-deployment.yaml email-gateway-deployment.yaml \
+  sftp-gateway-deployment.yaml mcp-deployment.yaml format-migration-job.yaml; do
+  if ! awk -v source="# Source: mnemoshare/templates/${source}" '
+      $0 == source { active=1; next }
+      active && /^---$/ { exit }
+      active && /name: ENVIRONMENT/ { found=1 }
+      END { exit found ? 0 : 1 }
+    ' <<<"$render"; then
+    echo "${source} omitted the production environment" >&2
+    exit 1
+  fi
+done
 
 upgrade_render=$(helm template test "$chart_dir" "${base[@]}" --is-upgrade)
 
@@ -62,16 +76,24 @@ plan_and_verify_scripts() {
 
 install_apply=$(apply_script "$render")
 upgrade_apply=$(apply_script "$upgrade_render")
+assert_contract_static_args() {
+  local kind=$1 body=$2 arg
+  while IFS= read -r arg; do
+    [[ -n "$arg" ]] || continue
+    case "$arg" in
+      '<'*) continue;;
+    esac
+    if ! grep -Fq -- "$arg" <<<"$body"; then
+      echo "${kind} command is missing contract argument ${arg}" >&2
+      return 1
+    fi
+  done < <(jq -er ".commands.${kind}.args[]" "$chart_dir/tests/contracts/migration-operation/v1/contract.json")
+}
 for release_apply in "$install_apply" "$upgrade_apply"; do
-  if [ "$(grep -Fc -- '--exclusive --bootstrap-policy provision-untracked' <<<"$release_apply")" -ne 1 ]; then
-    echo 'every apply decision path must be exclusive and provision only untracked populations' >&2
-    exit 1
-  fi
-  if [ "$(grep -Fc -- '--bootstrap-policy' <<<"$release_apply")" -ne 1 ]; then
-    echo 'apply rendered an unexpected bootstrap policy occurrence' >&2
-    exit 1
-  fi
+  assert_contract_static_args apply "$release_apply"
 done
+assert_contract_static_args verify "$(plan_and_verify_scripts "$render")"
+assert_contract_static_args verify "$(plan_and_verify_scripts "$upgrade_render")"
 if grep -Fq -- '--bootstrap-policy' <<<"$(plan_and_verify_scripts "$render")" ||
    grep -Fq -- '--bootstrap-policy' <<<"$(plan_and_verify_scripts "$upgrade_render")"; then
   echo 'plan and verify must remain read-only and receive no bootstrap policy' >&2
@@ -86,6 +108,22 @@ assert_has() {
 }
 
 assert_has 'name: test-mnemoshare-format-migration'
+format_migration_init=$(awk '
+  /^# Source: mnemoshare\/templates\/format-migration-job.yaml$/ { source=1; next }
+  source && /^      initContainers:$/ { active=1; next }
+  active && /^      containers:$/ { exit }
+  active { print }
+' <<<"$render")
+init_count=$(grep -Ec '^        - name:' <<<"$format_migration_init")
+fallback_count=$(grep -Ec '^          terminationMessagePolicy: FallbackToLogsOnError$' <<<"$format_migration_init")
+if [ "$init_count" -eq 0 ] || [ "$fallback_count" -ne "$init_count" ]; then
+  echo "every format-migration init container must retain failed logs in its termination message (${fallback_count}/${init_count})" >&2
+  exit 1
+fi
+template_init=$(sed -n '/^      initContainers:$/,/^      containers:$/p' "$chart_dir/templates/format-migration-job.yaml")
+declared_init_count=$(grep -Ec '^        - name:' <<<"$template_init")
+declared_fallback_count=$(grep -Ec '^          terminationMessagePolicy: FallbackToLogsOnError$' <<<"$template_init")
+test "$declared_init_count" -eq 8 && test "$declared_fallback_count" -eq "$declared_init_count"
 if grep -Fq 'name: test-mnemoshare-format-migration-mode-fence' <<<"$render"; then
   echo 'automatic mode rendered the non-automatic state fence' >&2
   exit 1
@@ -139,9 +177,11 @@ stateful_render=$(helm template test "$chart_dir" "${base[@]}" \
   --set redis.external.enabled=true \
   --set redis.external.host=redis.example.com)
 assert_image_in_source "$stateful_render" 'templates/workflow-worker-statefulset.yaml'
-assert_has 'command: ["/usr/local/bin/mnemoshare-migrate"]'
-assert_has 'args: ["plan", "--contract", "embedded", "--result", "/migration/result.json", "--output", "/migration/plan.json"]'
-assert_has 'verify --contract embedded --expect-plan-digest "$(cat /migration/plan-digest)"'
+assert_has 'command: ["/bin/sh", "-ec"]'
+assert_has 'mkdir -p "/migration/artifacts"'
+assert_has 'chmod 0700 "/migration/artifacts"'
+assert_has "exec /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --output \"/migration/artifacts/plan.json\" --result \"/migration/artifacts/result.json\""
+assert_has "verify --contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --plan /migration/artifacts/plan.json --expect-plan-digest \"\$(cat /migration/artifacts/plan-digest)\""
 assert_has 'case "${decision}" in'
 assert_has 'selected_pods="$(kubectl get pods -l "${selector}" -o name)"'
 assert_has 'if [ -n "${selected_pods}" ]; then'
@@ -189,12 +229,11 @@ for image_override in \
   fi
 done
 
-tag_render=$(helm template test "$chart_dir" "${base[@]}" \
+if helm template test "$chart_dir" "${base[@]}" \
   --set formatMigrations.mode=operator \
   --set image.tag=compat-tag \
-  --set image.digest=)
-if ! grep -Fq 'image: "mnemoshare/mnemoshare:compat-tag"' <<<"$tag_render"; then
-  echo 'operator mode did not preserve historical tag image rendering' >&2
+  --set image.digest= >/dev/null 2>&1; then
+  echo 'operator mode accepted an image without the canonical deployment digest' >&2
   exit 1
 fi
 
@@ -224,10 +263,10 @@ for image_override in \
   fi
 done
 
-if helm template test "$chart_dir" "${base[@]}" --set networkPolicy.enabled=true >/dev/null 2>&1; then
-  echo 'network policy accepted missing restricted DB/API destinations' >&2
-  exit 1
-fi
+fallback_render=$(helm template test "$chart_dir" "${base[@]}" --set networkPolicy.enabled=true)
+for port in 6443; do
+  grep -Fq "port: ${port}" <<<"$fallback_render" || { echo "network policy fallback missing port ${port}" >&2; exit 1; }
+done
 np_render=$(helm template test "$chart_dir" "${base[@]}" \
   --set networkPolicy.enabled=true \
   --set formatMigrations.networkPolicy.databaseCIDRs[0]=10.20.30.40/32 \
@@ -278,8 +317,8 @@ for custom_fragment in 'port: 27018' 'port: 6443'; do
     exit 1
   fi
 done
-assert_has 'jq --stream -c . /migration/result.json > /migration/result-events.jsonl'
-assert_has 'jq --slurp -e -f /migration/migration-result-v1.jq /migration/result-events.jsonl'
+assert_has 'jq --stream -c . /migration/artifacts/result.json > /migration/artifacts/result-events.jsonl'
+assert_has 'jq --slurp -e -f /migration/artifacts/migration-result-v1.jq /migration/artifacts/result-events.jsonl'
 
 decision_is_valid_value() {
   local candidate=$1
@@ -297,8 +336,14 @@ if decision_is_valid_value $'ordinary\nunterminated'; then
   exit 1
 fi
 assert_has 'exec /usr/local/bin/mnemoshare-migrate apply \'
-assert_has '--contract embedded --expect-plan-digest "$(cat /migration/plan-digest)" \'
+assert_has "--contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --plan \"/migration/artifacts/plan.json\" --expect-plan-digest \"\$(cat /migration/artifacts/plan-digest)\" \\"
 assert_has '--exclusive --bootstrap-policy provision-untracked'
+assert_has 'mkdir -p "/run/mnemoshare-migration/status"'
+assert_has 'chmod 0700 "/run/mnemoshare-migration/status"'
+assert_has '--status "/run/mnemoshare-migration/status/status.json" --termination-file "/run/mnemoshare-migration/status/termination.json" --termination-message-file "/run/mnemoshare-migration/termination-message"'
+assert_has 'terminationMessagePath: "/run/mnemoshare-migration/termination-message"'
+assert_has '- name: migration-status'
+assert_has 'mountPath: /run/mnemoshare-migration'
 assert_has '"helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded'
 if [ "$(grep -Ec '^[[:space:]]+"helm.sh/hook-delete-policy": before-hook-creation$' <<<"$render")" -lt 7 ]; then
   echo 'support hooks do not all use deterministic next-attempt cleanup' >&2

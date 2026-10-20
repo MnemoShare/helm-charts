@@ -5,7 +5,7 @@ chart_dir=${1:-charts/mnemoshare}
 test_dir=$(cd "$(dirname "$0")" && pwd)
 contract_dir=${test_dir}/contracts/migration-result/v1
 parser=${chart_dir}/files/migration-result-v1.jq
-upstream_commit=e7537fb07d52491b70f9f4f2d2270d1bda29a763
+upstream_commit=$(sed -n 's/^commit=//p' "${test_dir}/contracts/deployment/v1/UPSTREAM")
 jq_bin=${JQ:-jq}
 
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
@@ -26,7 +26,7 @@ render=$(helm template test "$chart_dir" \
 extracted=$(mktemp)
 trap 'rm -f "$extracted"' EXIT
 awk '
-  /cat > \/migration\/migration-result-v1.jq <<.MNEMOSHARE_MIGRATION_RESULT_V1./ { active=1; first=1; next }
+  /cat > \/migration\/artifacts\/migration-result-v1.jq <<.MNEMOSHARE_MIGRATION_RESULT_V1./ { active=1; first=1; next }
   active && /^[[:space:]]*MNEMOSHARE_MIGRATION_RESULT_V1$/ { exit }
   active {
     sub(/^              /, "")
@@ -36,8 +36,8 @@ awk '
   }
 ' <<<"$render" > "$extracted"
 cmp "$parser" "$extracted"
-grep -Fq 'jq --stream -c . /migration/result.json > /migration/result-events.jsonl' <<<"$render"
-grep -Fq 'jq --slurp -e -f /migration/migration-result-v1.jq /migration/result-events.jsonl' <<<"$render"
+grep -Fq 'jq --stream -c . /migration/artifacts/result.json > /migration/artifacts/result-events.jsonl' <<<"$render"
+grep -Fq 'jq --slurp -e -f /migration/artifacts/migration-result-v1.jq /migration/artifacts/result-events.jsonl' <<<"$render"
 
 run_vector() {
   local encoded=$1 expected=$2 name json

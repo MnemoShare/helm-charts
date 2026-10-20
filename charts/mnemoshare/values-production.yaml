@@ -124,19 +124,9 @@ affinity:
                   - mnemoshare
           topologyKey: kubernetes.io/hostname
 
-# File settings - Adjust for your needs
-files:
-  maxSize: "10737418240"  # 10GB
-  defaultLinkExpiration: "168h"  # 7 days
-
 # CORS - Add your domains
 cors:
   allowedOrigins: "https://mnemoshare.yourdomain.com"
-
-# Rate limiting - Protect against abuse
-rateLimit:
-  requests: 1000
-  window: "1m"
 
 # Health checks - Production-ready probes
 livenessProbe:

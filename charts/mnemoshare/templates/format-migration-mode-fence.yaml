@@ -135,8 +135,8 @@ spec:
           command: ["/bin/sh", "-ec"]
           args:
             - |
-              job_uid="$(kubectl get job "${JOB_NAME}" -o jsonpath='{.metadata.uid}')"
-              owner_patch='{"metadata":{"ownerReferences":[{"apiVersion":"batch/v1","kind":"Job","name":"'"${JOB_NAME}"'","uid":"'"${job_uid}"'"}]}}'
+              job_uid="$(kubectl get job "{{ $name }}" -o jsonpath='{.metadata.uid}')"
+              owner_patch='{"metadata":{"ownerReferences":[{"apiVersion":"batch/v1","kind":"Job","name":"{{ $name }}","uid":"'"${job_uid}"'"}]}}'
               for resource in serviceaccount/{{ $name }} role.rbac.authorization.k8s.io/{{ $name }} rolebinding.rbac.authorization.k8s.io/{{ $name }}{{ if .Values.networkPolicy.enabled }} networkpolicy.networking.k8s.io/{{ $name }}{{ end }}; do
                 kubectl patch "${resource}" --type=merge -p "${owner_patch}"
               done
@@ -148,9 +148,6 @@ spec:
                 echo "retry the frozen automatic target, or perform an explicit operator-owned state handoff before changing mode" >&2
                 exit 1
               fi
-          env:
-            - name: JOB_NAME
-              value: {{ $name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
       {{- with .Values.nodeSelector }}

@@ -1,6 +1,11 @@
 {{- if .Values.ices.enabled }}
-{{- /* ICES is a stateless Deployment — it shards via Redis + the worker
-       registry and needs no PVC, so there is no StatefulSet branch here. */}}
+{{- /* The cloud-worker pool: a stateless Deployment of the contract's
+       cloud-worker executable (Google/Microsoft mail engines + messaging). It
+       shards via Redis + the worker registry and needs no PVC, so there is no
+       StatefulSet branch here. Pair it with workflowWorker.command
+       run-core-workers to run cloud-worker only in this pool. */}}
+{{- $icesExecutable := include "mnemoshare.icesExecutable" . }}
+{{- $icesCommand := .Values.ices.command | default (list $icesExecutable) }}
 {{- if eq (include "mnemoshare.redisMode" .) "disabled" }}
 {{- fail "ices.enabled requires Redis: set redis.mode=external (with redis.external.url) or redis.mode=inCluster (or legacy redis.enabled=true / redis.external.enabled=true)" }}
 {{- end }}
@@ -16,8 +21,8 @@ metadata:
     app.kubernetes.io/component: ices
     mnemoshare.io/database-writer: "true"
 spec:
-  {{- if not .Values.ices.autoscaling.enabled }}
-  replicas: {{ .Values.ices.replicas }}
+  {{- if or (not .Values.ices.autoscaling.enabled) (eq (include "mnemoshare.migrationOperationDown" .) "true") }}
+  replicas: {{ if eq (include "mnemoshare.migrationOperationDown" .) "true" }}0{{ else }}{{ .Values.ices.replicas }}{{ end }}
   {{- end }}
   selector:
     matchLabels:
@@ -25,6 +30,10 @@ spec:
       app.kubernetes.io/component: ices
   template:
     metadata:
+      {{- if .Values.ices.metrics.enabled }}
+      annotations:
+        {{- include "mnemoshare.metricsScrapeAnnotations" (dict "port" .Values.ices.metrics.port) | nindent 8 }}
+      {{- end }}
       labels:
         {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: ices
@@ -35,21 +44,25 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.ices.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
       - name: ices
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
-        image: {{ include "mnemoshare.applicationImage" (dict "root" . "component" .Values.ices.image "name" "ices") | quote }}
+        image: {{ include "mnemoshare.writerImage" (dict "root" . "component" .Values.ices.image "name" "ices") | quote }}
         imagePullPolicy: {{ .Values.ices.image.pullPolicy }}
-        # Dedicated email-security binary (workerboot). Hosts mail-monitoring:
-        # BEC poller + Pub/Sub subscriber + mail-security sweepers. It pins its
-        # own FILTERED_PROCESS internally, so none is set on this pod.
-        {{- $icesCommand := .Values.ices.command | default (list "/usr/local/bin/ices") }}
+        # cloud-worker from the vendored contract (or ices.command). Its engine
+        # set is fixed at build time, so no selection env is set here.
         command:
           {{- toYaml $icesCommand | nindent 10 }}
         env:
+        {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
+        {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # Tenant Identity — required for dispatch keyspace isolation.
         - name: CUSTOMER_ID
           value: {{ required "customerId is required: set --set customerId=<your-tenant-slug> at install/upgrade time" .Values.customerId | quote }}
@@ -192,9 +205,6 @@ spec:
         - name: S3_USE_SSL
           value: {{ .Values.s3.useSSL | quote }}
         {{- end }}
-        # API Base URL (for reaching MnemoShare's internal API)
-        - name: API_BASE_URL
-          value: "http://{{ include "mnemoshare.fullname" . }}:{{ .Values.service.port }}/api/v1"
         # Logging
         - name: LOG_LEVEL
           value: {{ .Values.ices.logLevel | default "info" | quote }}
@@ -219,15 +229,16 @@ spec:
         {{- end }}
         # Cross-service integrations (rich-media thumbnails, Tika text
         # extraction, Presidio NER, AI DLP, KMS envelope flag) — MUST match
-        # the api/worker surface. See templates/_helpers.tpl::mnemoshare.integrationEnv
-        {{- include "mnemoshare.integrationEnv" . | nindent 8 }}
         # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
         {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
-        # ICES hosts mail-monitoring when standalone — API callback + platform
-        # email + mail-monitoring surface, matching the worker's embedded form.
+        # API callback + platform email + the cloud-worker-owned mail-monitoring
+        # surface, matching every other cloud-worker host.
         {{- include "mnemoshare.workerApiCallbackEnv" . | nindent 8 }}
         {{- include "mnemoshare.platformEmailEnv" . | nindent 8 }}
-        {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
+        {{- include "mnemoshare.mailMonitoringEnvFor" (dict "root" . "executable" $icesExecutable) | nindent 8 }}
+        {{- if .Values.ices.metrics.enabled }}
+        {{- include "mnemoshare.workerMetricsEnv" (dict "root" . "executable" $icesExecutable "process" "cloud-worker" "name" "CLOUD_WORKER_METRICS_ADDR" "port" .Values.ices.metrics.port) | nindent 8 }}
+        {{- end }}
         {{- with .Values.ices.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
