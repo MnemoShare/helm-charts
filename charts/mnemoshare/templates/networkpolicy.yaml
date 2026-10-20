@@ -501,6 +501,7 @@ spec:
     {{- include "mnemoshare.np.storage" . | nindent 4 }}
     {{- include "mnemoshare.np.icap" . | nindent 4 }}
     {{- include "mnemoshare.np.dlpServices" . | nindent 4 }}
+    {{- include "mnemoshare.np.keyguard" . | nindent 4 }}
     {{- if .Values.inboundGateway.relayHost }}
     # Post-scan relay (INBOUND_RELAY_HOST): in-cluster or external, SMTP ports only
     {{- include "mnemoshare.np.rule" (dict "ports" (.Values.networkPolicy.smtp.ports | default (list 25 465 587 2525)) "anyDest" true) | nindent 4 }}
