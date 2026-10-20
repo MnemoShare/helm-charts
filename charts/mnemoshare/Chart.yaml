@@ -2,9 +2,9 @@ apiVersion: v2
 name: mnemoshare
 description: Zero-trust MFT system enforcing encryption-at-rest, knowledge-based authentication
 type: application
-version: 1.26.13
+version: 1.27.4
 # platformEmail/sesAdmin/sesEvents values (MNS-954) require app v0.17+
-appVersion: "0.20.2"
+appVersion: "0.21.0"
 keywords:
   - secure-file-transfer
   - hipaa

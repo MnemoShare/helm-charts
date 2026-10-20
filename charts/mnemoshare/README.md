@@ -167,6 +167,23 @@ autoscaling:
   targetMemoryUtilizationPercentage: 80
 ```
 
+### Size the workflow worker for bursty triggers
+
+Each worker pod runs `workflowWorker.outboxConsumers` (default 4) outbox
+consumers; each claims one dispatch row at a time and starts that triggered
+workflow itself, so this is how many upload-triggered workflows a pod starts
+in parallel. Steps that wait on external state (a file's virus scan) park and
+free their consumer. Claims are atomic, so `replicas` x `outboxConsumers`
+never double-process a row.
+
+```yaml
+workflowWorker:
+  replicas: 2
+  outboxConsumers: 8   # OUTBOX_CONSUMER_CONCURRENCY on the worker pods
+```
+
+Worker-less tenants (the api pod hosts the engines) use `apiOutboxConsumers`.
+
 ### Configure SendGrid for Email Notifications
 
 ```yaml
@@ -541,6 +558,15 @@ helm upgrade mnemoshare mnemoshare/mnemoshare \
   --namespace mnemoshare \
   --values my-values.yaml
 ```
+
+### Upgrade note: shell-free probes and init containers (chart 1.27.2)
+
+Probes and init containers no longer use `/bin/sh`, `pgrep` or `wget`. They call
+`<binary> healthcheck` and `mnemoshare-api wait-for`, so this chart version
+**requires an app image that contains those subcommands** (the release that includes
+app PR #4081, MNS-1549). Older images fail the probes (worker/ICES restart loops) and
+the MCP init container. Worker and ICES now expose a `health` container port (8082,
+`/healthz` and `/readyz`). Deploy the new app image first.
 
 ## Uninstalling
 

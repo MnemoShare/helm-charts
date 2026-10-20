@@ -56,6 +56,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -74,6 +75,7 @@ spec:
           protocol: TCP
         {{- end }}
         env:
+        {{- include "mnemoshare.vault.k8sTokenEnv" . | nindent 8 }}
         # Tenant Identity — required for dispatch keyspace isolation (MNI-26 onwards).
         # cmd/api fatals at boot if CUSTOMER_ID is empty when a dispatch backend that
         # needs tenant scoping (currently the Mongo backend) is constructed. The
@@ -109,6 +111,11 @@ spec:
           value: "background,messaging"
         {{- else }}
           value: "*"
+        {{- end }}
+        {{- with .Values.apiOutboxConsumers }}
+        # Parallel outbox consumers when this pod hosts the engines — see values.yaml.
+        - name: OUTBOX_CONSUMER_CONCURRENCY
+          value: {{ . | quote }}
         {{- end }}
         {{- if .Values.ices.enabled }}
         # Standalone ICES hosts mail-monitoring; suppress the embedded
@@ -498,6 +505,7 @@ spec:
         resources:
           {{- toYaml .Values.resources | nindent 12 }}
         volumeMounts:
+        {{- include "mnemoshare.vault.k8sTokenMount" . | nindent 8 }}
         # Writable temp directory (required for readOnlyRootFilesystem)
         - name: tmp
           mountPath: /tmp
@@ -524,6 +532,7 @@ spec:
       {{- include "mnemoshare.keyguard.sidecarContainer" . | nindent 6 }}
       {{- end }}
       volumes:
+      {{- include "mnemoshare.vault.k8sTokenVolume" . | nindent 6 }}
       # Temporary directory for runtime files
       - name: tmp
         emptyDir:
