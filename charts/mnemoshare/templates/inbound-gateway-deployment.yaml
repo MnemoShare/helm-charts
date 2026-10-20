@@ -57,6 +57,9 @@ spec:
         {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
         {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         {{- include "mnemoshare.dataPlaneKMSEnv" . | nindent 8 }}
+        {{- if include "mnemoshare.keyguard.enabled" . }}
+        {{- include "mnemoshare.keyguard.envMain" . | nindent 8 }}
+        {{- end }}
         # cmd/inboundgateway builds its OWN dispatch keyspace to publish the
         # background virus scan for every inbound .eml artifact. With
         # CUSTOMER_ID unset that keyspace falls back to the literal "default"
@@ -288,17 +291,31 @@ spec:
           failureThreshold: 3
         resources:
           {{- toYaml .Values.inboundGateway.resources | nindent 12 }}
-        {{- if $tlsSecret }}
+        {{- if or $tlsSecret (include "mnemoshare.keyguard.enabled" .) }}
         volumeMounts:
+        {{- if $tlsSecret }}
         - name: tls-certs
           mountPath: /etc/tls
           readOnly: true
         {{- end }}
-      {{- if $tlsSecret }}
+        {{- if include "mnemoshare.keyguard.enabled" . }}
+        {{- include "mnemoshare.keyguard.volumeMountsMain" . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      {{- if include "mnemoshare.keyguard.enabled" . }}
+      # KeyGuard federation-sidecar: the AWS web-identity token for KMS.
+      {{- include "mnemoshare.keyguard.sidecarContainer" . | nindent 6 }}
+      {{- end }}
+      {{- if or $tlsSecret (include "mnemoshare.keyguard.enabled" .) }}
       volumes:
+      {{- if $tlsSecret }}
       - name: tls-certs
         secret:
           secretName: {{ $tlsSecret }}
+      {{- end }}
+      {{- if include "mnemoshare.keyguard.enabled" . }}
+      {{- include "mnemoshare.keyguard.volumes" . | nindent 6 }}
+      {{- end }}
       {{- end }}
       {{- with .Values.inboundGateway.nodeSelector }}
       nodeSelector:
