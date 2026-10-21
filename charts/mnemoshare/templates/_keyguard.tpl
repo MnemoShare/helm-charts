@@ -54,7 +54,8 @@ In shared mode they resolve to the release-wide values, so call sites are
 identical in both modes.
 */}}
 {{- define "mnemoshare.keyguard.componentSAName" -}}
-{{- printf "%s-%s" (include "mnemoshare.fullname" .root) .component | trunc 63 | trimSuffix "-" -}}
+{{- /* Truncate the fullname, not the suffix, so components never collapse to one name. */ -}}
+{{- printf "%s-%s" (include "mnemoshare.fullname" .root | trunc (int (sub 62 (len .component))) | trimSuffix "-") .component -}}
 {{- end -}}
 
 {{- define "mnemoshare.keyguard.podServiceAccountName" -}}
@@ -67,7 +68,7 @@ identical in both modes.
 
 {{- define "mnemoshare.keyguard.certName" -}}
 {{- if include "mnemoshare.keyguard.perComponent" .root -}}
-{{- printf "%s-%s-keyguard-mtls" (include "mnemoshare.fullname" .root) .component | trunc 63 | trimSuffix "-" -}}
+{{- printf "%s-%s-keyguard-mtls" (include "mnemoshare.fullname" .root | trunc (int (sub 48 (len .component))) | trimSuffix "-") .component -}}
 {{- else -}}
 {{- printf "%s-keyguard-mtls" (include "mnemoshare.fullname" .root) -}}
 {{- end -}}

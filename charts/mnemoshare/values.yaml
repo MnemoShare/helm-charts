@@ -2259,7 +2259,9 @@ keyguard:
   #                  (<fullname>-api|-worker|-ices), SPIFFE id, cert Secret
   #                  and role ARN (keyguard.components.<c>.roleArn, required).
   #                  Each SPIFFE id must be registered as a WorkloadIdentity
-  #                  in idp-lite before switching.
+  #                  in idp-lite before switching. Anything bound to the old
+  #                  ServiceAccount name (e.g. a Vault Kubernetes-auth role) must
+  #                  also admit the new ones.
   identityMode: shared
 
   # Per-component AWS role ARNs, used only when identityMode=perComponent.
