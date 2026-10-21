@@ -615,40 +615,7 @@ mnemoshare.workerIntegrationEnv).
   value: {{ .aiApiKey | quote }}
 {{- end }}
 {{- end }}
-{{- /* KMS_ENVELOPE_ENABLED is emitted unconditionally; users who override
-       .Values.kms to {} or nil still get the safe default so the worker
-       decrypt path for existing v2-encrypted files is preserved. */}}
-{{- $envelope := true }}
-{{- if and .Values.kms (hasKey .Values.kms "envelopeEnabled") }}
-{{- $envelope = .Values.kms.envelopeEnabled }}
-{{- end }}
-- name: KMS_ENVELOPE_ENABLED
-  value: {{ $envelope | quote }}
-{{- /* DATA_PLANE_KMS_* (MSC-391). Defaults to the app's builtin MKEK when
-       provider is unset; SaaS tenants populate provider=aws_kms +
-       keyID=alias/msaas/<id> via the operator. Without these, the app
-       defaults to provider="" = Builtin, which means an envelopeEnabled=true
-       tenant SILENTLY routes through the builtin MKEK derived from
-       ENCRYPTION_KEY instead of the per-tenant CMK — bypassing the entire
-       KeyGuard isolation model. All four are emitted only when set, so
-       legacy / self-hosted installs without an explicit KMS block are
-       unaffected. */}}
-{{- if and .Values.kms .Values.kms.dataPlaneProvider }}
-- name: DATA_PLANE_KMS_PROVIDER
-  value: {{ .Values.kms.dataPlaneProvider | quote }}
-{{- end }}
-{{- if and .Values.kms .Values.kms.dataPlaneKeyID }}
-- name: DATA_PLANE_KMS_KEY_ID
-  value: {{ .Values.kms.dataPlaneKeyID | quote }}
-{{- end }}
-{{- if and .Values.kms .Values.kms.dataPlaneRegion }}
-- name: DATA_PLANE_KMS_REGION
-  value: {{ .Values.kms.dataPlaneRegion | quote }}
-{{- end }}
-{{- if and .Values.kms .Values.kms.dataPlaneLogicalKeyID }}
-- name: DATA_PLANE_KMS_LOGICAL_KEY_ID
-  value: {{ .Values.kms.dataPlaneLogicalKeyID | quote }}
-{{- end }}
+{{- include "mnemoshare.dataPlaneKMSEnv" . }}
 {{- if and .Values.kms .Values.kms.jwtSignerType }}
 - name: JWT_SIGNER_TYPE
   value: {{ .Values.kms.jwtSignerType | quote }}
@@ -823,8 +790,53 @@ not own. Webhook URLs default to <appUrl>/api/v1/integrations/cloud/webhook/*.
 {{- end }}
 - name: GOOGLE_INTERNAL_MAIL_INTERVAL_SEC
   value: {{ .Values.mailMonitoring.internalMailIntervalSec | default 60 | quote }}
+{{- include "mnemoshare.mailMonitoringArcEnv" . }}
 {{- end }}
 {{- end }}
+
+{{/*
+ARC sealing identity for the mail-monitoring (ICES) lanes — MEM-155.
+
+The lanes that MODIFY delivered mail (DLP redaction, caution banners, link
+rewriting) insert a new copy, which invalidates the sender's DKIM. They seal
+that copy so the modification is authenticated and attributable, and they
+REFUSE to insert without a key. So a deployment running those lanes must set
+this or they stand down.
+
+Config falls back to inboundGateway.arc purely as a convenience for combined
+deployments, where one key already exists. ICES must be configurable on its own
+(mailMonitoring.arc) because running it does NOT require running a gateway.
+*/}}
+{{- define "mnemoshare.mailMonitoringArcEnv" -}}
+{{- $arc := .Values.mailMonitoring.arc | default dict -}}
+{{- $gw := dict -}}
+{{- if .Values.inboundGateway -}}
+{{- $gw = .Values.inboundGateway.arc | default dict -}}
+{{- end -}}
+{{- $domain := $arc.domain | default $gw.domain -}}
+{{- $selector := $arc.selector | default $gw.selector -}}
+{{- $secret := $arc.existingSecret | default $gw.existingSecret -}}
+{{- $secretKey := $arc.secretKey | default "arc-private-key" -}}
+{{- $inline := $arc.privateKey | default $gw.privateKey -}}
+{{- if $domain }}
+- name: ARC_DOMAIN
+  value: {{ $domain | quote }}
+{{- end }}
+{{- if $selector }}
+- name: ARC_SELECTOR
+  value: {{ $selector | quote }}
+{{- end }}
+{{- if $secret }}
+- name: ARC_PRIVATE_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ $secret }}
+      key: {{ $secretKey }}
+{{- else if $inline }}
+- name: ARC_PRIVATE_KEY
+  value: {{ $inline | quote }}
+{{- end }}
+{{- end -}}
 
 {{/* mailMonitoringEnv for one container. Input: dict "root" . "executable" <path> */}}
 {{- define "mnemoshare.mailMonitoringEnvFor" -}}
@@ -939,3 +951,42 @@ a process missing either rejects the grant the others committed.
           expirationSeconds: {{ .Values.vault.kubernetesAuth.expirationSeconds | default 3600 }}
 {{- end }}
 {{- end -}}
+
+{{- /* Data-plane KMS env, shared by every process that reads or writes
+       envelope-encrypted content (API, workers, inbound gateway). */}}
+{{- define "mnemoshare.dataPlaneKMSEnv" -}}
+{{- /* KMS_ENVELOPE_ENABLED is emitted unconditionally; users who override
+       .Values.kms to {} or nil still get the safe default so the worker
+       decrypt path for existing v2-encrypted files is preserved. */}}
+{{- $envelope := true }}
+{{- if and .Values.kms (hasKey .Values.kms "envelopeEnabled") }}
+{{- $envelope = .Values.kms.envelopeEnabled }}
+{{- end }}
+- name: KMS_ENVELOPE_ENABLED
+  value: {{ $envelope | quote }}
+{{- /* DATA_PLANE_KMS_* (MSC-391). Defaults to the app's builtin MKEK when
+       provider is unset; SaaS tenants populate provider=aws_kms +
+       keyID=alias/msaas/<id> via the operator. Without these, the app
+       defaults to provider="" = Builtin, which means an envelopeEnabled=true
+       tenant SILENTLY routes through the builtin MKEK derived from
+       ENCRYPTION_KEY instead of the per-tenant CMK — bypassing the entire
+       KeyGuard isolation model. All four are emitted only when set, so
+       legacy / self-hosted installs without an explicit KMS block are
+       unaffected. */}}
+{{- if and .Values.kms .Values.kms.dataPlaneProvider }}
+- name: DATA_PLANE_KMS_PROVIDER
+  value: {{ .Values.kms.dataPlaneProvider | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.dataPlaneKeyID }}
+- name: DATA_PLANE_KMS_KEY_ID
+  value: {{ .Values.kms.dataPlaneKeyID | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.dataPlaneRegion }}
+- name: DATA_PLANE_KMS_REGION
+  value: {{ .Values.kms.dataPlaneRegion | quote }}
+{{- end }}
+{{- if and .Values.kms .Values.kms.dataPlaneLogicalKeyID }}
+- name: DATA_PLANE_KMS_LOGICAL_KEY_ID
+  value: {{ .Values.kms.dataPlaneLogicalKeyID | quote }}
+{{- end }}
+{{- end }}

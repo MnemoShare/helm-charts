@@ -50,7 +50,7 @@ grep -Fq 'port: 8443' <<<"$port_render"
 grep -Fq 'containerPort: 9222' <<<"$port_render"
 
 operator_render=$(helm template immutable "$chart_dir" --set customerId=test "${identity[@]}" --set formatMigrations.mode=operator --set image.tag=old-tag --set mcp.enabled=true --set mcp.apiKey.key=x --set sftpGateway.enabled=true --set sftpGateway.hostKey.existingSecret=x --set encryption.key=x --set sftpGateway.licenseCapabilityEnabled=true)
-test "$(grep -Fc "image: \"mnemoshare/mnemoshare@${digest}\"" <<<"$operator_render")" -eq 2
+test "$(grep -Fc "image: \"mnemoshare/mnemoshare@${digest}\"" <<<"$operator_render")" -eq 3
 
 expect_failure() {
   local override=$1 expected=$2 output
