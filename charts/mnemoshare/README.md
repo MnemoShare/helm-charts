@@ -357,7 +357,9 @@ Full reference (defaults shown):
 | `keyguard.idpRealm` | `master` | Realm slug — URL becomes `<idpEndpoint>/<idpRealm>/federation/sts`. |
 | `keyguard.spiffeTrustDomain` | `mnemoshare` | URI SAN authority; produces `spiffe://<trustDomain>/ns/<ns>/sa/<sa>`. |
 | `keyguard.saTokenAudience` | (derived) | Projected SA token `aud`. Defaults to host portion of `idpEndpoint`. |
-| `keyguard.roleArn` | `""` | AWS IAM role to assume. Required. |
+| `keyguard.roleArn` | `""` | AWS IAM role to assume. Required when `identityMode=shared`. |
+| `keyguard.identityMode` | `shared` | `shared`: one ServiceAccount/cert/role for api, worker and ices. `perComponent`: a ServiceAccount, SPIFFE id, cert Secret and role per component. |
+| `keyguard.components.{api,worker,ices}.roleArn` | `""` | Role ARN per component. Required for each enabled component when `identityMode=perComponent`. |
 | `keyguard.awsRegion` | `us-east-1` | AWS SDK region. |
 | `keyguard.tokenRefreshLeadSecs` | `60` | Refresh JWT this many seconds before exp. Bounds [5, 3600]. |
 | `keyguard.sidecar.image.repository` | `ghcr.io/mnemoshare/federation-sidecar` | Public image. |

@@ -2251,6 +2251,27 @@ keyguard:
   # pre-KeyGuard form.
   enabled: false
 
+  # Federated identity layout.
+  #   shared       — api, workflow-worker and ices run as the release
+  #                  ServiceAccount, mount one cert Secret and assume
+  #                  keyguard.roleArn. Single-SA / self-hosted layout.
+  #   perComponent — each federated component gets its own ServiceAccount
+  #                  (<fullname>-api|-worker|-ices), SPIFFE id, cert Secret
+  #                  and role ARN (keyguard.components.<c>.roleArn, required).
+  #                  Each SPIFFE id must be registered as a WorkloadIdentity
+  #                  in idp-lite before switching.
+  identityMode: shared
+
+  # Per-component AWS role ARNs, used only when identityMode=perComponent.
+  # Components that are not enabled in the release are ignored.
+  components:
+    api:
+      roleArn: ""
+    worker:
+      roleArn: ""
+    ices:
+      roleArn: ""
+
   # idp-lite federation endpoint. Required when enabled.
   # MnemoShare-internal default: https://idp.mnemoshare.com:8443
   idpEndpoint: ""
