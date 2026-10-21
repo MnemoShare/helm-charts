@@ -55,7 +55,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      serviceAccountName: {{ include "mnemoshare.keyguard.podServiceAccountName" (dict "root" . "component" "api") }}
       automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -490,7 +490,7 @@ spec:
         # KeyGuard (MSC-371): AWS SDK reads the JWT the federation-sidecar
         # writes to AWS_WEB_IDENTITY_TOKEN_FILE. No static AWS keys in this
         # pod's K8s Secret. See templates/_keyguard.tpl.
-        {{- include "mnemoshare.keyguard.envMain" . | nindent 8 }}
+        {{- include "mnemoshare.keyguard.envMain" (dict "root" . "component" "api") | nindent 8 }}
         {{- end }}
         {{- if .Values.startupProbe }}
         # MNS-1033: gate liveness/readiness behind a boot budget so a long
@@ -529,7 +529,7 @@ spec:
       {{- if include "mnemoshare.keyguard.enabled" . }}
       # KeyGuard federation-sidecar (MSC-371) — mints AWS-usable JWT
       # in-pod from Step-CA mTLS cert + projected SA token.
-      {{- include "mnemoshare.keyguard.sidecarContainer" . | nindent 6 }}
+      {{- include "mnemoshare.keyguard.sidecarContainer" (dict "root" . "component" "api") | nindent 6 }}
       {{- end }}
       volumes:
       {{- include "mnemoshare.vault.k8sTokenVolume" . | nindent 6 }}
@@ -574,7 +574,7 @@ spec:
           secretName: {{ .Values.mtls.ca.existingSecret }}
       {{- end }}
       {{- if include "mnemoshare.keyguard.enabled" . }}
-      {{- include "mnemoshare.keyguard.volumes" . | nindent 6 }}
+      {{- include "mnemoshare.keyguard.volumes" (dict "root" . "component" "api") | nindent 6 }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

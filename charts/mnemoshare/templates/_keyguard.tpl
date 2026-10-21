@@ -31,12 +31,66 @@ nil-check / type-check dance.
 {{- end -}}
 
 {{/*
+Identity mode: "shared" (default) — every federated pod runs as the release
+ServiceAccount and mounts one cert Secret; "perComponent" — api, worker and
+ices each get their own ServiceAccount, SPIFFE id, cert Secret and role ARN.
+*/}}
+{{- define "mnemoshare.keyguard.identityMode" -}}
+{{- $m := "shared" -}}
+{{- if .Values.keyguard -}}{{- $m = .Values.keyguard.identityMode | default "shared" -}}{{- end -}}
+{{- if not (has $m (list "shared" "perComponent")) -}}
+{{- fail (printf "keyguard.identityMode must be shared or perComponent, got %q" $m) -}}
+{{- end -}}
+{{- $m -}}
+{{- end -}}
+
+{{- define "mnemoshare.keyguard.perComponent" -}}
+{{- if and (include "mnemoshare.keyguard.enabled" .) (eq (include "mnemoshare.keyguard.identityMode" .) "perComponent") -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Per-component helpers take (dict "root" . "component" "api|worker|ices").
+In shared mode they resolve to the release-wide values, so call sites are
+identical in both modes.
+*/}}
+{{- define "mnemoshare.keyguard.componentSAName" -}}
+{{- /* Truncate the fullname, not the suffix, so components never collapse to one name. */ -}}
+{{- printf "%s-%s" (include "mnemoshare.fullname" .root | trunc (int (sub 62 (len .component))) | trimSuffix "-") .component -}}
+{{- end -}}
+
+{{- define "mnemoshare.keyguard.podServiceAccountName" -}}
+{{- if include "mnemoshare.keyguard.perComponent" .root -}}
+{{- include "mnemoshare.keyguard.componentSAName" . -}}
+{{- else -}}
+{{- include "mnemoshare.serviceAccountName" .root -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "mnemoshare.keyguard.certName" -}}
+{{- if include "mnemoshare.keyguard.perComponent" .root -}}
+{{- printf "%s-%s-keyguard-mtls" (include "mnemoshare.fullname" .root | trunc (int (sub 48 (len .component))) | trimSuffix "-") .component -}}
+{{- else -}}
+{{- printf "%s-keyguard-mtls" (include "mnemoshare.fullname" .root) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "mnemoshare.keyguard.roleArn" -}}
+{{- if include "mnemoshare.keyguard.perComponent" .root -}}
+{{- $c := index (.root.Values.keyguard.components | default dict) .component | default dict -}}
+{{- required (printf "keyguard.components.%s.roleArn is required when keyguard.identityMode=perComponent" .component) $c.roleArn -}}
+{{- else -}}
+{{- required "keyguard.roleArn is required when keyguard.enabled=true" .root.Values.keyguard.roleArn -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 SPIFFE id for this release. URI SAN on the workload cert; idp-lite uses
 it as the JWT `sub` claim, AWS IAM trust policy conditions on it.
 Form: spiffe://<trustDomain>/ns/<namespace>/sa/<serviceaccount>
+Takes (dict "root" . "component" ...).
 */}}
 {{- define "mnemoshare.keyguard.spiffeID" -}}
-spiffe://{{ .Values.keyguard.spiffeTrustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ include "mnemoshare.serviceAccountName" . }}
+spiffe://{{ .root.Values.keyguard.spiffeTrustDomain }}/ns/{{ .root.Release.Namespace }}/sa/{{ include "mnemoshare.keyguard.podServiceAccountName" . }}
 {{- end -}}
 
 {{/*
@@ -63,16 +117,16 @@ fragment — caller splices it under the pod's `volumes:` key.
 {{- define "mnemoshare.keyguard.volumes" -}}
 - name: keyguard-workload-tls
   secret:
-    secretName: {{ printf "%s-keyguard-mtls" (include "mnemoshare.fullname" .) }}
+    secretName: {{ include "mnemoshare.keyguard.certName" . }}
 - name: keyguard-idp-ca
   secret:
-    secretName: {{ .Values.keyguard.cert.caSecretName | default "step-ca-root" }}
+    secretName: {{ .root.Values.keyguard.cert.caSecretName | default "step-ca-root" }}
 - name: keyguard-sa-token
   projected:
     sources:
       - serviceAccountToken:
           path: token
-          audience: {{ include "mnemoshare.keyguard.saTokenAudience" . }}
+          audience: {{ include "mnemoshare.keyguard.saTokenAudience" .root }}
           expirationSeconds: 3600
 - name: keyguard-aws-federation
   emptyDir:
@@ -112,9 +166,9 @@ Env injected into the MAIN app container. AWS SDK reads these.
 - name: AWS_WEB_IDENTITY_TOKEN_FILE
   value: /var/run/secrets/aws-federation/token
 - name: AWS_ROLE_ARN
-  value: {{ required "keyguard.roleArn is required when keyguard.enabled=true" .Values.keyguard.roleArn | quote }}
+  value: {{ include "mnemoshare.keyguard.roleArn" . | quote }}
 - name: AWS_REGION
-  value: {{ .Values.keyguard.awsRegion | default "us-east-1" | quote }}
+  value: {{ .root.Values.keyguard.awsRegion | default "us-east-1" | quote }}
 {{- end -}}
 
 {{/*
@@ -122,16 +176,17 @@ The federation-sidecar container itself. Splice under `containers:` in
 each consuming Deployment / StatefulSet.
 */}}
 {{- define "mnemoshare.keyguard.sidecarContainer" -}}
+{{- $root := .root -}}
 - name: federation-sidecar
-  image: "{{ .Values.keyguard.sidecar.image.repository }}:{{ required "keyguard.sidecar.image.tag is required — pin a specific sha or version, do not let it fall back to a rolling tag for a credential broker" .Values.keyguard.sidecar.image.tag }}"
-  imagePullPolicy: {{ .Values.keyguard.sidecar.image.pullPolicy | default "IfNotPresent" }}
+  image: "{{ $root.Values.keyguard.sidecar.image.repository }}:{{ required "keyguard.sidecar.image.tag is required — pin a specific sha or version, do not let it fall back to a rolling tag for a credential broker" $root.Values.keyguard.sidecar.image.tag }}"
+  imagePullPolicy: {{ $root.Values.keyguard.sidecar.image.pullPolicy | default "IfNotPresent" }}
   env:
     - name: KG_IDP_ENDPOINT
-      value: {{ required "keyguard.idpEndpoint is required when keyguard.enabled=true" .Values.keyguard.idpEndpoint | quote }}
+      value: {{ required "keyguard.idpEndpoint is required when keyguard.enabled=true" $root.Values.keyguard.idpEndpoint | quote }}
     - name: KG_IDP_REALM
-      value: {{ .Values.keyguard.idpRealm | default "master" | quote }}
+      value: {{ $root.Values.keyguard.idpRealm | default "master" | quote }}
     - name: KG_TLS_CA_PATH
-      value: /etc/keyguard/idp-ca/{{ .Values.keyguard.cert.caSecretKey | default "ca.crt" }}
+      value: /etc/keyguard/idp-ca/{{ $root.Values.keyguard.cert.caSecretKey | default "ca.crt" }}
     - name: KG_TLS_CERT_PATH
       value: /etc/keyguard/workload-tls/tls.crt
     - name: KG_TLS_KEY_PATH
@@ -141,9 +196,9 @@ each consuming Deployment / StatefulSet.
     - name: KG_OUTPUT_TOKEN_PATH
       value: /var/run/secrets/aws-federation/token
     - name: KG_ROLE_ARN
-      value: {{ .Values.keyguard.roleArn | quote }}
+      value: {{ include "mnemoshare.keyguard.roleArn" . | quote }}
     - name: KG_REFRESH_LEAD_SECS
-      value: {{ .Values.keyguard.tokenRefreshLeadSecs | default 60 | quote }}
+      value: {{ $root.Values.keyguard.tokenRefreshLeadSecs | default 60 | quote }}
   ports:
     - name: keyguard
       containerPort: 8081
@@ -161,9 +216,9 @@ each consuming Deployment / StatefulSet.
     initialDelaySeconds: 10
     periodSeconds: 30
   resources:
-    {{- toYaml (.Values.keyguard.sidecar.resources | default (dict "requests" (dict "cpu" "5m" "memory" "16Mi") "limits" (dict "memory" "32Mi"))) | nindent 4 }}
+    {{- toYaml ($root.Values.keyguard.sidecar.resources | default (dict "requests" (dict "cpu" "5m" "memory" "16Mi") "limits" (dict "memory" "32Mi"))) | nindent 4 }}
   volumeMounts:
-    {{- include "mnemoshare.keyguard.volumeMountsSidecar" . | nindent 4 }}
+    {{- include "mnemoshare.keyguard.volumeMountsSidecar" $root | nindent 4 }}
   securityContext:
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
@@ -172,7 +227,7 @@ each consuming Deployment / StatefulSet.
     # USER (nonroot), so with only runAsNonRoot:true the kubelet cannot verify
     # the user is non-root and fails the container with CreateContainerConfigError.
     # Pin a numeric UID (matches the working demo sidecar) so the check passes.
-    runAsUser: {{ .Values.keyguard.sidecar.runAsUser | default 1000 }}
+    runAsUser: {{ $root.Values.keyguard.sidecar.runAsUser | default 1000 }}
     capabilities:
       drop: ["ALL"]
 {{- end -}}

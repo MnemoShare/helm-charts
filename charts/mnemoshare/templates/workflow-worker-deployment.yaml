@@ -35,7 +35,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
+      serviceAccountName: {{ include "mnemoshare.keyguard.podServiceAccountName" (dict "root" . "component" "worker") }}
       automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -301,7 +301,7 @@ spec:
         {{- if include "mnemoshare.keyguard.enabled" . }}
         # KeyGuard (MSC-371): worker reaches per-org KMS / S3 SIEM bucket
         # via the federation-sidecar — no static AWS creds on this pod.
-        {{- include "mnemoshare.keyguard.envMain" . | nindent 8 }}
+        {{- include "mnemoshare.keyguard.envMain" (dict "root" . "component" "worker") | nindent 8 }}
         {{- end }}
         resources:
           {{- toYaml .Values.workflowWorker.resources | nindent 12 }}
@@ -343,7 +343,7 @@ spec:
           failureThreshold: 3
       {{- if include "mnemoshare.keyguard.enabled" . }}
       # KeyGuard federation-sidecar (MSC-371).
-      {{- include "mnemoshare.keyguard.sidecarContainer" . | nindent 6 }}
+      {{- include "mnemoshare.keyguard.sidecarContainer" (dict "root" . "component" "worker") | nindent 6 }}
       {{- end }}
       {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled .Values.vault.kubernetesAuth.enabled (include "mnemoshare.keyguard.enabled" .) }}
       volumes:
@@ -382,7 +382,7 @@ spec:
         {{- end }}
       {{- end }}
       {{- if include "mnemoshare.keyguard.enabled" . }}
-      {{- include "mnemoshare.keyguard.volumes" . | nindent 6 }}
+      {{- include "mnemoshare.keyguard.volumes" (dict "root" . "component" "worker") | nindent 6 }}
       {{- end }}
       {{- end }}
       {{- with .Values.workflowWorker.nodeSelector }}
