@@ -223,6 +223,12 @@ database port defaults to 27017 for MongoDB or 5432 for PostgreSQL and can be
 overridden with `databasePort`. The migration policy permits only DNS, those
 database targets, and those API targets; cleanup has no database access.
 
+With `networkPolicy.enabled=true`, an unset destination CIDR (database, external
+Redis, email relay database, hook database, Kubernetes API) falls back to the
+port only, to any destination; `helm install/upgrade` NOTES list each fallback in
+effect. Set `networkPolicy.strict=true` (recommended for regulated installs) to
+turn every fallback into a render failure naming the value to set.
+
 The pre-install hook requires a fresh database to plan ordinary, then applies and
 verifies its current-format baseline before any writer boots; a maintenance
 decision on a fresh install fails closed. If plan fails, no workloads were touched. If an

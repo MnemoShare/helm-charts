@@ -67,11 +67,19 @@ mTLS (HARDWARE KEY AUTHENTICATION)
 NETWORK POLICIES
 ----------------
   Egress is default-deny with explicit ports per component (see EGRESS.md in the chart).
-  Upgrading from < 1.27.0: policies are now ON by default. Set networkPolicy.database.cidrs,
-  networkPolicy.redis.cidrs and networkPolicy.smtp.cidrs to narrow database/Redis/SMTP
-  destinations (unset = those ports only, any destination); add ports for workflow steps
-  via networkPolicy.workflowWorker.customerEgressPorts. Opt out: networkPolicy.enabled=false.
+  Add ports for workflow steps via networkPolicy.workflowWorker.customerEgressPorts.
+  Opt out: networkPolicy.enabled=false.
   Renamed: networkPolicy.workflows.ports -> networkPolicy.workflows.customerEgressPorts.
+{{- $fallbacks := include "mnemoshare.np.fallbacks" . | fromJsonArray }}
+{{- if $fallbacks }}
+
+  NetworkPolicy fallbacks in effect (port-restricted, but to ANY destination):
+{{- range $fallbacks }}
+    - {{ .rule }}; set {{ .set }} to narrow it.
+{{- end }}
+  Regulated installs should set these and enable networkPolicy.strict=true, which
+  turns every fallback above into a render failure.
+{{- end }}
 {{- else }}
 
 WARNING: networkPolicy.enabled=false - no pod-level network isolation is applied.

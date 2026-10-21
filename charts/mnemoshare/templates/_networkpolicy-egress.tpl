@@ -435,3 +435,46 @@ args: root, component
 {{ toYaml . }}
 {{- end }}
 {{- end -}}
+
+{{/*
+mnemoshare.np.fallbacks - JSON list of {id, rule, set} for every egress rule that
+fell back to "its port(s) to any destination" because no destination was
+configured. Single source for NOTES.txt and the networkPolicy.strict gate: keep
+each condition identical to the template that renders the fallback rule.
+*/}}
+{{- define "mnemoshare.np.fallbacks" -}}
+{{- $out := list -}}
+{{- $np := .Values.networkPolicy -}}
+{{- if $np.enabled -}}
+{{- $d := .Values.database.driver | default "mongodb" -}}
+{{- if and (ne $d "sqlite") $np.mongodb.enabled (or (not $np.database) (ne ($np.database.enabled | toString) "false")) -}}
+{{- $c := dict "cidr" $np.mongodb.cidr "cidrs" (($np.database | default dict).cidrs) -}}
+{{- if not (include "mnemoshare.np.cidrs" $c | fromJsonArray) -}}
+{{- $out = append $out (dict "id" "database" "rule" (printf "database egress (port %s) to any destination" (include "mnemoshare.np.dbPort" .)) "set" "networkPolicy.database.cidrs") -}}
+{{- end -}}
+{{- end -}}
+{{- if eq (include "mnemoshare.redisMode" .) "external" -}}
+{{- if not (include "mnemoshare.np.cidrs" ($np.redis | default dict) | fromJsonArray) -}}
+{{- $out = append $out (dict "id" "redis" "rule" "external Redis/Sentinel egress to any destination" "set" "networkPolicy.redis.cidrs") -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.emailGateway .Values.emailGateway.enabled -}}
+{{- $relayMongo := false -}}
+{{- $facts := include "mnemoshare.emailGateway" . | fromJson -}}
+{{- range $facts.profile.external_universes }}{{- if eq .id "email-relay-mongo" }}{{- $relayMongo = true }}{{- end }}{{- end -}}
+{{- if and (or $relayMongo .Values.emailGateway.relay.db.networkPolicyPort) (not .Values.emailGateway.relay.db.networkPolicyCIDRs) -}}
+{{- $out = append $out (dict "id" "email-relay-db" "rule" (printf "email relay database egress (port %v) to any destination" .Values.emailGateway.relay.db.networkPolicyPort) "set" "emailGateway.relay.db.networkPolicyCIDRs") -}}
+{{- end -}}
+{{- end -}}
+{{- $fm := .Values.formatMigrations -}}
+{{- if ne $fm.mode "operator" -}}
+{{- if and (eq $fm.mode "automatic") (not $fm.networkPolicy.databaseCIDRs) -}}
+{{- $out = append $out (dict "id" "format-migration-database" "rule" "format-migration hook database egress to any destination" "set" "formatMigrations.networkPolicy.databaseCIDRs") -}}
+{{- end -}}
+{{- if not $fm.networkPolicy.kubernetesApiTargets -}}
+{{- $out = append $out (dict "id" "format-migration-kube-api" "rule" "format-migration hook Kubernetes API egress (443, 6443) to any destination" "set" "formatMigrations.networkPolicy.kubernetesApiTargets") -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $out | toJson -}}
+{{- end -}}

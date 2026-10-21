@@ -1,0 +1,8 @@
+{{- if .Values.networkPolicy.strict }}
+{{- if not .Values.networkPolicy.enabled }}
+{{- fail "networkPolicy.strict=true requires networkPolicy.enabled=true" }}
+{{- end }}
+{{- range (include "mnemoshare.np.fallbacks" . | fromJsonArray) }}
+{{- fail (printf "networkPolicy.strict: %s because %s is unset. Set %s to the destination CIDR(s), or set networkPolicy.strict=false to accept the port-restricted any-destination fallback." .rule .set .set) }}
+{{- end }}
+{{- end }}
