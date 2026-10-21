@@ -1325,6 +1325,29 @@ threatFeed:
     enabled: true
     url: ""
 
+  # abuse.ch Auth-Key (free, https://auth.abuse.ch/). URLhaus, MalwareBazaar
+  # and ThreatFox only serve authenticated exports; without a key those feeds
+  # report "disabled_no_key" and are not fetched. Feodo needs no key.
+  abusech:
+    # Existing secret holding the key (preferred).
+    existingSecret: ""
+    secretKey: "threatfeed-abusech-auth-key"
+    # Inline key — prefer existingSecret in production.
+    authKey: ""
+
+  # abuse.ch MalwareBazaar — malware SHA-256 feed. Needs abusech key.
+  malwareBazaar:
+    enabled: false
+    url: ""
+
+  # abuse.ch ThreatFox — IOC feed (URL/domain/IP/hash). Needs abusech key and
+  # an export url containing the literal "{auth_key}" placeholder, e.g.
+  # https://threatfox-api.abuse.ch/v2/files/exports/{auth_key}/recent.json
+  threatFox:
+    enabled: false
+    url: ""
+    minConfidence: ""
+
   # Optional custom feed. Only wired when custom.url is set.
   #   kind — the feed's payload type (e.g. "url", "ip", "domain").
   #   name — a label for attribution in scan verdicts / audit.

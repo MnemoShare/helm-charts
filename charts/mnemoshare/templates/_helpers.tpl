@@ -371,6 +371,42 @@ Values consumed (only when .Values.threatFeed.enabled):
   value: {{ .Values.threatFeed.feodo.url | quote }}
 {{- end }}
 {{- end }}
+{{- with .Values.threatFeed.malwareBazaar }}
+{{- if .enabled }}
+- name: THREATFEED_MALWAREBAZAAR_ENABLED
+  value: "true"
+{{- if .url }}
+- name: THREATFEED_MALWAREBAZAAR_URL
+  value: {{ .url | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- with .Values.threatFeed.threatFox }}
+{{- if .enabled }}
+- name: THREATFEED_THREATFOX_ENABLED
+  value: "true"
+{{- if .url }}
+- name: THREATFEED_THREATFOX_URL
+  value: {{ .url | quote }}
+{{- end }}
+{{- if .minConfidence }}
+- name: THREATFEED_THREATFOX_MIN_CONFIDENCE
+  value: {{ .minConfidence | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- with .Values.threatFeed.abusech }}
+{{- if .existingSecret }}
+- name: THREATFEED_ABUSECH_AUTH_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .existingSecret }}
+      key: {{ .secretKey | default "threatfeed-abusech-auth-key" }}
+{{- else if .authKey }}
+- name: THREATFEED_ABUSECH_AUTH_KEY
+  value: {{ .authKey | quote }}
+{{- end }}
+{{- end }}
 {{- if .Values.threatFeed.custom.url }}
 - name: THREATFEED_CUSTOM_URL
   value: {{ .Values.threatFeed.custom.url | quote }}
