@@ -221,6 +221,29 @@ sesEvents:
   webhookToken: "xxx"         # enables /api/v1/webhooks/ses-events
 ```
 
+### Threat-Intelligence Feeds (abuse.ch)
+
+abuse.ch retired its keyless downloads in October 2026. URLhaus, MalwareBazaar
+and ThreatFox now need a free Auth-Key from https://auth.abuse.ch/; without one
+those feeds report `disabled_no_key` and are not fetched. Feodo Tracker needs no key.
+
+```bash
+kubectl create secret generic mnemoshare-threatfeed \
+  --from-literal=threatfeed-abusech-auth-key=<key>
+```
+
+```yaml
+threatFeed:
+  enabled: true
+  abusech:
+    existingSecret: mnemoshare-threatfeed
+  urlhaus:
+    enabled: true
+  threatFox:
+    enabled: true
+    url: "https://threatfox-api.abuse.ch/v2/files/exports/{auth_key}/recent.json"
+```
+
 ### Custom Resource Limits
 
 ```yaml
