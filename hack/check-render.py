@@ -10,13 +10,42 @@
 5. Every app pod (component api, workflow-worker, ices, mcp, email-gateway,
    inbound-gateway, sftp-gateway) sets automountServiceAccountToken: false, and
    no Role/RoleBinding other than the format-migration hook's is rendered.
+6. No container (init or main) invokes sh/bash/busybox/wget/curl/nc/pgrep in
+   command/args, probe exec or lifecycle hooks (shell-free runtime, MNS-1549).
+   Third-party images that ship their own shell are allowlisted below.
 """
 import sys
 import yaml
 
 APP_COMPONENTS = {"api", "workflow-worker", "ices", "mcp", "email-gateway",
                   "inbound-gateway", "sftp-gateway"}
+SHELL_TOOLS = {"sh", "bash", "ash", "dash", "zsh", "busybox", "wget", "curl", "nc", "ncat", "pgrep"}
+# (substring of workload name, container name).
+SHELL_ALLOWLIST = {
+    # smallstep/step-ca image, not built from our runtime image.
+    ("-step-ca", "init-ca"),
+    # Remaining shell in OUR image: umask/mkdir/chmod, byte-exact decision-file
+    # compare and plan-digest reads around mnemoshare-migrate. Blocks distroless
+    # until that logic moves into the migrate binary. Do not add to this list.
+    ("-format-migration", "plan-before-drain"),
+    ("-format-migration", "plan-email-relay-mongo-before-drain"),
+    ("-format-migration", "apply"),
+    ("-format-migration", "verify"),
+    # Same reason: phase dispatch, mkdir/chmod and exit-code handling around mnemoshare-migrate.
+    ("-migration-", "migration-operation"),
+}
+# Containers on formatMigrations.orchestratorImage (docker.io/alpine/k8s: kubectl + shell, not ours).
+SHELL_ALLOWED_IMAGE_PREFIXES = ("docker.io/alpine/k8s",)
 errors = []
+
+
+def shell_hits(c):
+    probes = [(k, ((c.get(k) or {}).get("exec") or {}).get("command") or []) for k in ("livenessProbe", "readinessProbe", "startupProbe")]
+    hooks = [(f"lifecycle.{h}", (((c.get("lifecycle") or {}).get(h) or {}).get("exec") or {}).get("command") or []) for h in ("postStart", "preStop")]
+    for where, argv in [("command", (c.get("command") or []) + (c.get("args") or []))] + probes + hooks:
+        for a in argv:
+            if isinstance(a, str) and a.split("/")[-1] in SHELL_TOOLS:
+                yield where, a
 docs = [d for d in yaml.safe_load_all(open(sys.argv[1]) if len(sys.argv) > 1 else sys.stdin) if d]
 
 for d in docs:
@@ -41,6 +70,18 @@ for d in docs:
         comp = tpl["metadata"].get("labels", {}).get("app.kubernetes.io/component")
         if comp in APP_COMPONENTS and tpl["spec"].get("automountServiceAccountToken") is not False:
             errors.append(f"{kind}/{name} (component={comp}): automountServiceAccountToken is not false")
+
+for d in docs:
+    if d.get("kind") not in ("Deployment", "StatefulSet", "Job", "CronJob", "DaemonSet"):
+        continue
+    tpl = d["spec"].get("jobTemplate", {}).get("spec", {}).get("template") or d["spec"]["template"]
+    for c in (tpl["spec"].get("containers") or []) + (tpl["spec"].get("initContainers") or []):
+        if any(w in d["metadata"]["name"] and c["name"] == n for w, n in SHELL_ALLOWLIST):
+            continue
+        if c.get("image", "").startswith(SHELL_ALLOWED_IMAGE_PREFIXES):
+            continue
+        for where, a in shell_hits(c):
+            errors.append(f"{d['kind']}/{d['metadata']['name']} container {c['name']} {where}: invokes {a}")
 
 sas = {d["metadata"]["name"] for d in docs if d.get("kind") == "ServiceAccount"}
 for d in docs:

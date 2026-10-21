@@ -61,6 +61,9 @@ spec:
         command:
           {{- toYaml $icesCommand | nindent 10 }}
         env:
+        # 8081 is the KeyGuard sidecar's port in the same pod network namespace.
+        - name: HEALTH_ADDR
+          value: ":8082"
         {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
         {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # Tenant Identity — required for dispatch keyspace isolation.
@@ -262,26 +265,20 @@ spec:
         {{- include "mnemoshare.keyguard.volumeMountsMain" . | nindent 8 }}
         {{- end }}
         {{- end }}
+        ports:
+        - name: health
+          containerPort: 8082
+          protocol: TCP
         livenessProbe:
           exec:
-            command:
-            - /bin/sh
-            - -c
-            # Anchored full-cmdline match: bare `pgrep ices` matches the probe's
-            # own `/bin/sh -c ...` cmdline (contains "ices") → false-positive
-            # even when the binary is dead. `-f` + ^...$ works on both procps
-            # and busybox pgrep and cannot match the probe shell.
-            - {{ printf "pgrep -f '^%s$'" (first $icesCommand) | quote }}
+            command: [{{ first $icesCommand | quote }}, "healthcheck"]
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           exec:
-            command:
-            - /bin/sh
-            - -c
-            - {{ printf "pgrep -f '^%s$'" (first $icesCommand) | quote }}
+            command: [{{ first $icesCommand | quote }}, "healthcheck", "--url", "http://127.0.0.1:8082/readyz"]
           initialDelaySeconds: 10
           periodSeconds: 15
           timeoutSeconds: 5
