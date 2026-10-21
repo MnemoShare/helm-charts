@@ -52,13 +52,14 @@ spec:
         - http://{{ include "mnemoshare.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/health
         - --timeout
         - 60s
+        # wait-for runs the full API binary; Go package init alone peaks near 320Mi on 1.x.
         resources:
           requests:
             cpu: 10m
             memory: 16Mi
           limits:
             cpu: 100m
-            memory: 64Mi
+            memory: 512Mi
       containers:
       - name: mcp
         securityContext:
