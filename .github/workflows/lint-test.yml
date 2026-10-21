@@ -200,6 +200,9 @@ jobs:
       - name: Validate format migration orchestration
         run: bash charts/mnemoshare/tests/format-migrations.sh
 
+      - name: Validate NetworkPolicy fallback notes and strict mode
+        run: bash charts/mnemoshare/tests/network-policy-strict.sh
+
       - name: Validate migration contract updater
         run: bash charts/mnemoshare/tests/update-migration-result-contract-test.sh
 

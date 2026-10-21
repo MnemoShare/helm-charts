@@ -1881,6 +1881,13 @@ networkPolicy:
   # port only; set the cidrs below to narrow it.
   enabled: true
 
+  # Fail the render instead of falling back to "this port, any destination"
+  # whenever a destination CIDR is unset (database, external Redis, email relay
+  # database, format-migration hook database and Kubernetes API). Regulated
+  # installs should set true; helm install/upgrade NOTES list every fallback
+  # currently in effect when false. Requires enabled=true.
+  strict: false
+
   # Customer-facing destinations the workers dial (SFTP/FTP connectors, webhooks,
   # SIEM, LLM). Ports are per component below; peers are shared here. Private
   # ranges are never reachable via publicInternet: list them in `cidrs` (e.g. a
