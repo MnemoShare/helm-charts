@@ -435,11 +435,11 @@ spec:
           # ordinary or maintenance (optionally newline-terminated) before
           # running apply, and runs the relay apply only after primary succeeds.
           args: ["launch", "--private-dir", {{ $statusDirectory | quote }}, "--require-decision-file", "/migration/decision", "--",
-                 "apply", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--plan", {{ printf "%s/plan.json" $artifactDirectory | quote }}, "--expect-plan-digest-file", {{ printf "%s/plan-digest" $artifactDirectory | quote }},
+                 "apply", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--plan", {{ printf "%s/plan.json" $artifactDirectory | quote }}, "--expect-plan-digest", {{ printf "@file:%s/plan-digest" $artifactDirectory | quote }},
                  "--exclusive", "--bootstrap-policy", "provision-untracked",
                  "--status", {{ $statusFile | quote }}, "--termination-file", {{ $terminationFile | quote }}, "--termination-message-file", {{ $terminationMessageFile | quote }}
                  {{- if $externalRelayUniverse }}, "--then",
-                 "apply", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--universe", "email-relay-mongo", "--plan", {{ printf "%s/email-relay-plan.json" $artifactDirectory | quote }}, "--expect-plan-digest-file", {{ printf "%s/email-relay-plan-digest" $artifactDirectory | quote }},
+                 "apply", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--universe", "email-relay-mongo", "--plan", {{ printf "%s/email-relay-plan.json" $artifactDirectory | quote }}, "--expect-plan-digest", {{ printf "@file:%s/email-relay-plan-digest" $artifactDirectory | quote }},
                  "--exclusive", "--bootstrap-policy", "provision-untracked",
                  "--status", {{ $statusFile | quote }}, "--termination-file", {{ $terminationFile | quote }}, "--termination-message-file", {{ $terminationMessageFile | quote }}
                  {{- end }}]
@@ -462,9 +462,9 @@ spec:
           terminationMessagePolicy: FallbackToLogsOnError
           command: ["/usr/local/bin/mnemoshare-migrate"]
           args: ["launch", "--",
-                 "verify", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--plan", {{ printf "%s/plan.json" $artifactDirectory | quote }}, "--expect-plan-digest-file", {{ printf "%s/plan-digest" $artifactDirectory | quote }}
+                 "verify", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--plan", {{ printf "%s/plan.json" $artifactDirectory | quote }}, "--expect-plan-digest", {{ printf "@file:%s/plan-digest" $artifactDirectory | quote }}
                  {{- if $externalRelayUniverse }}, "--then",
-                 "verify", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--universe", "email-relay-mongo", "--plan", {{ printf "%s/email-relay-plan.json" $artifactDirectory | quote }}, "--expect-plan-digest-file", {{ printf "%s/email-relay-plan-digest" $artifactDirectory | quote }}
+                 "verify", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--universe", "email-relay-mongo", "--plan", {{ printf "%s/email-relay-plan.json" $artifactDirectory | quote }}, "--expect-plan-digest", {{ printf "@file:%s/email-relay-plan-digest" $artifactDirectory | quote }}
                  {{- end }}]
           env:
             {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
