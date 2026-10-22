@@ -84,3 +84,19 @@ NETWORK POLICIES
 
 WARNING: networkPolicy.enabled=false - no pod-level network isolation is applied.
 {{- end }}
+
+{{- if .Values.sandbox.enabled }}
+
+SANDBOX RUNNER
+--------------
+  Runner:            {{ include "mnemoshare.sandbox.url" . }}
+  Sandbox namespace: {{ include "mnemoshare.sandbox.namespace" . }}
+{{- if not .Values.sandbox.createNamespace }}
+  It must already exist with pod security enforced:
+    kubectl create namespace {{ include "mnemoshare.sandbox.namespace" . }}
+    kubectl label namespace {{ include "mnemoshare.sandbox.namespace" . }} pod-security.kubernetes.io/enforce=restricted
+{{- end }}
+  Verify the runner's access is confined to the sandbox namespace:
+    kubectl auth can-i create jobs -n {{ include "mnemoshare.sandbox.namespace" . }} --as=system:serviceaccount:{{ .Release.Namespace }}:{{ include "mnemoshare.sandbox.runnerName" . }}   # yes
+    kubectl auth can-i create jobs -n {{ .Release.Namespace }} --as=system:serviceaccount:{{ .Release.Namespace }}:{{ include "mnemoshare.sandbox.runnerName" . }}   # no
+{{- end }}

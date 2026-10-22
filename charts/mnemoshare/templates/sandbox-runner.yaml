@@ -1,0 +1,329 @@
+{{- if .Values.sandbox.enabled }}
+{{- include "mnemoshare.sandbox.validate" . }}
+{{- $name := include "mnemoshare.sandbox.runnerName" . }}
+{{- $runner := .Values.sandbox.runner }}
+{{- $policy := .Values.sandbox.policy }}
+{{- $tls := $runner.tls }}
+{{- if not $runner.secretName }}
+---
+# Generated once and kept across upgrades. The operator sets
+# sandbox.runner.secretName to a secret it owns and rotates instead.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "mnemoshare.sandbox.secretName" . }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-runner
+type: Opaque
+data:
+  {{- $existing := lookup "v1" "Secret" .Release.Namespace (include "mnemoshare.sandbox.secretName" .) }}
+  {{- if and $existing $existing.data (index $existing.data "secret") }}
+  secret: {{ index $existing.data "secret" }}
+  {{- else }}
+  secret: {{ randAlphaNum 48 | b64enc }}
+  {{- end }}
+{{- end }}
+{{- if and $tls.enabled (not $tls.secretName) }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "mnemoshare.sandbox.tlsSecretName" . }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-runner
+spec:
+  secretName: {{ include "mnemoshare.sandbox.tlsSecretName" . }}
+  duration: {{ $tls.duration | default "720h" }}
+  renewBefore: {{ $tls.renewBefore | default "240h" }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - server auth
+    - digital signature
+  dnsNames:
+    - {{ $name }}
+    - {{ $name }}.{{ .Release.Namespace }}
+    - {{ $name }}.{{ .Release.Namespace }}.svc
+    - {{ $name }}.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    name: {{ $tls.issuerRef.name | default .Values.keyguard.cert.issuerName }}
+    kind: {{ $tls.issuerRef.kind | default .Values.keyguard.cert.issuerKind | default "ClusterIssuer" }}
+    group: {{ $tls.issuerRef.group | default .Values.keyguard.cert.issuerGroup | default "cert-manager.io" }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-runner
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "mnemoshare.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-runner
+  ports:
+    - name: api
+      port: {{ $runner.port }}
+      targetPort: api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-runner
+spec:
+  replicas: {{ $runner.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sandbox-runner
+  template:
+    metadata:
+      labels:
+        {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: sandbox-runner
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: sandbox-runner
+      containers:
+        - name: sandbox-runner
+          image: {{ include "mnemoshare.sandbox.image" . | quote }}
+          imagePullPolicy: {{ $runner.image.pullPolicy | default .Values.image.pullPolicy | default "IfNotPresent" }}
+          command: ["/usr/local/bin/sandbox-runner"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: api
+              containerPort: {{ $runner.port }}
+            - name: health
+              containerPort: {{ $runner.healthPort }}
+          env:
+            - name: SANDBOX_NAMESPACE
+              value: {{ include "mnemoshare.sandbox.namespace" . | quote }}
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: SANDBOX_RUNNER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mnemoshare.sandbox.secretName" . }}
+                  key: secret
+            - name: SANDBOX_RUNNER_ADDR
+              value: {{ printf ":%v" $runner.port | quote }}
+            - name: SANDBOX_RUNNER_HEALTH_ADDR
+              value: {{ printf ":%v" $runner.healthPort | quote }}
+            {{- if $tls.enabled }}
+            - name: SANDBOX_RUNNER_TLS_CERT_FILE
+              value: /etc/sandbox-runner/tls/tls.crt
+            - name: SANDBOX_RUNNER_TLS_KEY_FILE
+              value: /etc/sandbox-runner/tls/tls.key
+            {{- if $tls.clientCASecret }}
+            - name: SANDBOX_RUNNER_TLS_CLIENT_CA_FILE
+              value: /etc/sandbox-runner/client-ca/ca.crt
+            {{- end }}
+            {{- else }}
+            - name: SANDBOX_RUNNER_ALLOW_PLAINTEXT
+              value: "true"
+            {{- end }}
+            - name: SANDBOX_REQUIRE_IMAGE_DIGEST
+              value: {{ $policy.requireImageDigest | quote }}
+            {{- with $policy.defaultImage }}
+            - name: SANDBOX_DEFAULT_IMAGE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $policy.allowedRegistries }}
+            - name: SANDBOX_ALLOWED_REGISTRIES
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- with $policy.egressAllowedCIDRs }}
+            - name: SANDBOX_EGRESS_ALLOWED_CIDRS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- $limits := $policy.limits | default dict }}
+            {{- range $env, $key := dict "SANDBOX_DEFAULT_CPU" "defaultCPU" "SANDBOX_MAX_CPU" "maxCPU" "SANDBOX_DEFAULT_MEMORY" "defaultMemory" "SANDBOX_MAX_MEMORY" "maxMemory" "SANDBOX_DEFAULT_EPHEMERAL_STORAGE" "defaultEphemeralStorage" "SANDBOX_MAX_EPHEMERAL_STORAGE" "maxEphemeralStorage" "SANDBOX_DEFAULT_TIMEOUT_SECONDS" "defaultTimeoutSeconds" "SANDBOX_MAX_TIMEOUT_SECONDS" "maxTimeoutSeconds" }}
+            {{- with index $limits $key }}
+            - name: {{ $env }}
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["/usr/local/bin/sandbox-runner", "healthcheck"]
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- toYaml $runner.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if $tls.enabled }}
+            - name: tls
+              mountPath: /etc/sandbox-runner/tls
+              readOnly: true
+            {{- if $tls.clientCASecret }}
+            - name: client-ca
+              mountPath: /etc/sandbox-runner/client-ca
+              readOnly: true
+            {{- end }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        {{- if $tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ include "mnemoshare.sandbox.tlsSecretName" . }}
+        {{- if $tls.clientCASecret }}
+        - name: client-ca
+          secret:
+            secretName: {{ $tls.clientCASecret }}
+        {{- end }}
+        {{- end }}
+{{- if gt (int $runner.replicas) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-runner
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sandbox-runner
+{{- end }}
+{{- if and .Values.networkPolicy .Values.networkPolicy.enabled }}
+---
+# Only the pods that host the engine may call the runner.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-ingress
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-runner
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sandbox-runner
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: {{ include "mnemoshare.sandbox.engineComponent" . }}
+      ports:
+        - protocol: TCP
+          port: {{ $runner.port }}
+---
+# The runner reaches DNS and the Kubernetes API server, nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-egress
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-runner
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sandbox-runner
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- range $runner.egress.kubernetesApiTargets }}
+    - to:
+        - ipBlock: { cidr: {{ .cidr | quote }} }
+      ports:
+        - { protocol: TCP, port: {{ .port }} }
+    {{- end }}
+    {{- if not $runner.egress.kubernetesApiTargets }}
+    {{- /* Kubernetes API endpoint unknown: 443/6443 only, any destination. */}}
+    {{- include "mnemoshare.np.rule" (dict "ports" (list 443 6443) "anyDest" true) | nindent 4 }}
+    {{- end }}
+---
+# The engine host may call the runner Service; additive to the host's own
+# egress policy so the shared workload egress rules stay single-sourced.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-engine-egress
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-runner
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: {{ include "mnemoshare.sandbox.engineComponent" . }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: sandbox-runner
+      ports:
+        - protocol: TCP
+          port: {{ $runner.port }}
+{{- end }}
+{{- end }}
