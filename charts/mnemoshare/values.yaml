@@ -2571,9 +2571,24 @@ sandbox:
       requests: {cpu: 50m, memory: 64Mi}
       limits: {cpu: 250m, memory: 128Mi}
   policy:
-    # Script runtime image, pinned by digest.
-    defaultImage: ""
+    # Image run_command and run_script use when a step names none. The digest
+    # is empty until a release publishes the image; set it to the published
+    # sha256 to turn run_command on. While empty the runner has NO default
+    # image: run_command is refused ("no default image is configured") and
+    # run_script runs only with an explicit image the policy allows. A plain
+    # string (a full repo@sha256:... reference) is accepted in place of the map.
+    defaultImage:
+      repository: docker.io/mnemoshare/script-runtime
+      digest: ""
+    # Registries a step-supplied image (run_script) may come from, as hosts or
+    # host/path prefixes. Empty = only the default image can run, so run_script
+    # needs this set to be useful. The default image bypasses it.
     allowedRegistries: []
+    # Executable allow/deny lists applied by the runner to the step's command
+    # (full path or base name; deny wins). Empty allow = any command may run
+    # inside the sandbox, which is the containment boundary.
+    commandAllow: []
+    commandDeny: []
     requireImageDigest: true
     # Empty: sandboxes have no egress at all.
     egressAllowedCIDRs: []

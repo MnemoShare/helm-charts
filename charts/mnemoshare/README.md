@@ -430,6 +430,16 @@ helm install mnemoshare mnemoshare/mnemoshare ... \
   443/6443 to any destination, listed in the install NOTES and a render failure under
   `networkPolicy.strict=true`.
 - `sandbox.policy.egressAllowedCIDRs` is empty by default: sandboxed code has no network egress.
+- `run_command` and `run_script` run in the script runtime image `sandbox.policy.defaultImage`
+  (`repository` plus `digest`). The digest is empty until a release publishes the image; while it is empty
+  the runner has no default image, `run_command` is refused and the install NOTES warn. `run_script` can
+  still run an author image, but only from `sandbox.policy.allowedRegistries` (empty means only the
+  default image runs), pinned by digest while `requireImageDigest` is true.
+- `sandbox.policy.commandAllow` / `commandDeny` are executable lists the runner applies to every command
+  (full path or base name, deny wins). Both empty by default: anything may run inside the sandbox.
+- With TLS on, the engine pods verify the runner with `ca.crt` of the runner TLS secret
+  (`SANDBOX_RUNNER_CA_FILE`, `SANDBOX_RUNNER_SERVER_NAME`); with `tls.secretName` the secret must carry
+  `ca.crt`. No engine client certificate is provisioned.
 - Needs a runtime image release that contains `/usr/local/bin/sandbox-runner`.
 
 ### Cloud-worker pool

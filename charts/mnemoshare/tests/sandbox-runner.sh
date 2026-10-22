@@ -127,4 +127,41 @@ strict=(
 err=$(render "${on[@]}" "${strict[@]}" 2>&1) && fail "strict render succeeded without sandbox.runner.egress.kubernetesApiTargets"
 grep -qF "sandbox.runner.egress.kubernetesApiTargets is unset" <<<"$err" || fail "strict failure did not name the sandbox setting: $err"
 render "${on[@]}" "${strict[@]}" "${api[@]}" >/dev/null || fail "strict render failed although targets are set"
+# Runner policy: no default image until a digest is set (fail closed), then the
+# digest-pinned reference; command lists render in the runner's comma format.
+out=$(render "${on[@]}")
+for bad in SANDBOX_DEFAULT_IMAGE SANDBOX_COMMAND_ALLOW SANDBOX_COMMAND_DENY; do
+  ! grep -qF -- "name: $bad" <<<"$out" || fail "$bad rendered by default"
+done
+digest=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+out=$(render "${on[@]}" --set "sandbox.policy.defaultImage.digest=sha256:$digest" \
+  --set "sandbox.policy.commandAllow={bash,/usr/bin/python3}" --set "sandbox.policy.commandDeny={curl}")
+for want in "value: \"docker.io/mnemoshare/script-runtime@sha256:$digest\"" 'value: "bash,/usr/bin/python3"' 'value: "curl"'; do
+  grep -qF -- "$want" <<<"$out" || fail "runner policy render lacks: $want"
+done
+if render "${on[@]}" --set sandbox.policy.defaultImage=docker.io/x/y:latest >/dev/null 2>&1; then fail "unpinned default image rendered"; fi
+
+# Engine pods verify the runner against ca.crt only; the runner pod gets none of it.
+out=$(render "${on[@]}")
+for want in "name: SANDBOX_RUNNER_CA_FILE" "value: /etc/sandbox-runner-ca/ca.crt" "name: SANDBOX_RUNNER_SERVER_NAME" \
+  'value: "mnemoshare-sandbox-runner.tenant.svc"' "name: sandbox-runner-ca" "path: ca.crt"; do
+  grep -qF -- "$want" <<<"$out" || fail "engine CA wiring lacks: $want"
+done
+[[ $(grep -c "name: SANDBOX_RUNNER_CA_FILE" <<<"$out") == 1 ]] || fail "runner CA env must be on exactly one workload"
+! grep -q "SANDBOX_RUNNER_CLIENT_CERT_FILE" <<<"$out" || fail "client certificate env rendered without a provisioned client certificate"
+out=$(render "${on[@]}" "${worker[@]}")
+[[ $(grep -c "name: SANDBOX_RUNNER_CA_FILE" <<<"$out") == 1 ]] || fail "worker-host: runner CA env must be on exactly one workload"
+python3 -c '
+import sys, yaml
+for d in yaml.safe_load_all(sys.stdin):
+    if not d or d.get("kind") not in ("Deployment", "StatefulSet"):
+        continue
+    spec = d["spec"]["template"]["spec"]
+    has = any(v["name"] == "sandbox-runner-ca" for v in spec.get("volumes", []))
+    env = any(e["name"] == "SANDBOX_RUNNER_CA_FILE" for c in spec["containers"] for e in c.get("env", []))
+    mounted = any(m["name"] == "sandbox-runner-ca" for c in spec["containers"] for m in c.get("volumeMounts", []))
+    assert has == env == mounted, d["metadata"]["name"]
+' <<<"$out" || fail "runner CA volume, mount and env are not on the same pods"
+plain=$(render --set sandbox.enabled=true --set sandbox.runner.tls.enabled=false --set sandbox.runner.tls.allowPlaintext=true)
+! grep -q "SANDBOX_RUNNER_CA_FILE" <<<"$plain" || fail "CA env rendered for a plaintext runner"
 echo "sandbox-runner: ok"

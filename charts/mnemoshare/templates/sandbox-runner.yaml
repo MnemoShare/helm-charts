@@ -190,9 +190,17 @@ spec:
             {{- end }}
             - name: SANDBOX_REQUIRE_IMAGE_DIGEST
               value: {{ $policy.requireImageDigest | quote }}
-            {{- with $policy.defaultImage }}
+            {{- with (include "mnemoshare.sandbox.defaultImage" .) }}
             - name: SANDBOX_DEFAULT_IMAGE
               value: {{ . | quote }}
+            {{- end }}
+            {{- with $policy.commandAllow }}
+            - name: SANDBOX_COMMAND_ALLOW
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- with $policy.commandDeny }}
+            - name: SANDBOX_COMMAND_DENY
+              value: {{ join "," . | quote }}
             {{- end }}
             {{- with $policy.allowedRegistries }}
             - name: SANDBOX_ALLOWED_REGISTRIES

@@ -466,7 +466,40 @@
           "additionalProperties": false,
           "properties": {
             "defaultImage": {
-              "type": "string"
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "repository": {
+                      "type": "string"
+                    },
+                    "digest": {
+                      "type": "string",
+                      "pattern": "^((sha256:)?[a-f0-9]{64})?$"
+                    }
+                  }
+                }
+              ]
+            },
+            "commandAllow": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^,\\s]+$"
+              }
+            },
+            "commandDeny": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^,\\s]+$"
+              }
             },
             "allowedRegistries": {
               "type": "array",
