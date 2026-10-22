@@ -20,10 +20,14 @@ trap on_error ERR
 #
 # The runner uid is not assumed to be 1000 or root (a CI runner is neither).
 # It only renders, extracts, and starts containers; every read, write and
-# removal inside a volume tree happens inside the image as uid 1000 or root,
+# removal inside a volume tree happens in a container as uid 1000 or root,
 # because after normalization the mount roots are root-owned setgid and their
 # content is uid-1000 0700/0600, which no other uid can reach.
 image=${MIGRATION_IMAGE:?MIGRATION_IMAGE must name the application image to execute}
+# The application image has no shell, so every volume helper (normalize, assert,
+# read, stand-in write, cleanup) runs /bin/sh from this separate tool image,
+# under the same uid and mount layout the rendered Job would use.
+tool_image=${MIGRATION_TOOL_IMAGE:-busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e}
 chart_dir=${1:-charts/mnemoshare}
 contract_dir="$chart_dir/tests/contracts/migration-operation/v1"
 fingerprint=$(jq -er '.fingerprint | select(test("^[a-f0-9]{64}$"))' "$contract_dir/contract.json")
@@ -37,7 +41,7 @@ cleanup() {
   # The volume trees can only be removed by root; a leaked tree fails the gate.
   if compgen -G "$tmp/volume.*" >/dev/null; then
     docker run --rm --user 0:0 --read-only -v "$tmp:/cleanup" \
-      --entrypoint /bin/sh "$image" -ec 'rm -rf /cleanup/volume.*' \
+      --entrypoint /bin/sh "$tool_image" -ec 'rm -rf /cleanup/volume.*' \
       || { echo "volume trees under $tmp were not removed" >&2; [ "$rc" -ne 0 ] || rc=1; }
   fi
   rm -rf "$tmp" || { echo "$tmp was not removed" >&2; [ "$rc" -ne 0 ] || rc=1; }
@@ -49,6 +53,7 @@ for tool in docker helm jq python3; do
   command -v "$tool" >/dev/null || { echo "required executable missing: $tool" >&2; exit 1; }
 done
 docker image inspect "$image" >/dev/null
+docker image inspect "$tool_image" >/dev/null 2>&1 || docker pull -q "$tool_image" >/dev/null
 
 base_values=(
   --set customerId=ci-test
@@ -104,7 +109,7 @@ raise SystemExit(f"{wanted}: rendered container not found")
 PY
 }
 
-# Runs a shell program inside the image as uid 1000 with a volume tree mounted
+# Runs a shell program in the tool image as uid 1000 with a volume tree mounted
 # at its rendered paths. Every assertion, read and stand-in write against a
 # volume tree goes through here, as the Job's own principal would see it.
 in_volume() {
@@ -113,7 +118,7 @@ in_volume() {
   docker run --rm --read-only --user 1000:1000 \
     --cap-drop=ALL --security-opt=no-new-privileges \
     -v "$root/migration:/migration" -v "$root/status:/run/mnemoshare-migration" \
-    --entrypoint /bin/sh "$image" -ec "$script" in_volume "$@"
+    --entrypoint /bin/sh "$tool_image" -ec "$script" in_volume "$@"
 }
 
 volume_test() {
@@ -144,7 +149,7 @@ docker_prepare_volumes() {
   # The status emptyDir is exactly what kubelet provisions with fsGroup 1000:
   # root-owned, group 1000, setgid 2777.
   docker run --rm --user 0:0 --read-only \
-    -v "$root:/volume" --entrypoint /bin/sh "$image" -ec \
+    -v "$root:/volume" --entrypoint /bin/sh "$tool_image" -ec \
     'chown 0:1000 /volume/migration /volume/status && chmod 2770 /volume/migration && chmod 2777 /volume/status
      mkdir /volume/kubelet && chmod 0755 /volume/kubelet'
   volume_stat "$root" /migration %u:%g:%a 0:1000:2770
@@ -159,7 +164,7 @@ docker_prepare_volumes() {
 kubelet_termination_message() {
   local root=$1 name=$2
   docker run --rm --user 0:0 --read-only -v "$root/kubelet:/kubelet" \
-    --entrypoint /bin/sh "$image" -ec ': > "/kubelet/$1" && chown 0:0 "/kubelet/$1" && chmod 0666 "/kubelet/$1"' \
+    --entrypoint /bin/sh "$tool_image" -ec ': > "/kubelet/$1" && chown 0:0 "/kubelet/$1" && chmod 0666 "/kubelet/$1"' \
     kubelet "$name"
   [ "$(stat -c %u:%g:%a:%F "$root/kubelet/$name")" = "0:0:666:regular empty file" ] \
     || { echo "kubelet termination message stand-in $root/kubelet/$name is not a root-owned 0666 regular file" >&2; return 1; }
