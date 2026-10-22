@@ -4,6 +4,8 @@
 {{- $runner := .Values.sandbox.runner }}
 {{- $policy := .Values.sandbox.policy }}
 {{- $tls := $runner.tls }}
+{{- $staging := dict "enabled" (eq (include "mnemoshare.sandbox.stagingOn" .) "true") "port" $runner.staging.port }}
+{{- $sizing := include "mnemoshare.sandbox.sizing" . | fromJson }}
 {{- if not $runner.secretName }}
 ---
 # Generated once and kept across upgrades. The operator sets
@@ -129,6 +131,10 @@ spec:
               containerPort: {{ $runner.port }}
             - name: health
               containerPort: {{ $runner.healthPort }}
+            {{- if $staging.enabled }}
+            - name: staging
+              containerPort: {{ $staging.port }}
+            {{- end }}
           env:
             - name: SANDBOX_NAMESPACE
               value: {{ include "mnemoshare.sandbox.namespace" . | quote }}
@@ -145,6 +151,30 @@ spec:
               value: {{ printf ":%v" $runner.port | quote }}
             - name: SANDBOX_RUNNER_HEALTH_ADDR
               value: {{ printf ":%v" $runner.healthPort | quote }}
+            {{- if $staging.enabled }}
+            - name: SANDBOX_INIT_IMAGE
+              value: {{ include "mnemoshare.sandbox.image" . | quote }}
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: SANDBOX_STAGING_ADDR
+              value: {{ printf ":%v" $staging.port | quote }}
+            - name: SANDBOX_STAGING_DIR
+              value: /var/lib/sandbox-runner/staging
+            - name: SANDBOX_OUTPUT_DIR
+              value: /var/lib/sandbox-runner/outputs
+            - name: SANDBOX_STAGING_MAX_TOTAL_BYTES
+              value: {{ $sizing.stagingTotalBytes | quote }}
+            - name: SANDBOX_OUTPUT_MAX_TOTAL_BYTES
+              value: {{ $sizing.outputTotalBytes | quote }}
+            {{- if $tls.enabled }}
+            - name: SANDBOX_STAGING_CA_FILE
+              value: /etc/sandbox-runner/tls/ca.crt
+            - name: SANDBOX_STAGING_SERVER_NAME
+              value: {{ printf "%s.%s.svc" $name .Release.Namespace | quote }}
+            {{- end }}
+            {{- end }}
             {{- if $tls.enabled }}
             - name: SANDBOX_RUNNER_TLS_CERT_FILE
               value: /etc/sandbox-runner/tls/tls.crt
@@ -190,10 +220,21 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 20
           resources:
-            {{- toYaml $runner.resources | nindent 12 }}
+            {{- $res := deepCopy $runner.resources }}
+            {{- if $staging.enabled }}
+            {{- $_ := set $res "requests" (merge (dict "ephemeral-storage" $sizing.containerEphemeral) ($res.requests | default dict)) }}
+            {{- $_ := set $res "limits" (merge (dict "ephemeral-storage" $sizing.containerEphemeral) ($res.limits | default dict)) }}
+            {{- end }}
+            {{- toYaml $res | nindent 12 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if $staging.enabled }}
+            - name: staging
+              mountPath: /var/lib/sandbox-runner/staging
+            - name: outputs
+              mountPath: /var/lib/sandbox-runner/outputs
+            {{- end }}
             {{- if $tls.enabled }}
             - name: tls
               mountPath: /etc/sandbox-runner/tls
@@ -208,6 +249,14 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
+        {{- if $staging.enabled }}
+        - name: staging
+          emptyDir:
+            sizeLimit: {{ $sizing.stagingVolume }}
+        - name: outputs
+          emptyDir:
+            sizeLimit: {{ $sizing.outputVolume }}
+        {{- end }}
         {{- if $tls.enabled }}
         - name: tls
           secret:
@@ -260,6 +309,19 @@ spec:
       ports:
         - protocol: TCP
           port: {{ $runner.port }}
+    {{- if $staging.enabled }}
+    # Sandbox Jobs pull their inputs and push their outputs on the staging port.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "mnemoshare.sandbox.namespace" . }}
+          podSelector:
+            matchLabels:
+              mnemoshare.com/sandbox: "true"
+      ports:
+        - protocol: TCP
+          port: {{ $staging.port }}
+    {{- end }}
 ---
 # The runner reaches DNS and the Kubernetes API server, nothing else.
 apiVersion: networking.k8s.io/v1

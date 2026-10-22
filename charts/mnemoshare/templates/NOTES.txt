@@ -99,4 +99,7 @@ SANDBOX RUNNER
   Verify the runner's access is confined to the sandbox namespace:
     kubectl auth can-i create jobs -n {{ include "mnemoshare.sandbox.namespace" . }} --as=system:serviceaccount:{{ .Release.Namespace }}:{{ include "mnemoshare.sandbox.runnerName" . }}   # yes
     kubectl auth can-i create jobs -n {{ .Release.Namespace }} --as=system:serviceaccount:{{ .Release.Namespace }}:{{ include "mnemoshare.sandbox.runnerName" . }}   # no
+{{- if and .Values.sandbox.runner.staging.enabled (ne (include "mnemoshare.sandbox.stagingOn" .) "true") }}
+  Input staging and output collection are OFF: the runner image is not pinned by digest (set image.digest or sandbox.runner.image.digest).
+{{- end }}
 {{- end }}
