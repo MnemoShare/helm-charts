@@ -2523,6 +2523,15 @@ sandbox:
       renewBefore: 240h
       # Secret with `ca.crt`; when set the runner requires client certificates.
       clientCASecret: ""
+    # Input staging and output collection for sandbox Jobs. Needs Kubernetes
+    # 1.29+ (native sidecars) in the cluster that runs the Jobs. Jobs reach the
+    # replica that owns their run by pod IP on this port; there is no Service
+    # port and no sessionAffinity. The staging and output volumes are sized
+    # from sandbox.policy.limits (concurrency times the per-run byte caps).
+    # Needs the runner image pinned by digest while policy.requireImageDigest.
+    staging:
+      enabled: true
+      port: 8085
     egress:
       # Kubernetes API server endpoints the runner may reach. Empty falls back
       # to ports 443/6443 to ANY destination (listed in NOTES; a render failure
@@ -2556,14 +2565,16 @@ sandbox:
       maxOutputBytes: "67108864"
   # ResourceQuota in the sandbox namespace: the hard backstop behind the
   # runner's concurrency check. Keep hard equal to maxConcurrentJobs times the
-  # per-Job maximums above; terminal pods do not count against it.
+  # per-Job maximums above plus 200m CPU, 256Mi memory and 32Mi ephemeral
+  # storage per Job for its init and sidecar containers; terminal pods do not
+  # count against it.
   quota:
     enabled: true
     hard:
       pods: "3"
-      requests.cpu: "3"
-      limits.cpu: "3"
-      requests.memory: 3Gi
-      limits.memory: 3Gi
-      requests.ephemeral-storage: 6Gi
-      limits.ephemeral-storage: 6Gi
+      requests.cpu: 3600m
+      limits.cpu: 3600m
+      requests.memory: 3840Mi
+      limits.memory: 3840Mi
+      requests.ephemeral-storage: 6240Mi
+      limits.ephemeral-storage: 6240Mi

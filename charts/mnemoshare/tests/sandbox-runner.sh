@@ -52,6 +52,44 @@ quota=$(render "${on[@]}" --set sandbox.quota.enabled=false)
 small=$(render "${on[@]}" --set-string sandbox.policy.limits.maxConcurrentJobs=1 --set-string sandbox.quota.hard.pods=1)
 grep -qF '"pods": "1"' <<<"$small" || fail "quota hard overrides not honoured"
 
+# Staging and output wiring, sized from the tier caps (Business+ defaults).
+for want in "name: SANDBOX_INIT_IMAGE" "fieldPath: status.podIP" 'name: SANDBOX_STAGING_ADDR' 'value: ":8085"' \
+  "name: SANDBOX_STAGING_DIR" "name: SANDBOX_OUTPUT_DIR" "containerPort: 8085" \
+  'name: SANDBOX_STAGING_MAX_TOTAL_BYTES' 'value: "805306368"' 'name: SANDBOX_OUTPUT_MAX_TOTAL_BYTES' 'value: "201326592"' \
+  "name: SANDBOX_STAGING_CA_FILE" "value: /etc/sandbox-runner/tls/ca.crt" \
+  'value: "mnemoshare-sandbox-runner.tenant.svc"' "sizeLimit: 928Mi" "sizeLimit: 280Mi" "ephemeral-storage: 1336Mi" \
+  "kubernetes.io/metadata.name: tenant-sandbox" 'mnemoshare.com/sandbox: "true"'; do
+  grep -qF -- "$want" <<<"$out" || fail "staging render lacks: $want"
+done
+init=$(grep -A1 'name: SANDBOX_INIT_IMAGE' <<<"$out" | tail -1)
+grep -qF '@sha256:' <<<"$init" || fail "init image is not digest-pinned: $init"
+[[ $(grep -c 'name: SANDBOX_INIT_IMAGE' <<<"$out") == 1 ]] || fail "SANDBOX_INIT_IMAGE must be on the runner only"
+! grep -q 'sessionAffinity' <<<"$out" || fail "runner Service must not set sessionAffinity"
+python3 -c '
+import sys, yaml
+docs = [d for d in yaml.safe_load_all(sys.stdin) if d]
+np = next(d for d in docs if d["kind"] == "NetworkPolicy" and d["metadata"]["name"] == "mnemoshare-sandbox-runner-ingress")
+rules = [r for r in np["spec"]["ingress"] if any(p["port"] == 8085 for p in r["ports"])]
+assert len(rules) == 1 and len(rules[0]["from"]) == 1
+peer = rules[0]["from"][0]
+assert peer["namespaceSelector"]["matchLabels"] == {"kubernetes.io/metadata.name": "tenant-sandbox"}
+assert peer["podSelector"]["matchLabels"] == {"mnemoshare.com/sandbox": "true"}
+' <<<"$out" || fail "staging ingress peer is not exactly sandbox pods in the sandbox namespace"
+staged=$(render "${on[@]}" --set sandbox.runner.staging.enabled=false)
+for bad in SANDBOX_INIT_IMAGE SANDBOX_STAGING_ADDR "containerPort: 8085" "name: staging" "name: outputs"; do
+  ! grep -qF -- "$bad" <<<"$staged" || fail "staging disabled but render has: $bad"
+done
+# The operator migration mode renders tag-only images; an unpinned runner would crash, so staging is skipped.
+unpinned=$(helm template t "$chart" "${base[@]}" --set image.tag=old-tag --set formatMigrations.mode=operator "${on[@]}")
+! grep -qF "SANDBOX_INIT_IMAGE" <<<"$unpinned" || fail "staging rendered for an unpinned runner image"
+grep -qF "name: mnemoshare-sandbox-runner" <<<"$unpinned" || fail "runner missing for an unpinned image"
+if render "${on[@]}" --set sandbox.runner.staging.port=8083 >/dev/null 2>&1; then fail "staging port may not equal the API port"; fi
+# Quota defaults carry the init + sidecar containers (+200m, +256Mi, +32Mi per Job).
+for want in '"limits.cpu": "3600m"' '"limits.memory": "3840Mi"' '"limits.ephemeral-storage": "6240Mi"'; do
+  grep -qF -- "$want" <<<"$out" || fail "quota render lacks: $want"
+done
+python3 "$here/hack/check-render.py" <(echo "$staged") >/dev/null || fail "staging-disabled render fails the render guards"
+
 # Business+ shape: workers host the engine.
 out=$(render "${on[@]}" "${worker[@]}")
 python3 "$here/hack/check-render.py" <(echo "$out") >/dev/null || fail "worker-host render fails the render guards"
