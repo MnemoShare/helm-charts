@@ -520,7 +520,43 @@
                     "string",
                     "integer"
                   ]
+                },
+                "maxConcurrentJobs": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "maxInputBytes": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "maxOutputBytes": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
                 }
+              }
+            }
+          }
+        },
+        "quota": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "hard": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "integer"
+                ]
               }
             }
           }

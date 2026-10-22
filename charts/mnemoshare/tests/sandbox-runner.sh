@@ -42,6 +42,16 @@ done
 role=$(awk '/^kind: Role$/{a=1} a&&/^---$/{exit} a' <<<"$out")
 ! grep -Eq "secrets|exec|persistentvolumeclaims|\*" <<<"$role" || fail "runner Role is too broad"
 
+# Quota backstop and runner caps render with the Business+ defaults.
+for want in "kind: ResourceQuota" "kind: LimitRange" '"pods": "3"' "name: SANDBOX_MAX_CONCURRENT_JOBS" \
+  "name: SANDBOX_MAX_INPUT_BYTES" "name: SANDBOX_MAX_OUTPUT_BYTES"; do
+  grep -qF -- "$want" <<<"$out" || fail "quota render lacks: $want"
+done
+quota=$(render "${on[@]}" --set sandbox.quota.enabled=false)
+! grep -q "kind: ResourceQuota" <<<"$quota" || fail "quota rendered with sandbox.quota.enabled=false"
+small=$(render "${on[@]}" --set-string sandbox.policy.limits.maxConcurrentJobs=1 --set-string sandbox.quota.hard.pods=1)
+grep -qF '"pods": "1"' <<<"$small" || fail "quota hard overrides not honoured"
+
 # Business+ shape: workers host the engine.
 out=$(render "${on[@]}" "${worker[@]}")
 python3 "$here/hack/check-render.py" <(echo "$out") >/dev/null || fail "worker-host render fails the render guards"

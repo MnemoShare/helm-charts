@@ -2540,4 +2540,30 @@ sandbox:
     requireImageDigest: true
     # Empty: sandboxes have no egress at all.
     egressAllowedCIDRs: []
-    limits: {}
+    # Per-Job envelope enforced by the runner; defaults mirror Business+.
+    # Byte counts and seconds are strings so they render verbatim.
+    limits:
+      defaultCPU: 500m
+      maxCPU: "1"
+      defaultMemory: 512Mi
+      maxMemory: 1Gi
+      defaultEphemeralStorage: 512Mi
+      maxEphemeralStorage: 2Gi
+      defaultTimeoutSeconds: "300"
+      maxTimeoutSeconds: "1800"
+      maxConcurrentJobs: "3"
+      maxInputBytes: "268435456"
+      maxOutputBytes: "67108864"
+  # ResourceQuota in the sandbox namespace: the hard backstop behind the
+  # runner's concurrency check. Keep hard equal to maxConcurrentJobs times the
+  # per-Job maximums above; terminal pods do not count against it.
+  quota:
+    enabled: true
+    hard:
+      pods: "3"
+      requests.cpu: "3"
+      limits.cpu: "3"
+      requests.memory: 3Gi
+      limits.memory: 3Gi
+      requests.ephemeral-storage: 6Gi
+      limits.ephemeral-storage: 6Gi

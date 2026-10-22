@@ -173,7 +173,7 @@ spec:
               value: {{ join "," . | quote }}
             {{- end }}
             {{- $limits := $policy.limits | default dict }}
-            {{- range $env, $key := dict "SANDBOX_DEFAULT_CPU" "defaultCPU" "SANDBOX_MAX_CPU" "maxCPU" "SANDBOX_DEFAULT_MEMORY" "defaultMemory" "SANDBOX_MAX_MEMORY" "maxMemory" "SANDBOX_DEFAULT_EPHEMERAL_STORAGE" "defaultEphemeralStorage" "SANDBOX_MAX_EPHEMERAL_STORAGE" "maxEphemeralStorage" "SANDBOX_DEFAULT_TIMEOUT_SECONDS" "defaultTimeoutSeconds" "SANDBOX_MAX_TIMEOUT_SECONDS" "maxTimeoutSeconds" }}
+            {{- range $env, $key := dict "SANDBOX_DEFAULT_CPU" "defaultCPU" "SANDBOX_MAX_CPU" "maxCPU" "SANDBOX_DEFAULT_MEMORY" "defaultMemory" "SANDBOX_MAX_MEMORY" "maxMemory" "SANDBOX_DEFAULT_EPHEMERAL_STORAGE" "defaultEphemeralStorage" "SANDBOX_MAX_EPHEMERAL_STORAGE" "maxEphemeralStorage" "SANDBOX_DEFAULT_TIMEOUT_SECONDS" "defaultTimeoutSeconds" "SANDBOX_MAX_TIMEOUT_SECONDS" "maxTimeoutSeconds" "SANDBOX_MAX_CONCURRENT_JOBS" "maxConcurrentJobs" "SANDBOX_MAX_INPUT_BYTES" "maxInputBytes" "SANDBOX_MAX_OUTPUT_BYTES" "maxOutputBytes" }}
             {{- with index $limits $key }}
             - name: {{ $env }}
               value: {{ . | quote }}
