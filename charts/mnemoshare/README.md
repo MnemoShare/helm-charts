@@ -281,6 +281,11 @@ upgrade to this chart before uninstalling.
 | `image.tag` | Image tag | `latest` |
 | `image.digest` | Immutable application/writer digest required by automatic format migrations | Pinned for the chart `appVersion` |
 | `ingress.enabled` | Enable ingress | `true` |
+| `ingress.controller` | `nginx` or `edge` (MnemoShare Edge/Traefik: class `ingress.edge.className`, nginx annotations dropped, mTLS as `IngressRouteTCP`) | `nginx` |
+| `ingress.edge.passthrough.proxyProtocol.enabled` | Send PROXY v2 to the pod on the Edge mTLS route (pair with `mtls.passthroughProxyProtocol.mode`) | `false` |
+| `mtls.passthroughProxyProtocol.mode` | App `PASSTHROUGH_PROXY_PROTOCOL`: `off`, `optional`, `required` | `off` |
+| `networkPolicy.edgeNamespace` | Controller namespace allowed by NetworkPolicies when `ingress.controller=edge` | `mnemoshare-edge` |
+| `networkPolicy.extraIngressNamespaces` | Extra namespaces allowed alongside the controller namespace (e.g. `[ingress-nginx]` during an nginx-to-Edge overlap) | `[]` |
 | `autoscaling.enabled` | Enable HPA | `false` |
 | `api.embeddedWorkers` | API pod also runs the background, cloud and workflow workers. Set `false` to run the API alone when other workloads host them (see [API-only pods](#api-only-pods)) | `true` |
 | `workflowWorker.command` | Dedicated worker command: `run-workers` (all three workers) or `run-core-workers` (background + workflow, with cloud-worker in the [pool](#cloud-worker-pool)) | `workflow-worker` alone |

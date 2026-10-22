@@ -329,6 +329,18 @@ spec:
           value: {{ .Values.mtls.requireClientCert | quote }}
         - name: MTLS_VERIFY_REVOCATION
           value: {{ .Values.mtls.verifyRevocation | quote }}
+        {{- with .Values.mtls.passthroughProxyProtocol }}
+        {{- if and .mode (ne .mode "off") }}
+        - name: PASSTHROUGH_PROXY_PROTOCOL
+          value: {{ .mode | quote }}
+        - name: PASSTHROUGH_PROXY_TRUSTED_CIDRS
+          value: {{ join "," .trustedCIDRs | quote }}
+        {{- if .headerTimeout }}
+        - name: PASSTHROUGH_PROXY_HEADER_TIMEOUT
+          value: {{ .headerTimeout | quote }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
         {{- if .Values.mtls.tls.existingSecret }}
         - name: TLS_CERT_PATH
           value: "/etc/mtls-tls/tls.crt"

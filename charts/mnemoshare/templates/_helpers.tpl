@@ -990,3 +990,81 @@ a process missing either rejects the grant the others committed.
   value: {{ .Values.kms.dataPlaneLogicalKeyID | quote }}
 {{- end }}
 {{- end }}
+
+{{/*
+Ingress controller: nginx (default) or edge (MnemoShare Edge, Traefik).
+*/}}
+{{- define "mnemoshare.ingressController" -}}
+{{- $c := default "nginx" .Values.ingress.controller -}}
+{{- if not (has $c (list "nginx" "edge")) -}}
+{{- fail (printf "ingress.controller must be nginx or edge, got %q" $c) -}}
+{{- end -}}
+{{- $c -}}
+{{- end }}
+
+{{/*
+IngressClass for any Ingress in this chart. Args: dict "ctx" <root> "name" <class when controller=nginx>.
+With controller=edge the class is ingress.edge.className regardless of the per-ingress className.
+*/}}
+{{- define "mnemoshare.ingressClassName" -}}
+{{- if eq (include "mnemoshare.ingressController" .ctx) "edge" -}}
+{{- .ctx.Values.ingress.edge.className | default "mnemoshare-edge" -}}
+{{- else -}}
+{{- .name -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Ingress annotations as YAML. Args: dict "ctx" <root> "annotations" <map>.
+With controller=edge every nginx.ingress.kubernetes.io/* key is dropped; Edge needs none of them.
+*/}}
+{{- define "mnemoshare.ingressAnnotations" -}}
+{{- $ann := .annotations | default dict -}}
+{{- if eq (include "mnemoshare.ingressController" .ctx) "edge" -}}
+{{- $kept := dict -}}
+{{- range $k, $v := $ann -}}
+{{- if not (hasPrefix "nginx.ingress.kubernetes.io/" $k) -}}
+{{- $_ := set $kept $k $v -}}
+{{- end -}}
+{{- end -}}
+{{- $ann = $kept -}}
+{{- end -}}
+{{- if $ann -}}
+{{- toYaml $ann -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Namespaces whose pods may reach the app through the ingress controller (JSON list).
+*/}}
+{{- define "mnemoshare.ingressNamespaces" -}}
+{{- $ns := list -}}
+{{- if eq (include "mnemoshare.ingressController" .) "edge" -}}
+{{- $ns = append $ns (.Values.networkPolicy.edgeNamespace | default "mnemoshare-edge") -}}
+{{- else -}}
+{{- $ns = append $ns (.Values.networkPolicy.ingressNamespace | default "ingress-nginx") -}}
+{{- end -}}
+{{- range (.Values.networkPolicy.extraIngressNamespaces | default list) -}}
+{{- $ns = append $ns . -}}
+{{- end -}}
+{{- toJson (uniq $ns) -}}
+{{- end }}
+
+{{/*
+namespaceSelector body for the ingress controller namespace(s); pipe through nindent.
+*/}}
+{{- define "mnemoshare.ingressNamespaceSelector" -}}
+{{- $ns := include "mnemoshare.ingressNamespaces" . | fromJsonArray -}}
+{{- if eq (len $ns) 1 -}}
+matchLabels:
+  kubernetes.io/metadata.name: {{ index $ns 0 }}
+{{- else -}}
+matchExpressions:
+  - key: kubernetes.io/metadata.name
+    operator: In
+    values:
+    {{- range $ns }}
+      - {{ . }}
+    {{- end }}
+{{- end -}}
+{{- end }}

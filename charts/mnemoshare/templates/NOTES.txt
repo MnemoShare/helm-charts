@@ -50,6 +50,11 @@ mTLS (HARDWARE KEY AUTHENTICATION)
 {{- end }}
 {{- end }}
 
+{{- if eq (include "mnemoshare.ingressController" .) "edge" }}
+  IMPORTANT: mTLS is routed by the MnemoShare Edge as TLS passthrough (IngressRouteTCP, SNI-based).
+  The Edge never terminates this TLS session; the pod performs the client-certificate handshake.
+  Backend PROXY protocol on this route is {{ if .Values.ingress.edge.passthrough.proxyProtocol.enabled }}ON{{ else }}off{{ end }}.
+{{- else }}
   IMPORTANT: mTLS uses SSL passthrough through port 443 (SNI-based routing).
   Your nginx-ingress controller must have --enable-ssl-passthrough enabled.
 
@@ -60,6 +65,7 @@ mTLS (HARDWARE KEY AUTHENTICATION)
 
   Verify your nginx-ingress controller service only exposes ports 80 and 443:
     kubectl get svc -n ingress-nginx ingress-nginx-controller
+{{- end }}
 {{- end }}
 
 {{- if .Values.networkPolicy.enabled }}
