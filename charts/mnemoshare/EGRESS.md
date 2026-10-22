@@ -80,6 +80,11 @@ networkPolicy:
     cidrs: [10.50.0.0/16]   # partner SFTP behind a VPN
 ```
 
+Sandbox runner (`sandbox.enabled`): ingress only from the engine-hosting pods on `sandbox.runner.port`;
+egress only DNS and the Kubernetes API (`sandbox.runner.egress.kubernetesApiTargets`, else 443/6443 to any
+destination). The engine host gets one additive egress policy to the runner. The sandbox namespace is
+default-deny; the runner adds per-run policies carrying only the declared egress CIDRs.
+
 Hook Jobs: the format-migration hook (and its cleanup) have their own egress policies: DNS,
 the database port, the optional relay database, and the Kubernetes API. With no
 `formatMigrations.networkPolicy.{databaseCIDRs,kubernetesApiTargets}` they fall back to the

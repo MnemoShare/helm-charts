@@ -39,6 +39,8 @@ run vault-k8s-auth-no-tmp "${ALL[@]}" --set workflowWorker.enabled=true --set wo
 run vault-k8s-auth-statefulset-no-tmp "${ALL[@]}" --set workflowWorker.enabled=true --set workflowWorker.persistence.enabled=true --set workflowWorker.tmpVolume.enabled=false --set diskBuffer.enabled=false --set vault.kubernetesAuth.enabled=true
 run extra-egress "${ALL[@]}" --set workflowWorker.enabled=true --set mtls.enabled=true --set-json 'networkPolicy.workflowWorker.extraEgress=[{"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"tailscale"}}}],"ports":[{"protocol":"TCP","port":2525}]}]'
 run strict-all-cidrs "${ALL[@]}" --set networkPolicy.strict=true --set "networkPolicy.database.cidrs={10.0.0.0/24}" --set "networkPolicy.redis.cidrs={10.0.1.0/24}" --set "emailGateway.relay.db.networkPolicyCIDRs={10.0.2.0/24}" --set "formatMigrations.networkPolicy.databaseCIDRs={10.0.0.0/24}" --set "formatMigrations.networkPolicy.kubernetesApiTargets[0].cidr=10.96.0.1/32" --set "formatMigrations.networkPolicy.kubernetesApiTargets[0].port=443"
+run sandbox-api-host "${ALL[@]}" --set sandbox.enabled=true --set sandbox.runner.replicas=1 --set sandbox.runner.tls.issuerRef.name=issuer
+run sandbox-worker-host "${ALL[@]}" --set workflowWorker.enabled=true --set sandbox.enabled=true --set sandbox.createNamespace=true --set sandbox.runner.tls.issuerRef.name=issuer
 run policy-off --set networkPolicy.enabled=false
 run postgres --set database.driver=postgres --set-string postgres.dsn=postgres://u:p@h:5432/d
 run db2 --set database.driver=db2 --set formatMigrations.mode=operator

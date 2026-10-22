@@ -394,6 +394,39 @@ supplied through the API's `extraEnv` are not copied: repeat any the workers
 need under `workflowWorker.extraEnv`. Size the worker for the whole background
 load, since the API replicas no longer share it.
 
+### Sandbox runner
+
+Off by default (`sandbox.enabled=false`). When on, workflow scripts and commands run as short-lived,
+hardened Jobs in a separate namespace `<release namespace>-sandbox` (`sandbox.namespaceSuffix`), created
+and supervised by one extra workload, the `sandbox-runner`. The runner is the only pod with Kubernetes API
+access, through a Role that exists only in the sandbox namespace (Jobs, NetworkPolicies, pods get/list,
+pods/log get; no `pods/exec`, no secrets). No Role or ClusterRole is created in the release namespace.
+
+```bash
+# Recommended: pre-create the namespace so it survives `helm uninstall`
+kubectl create namespace <release-namespace>-sandbox
+kubectl label namespace <release-namespace>-sandbox pod-security.kubernetes.io/enforce=restricted
+
+helm install mnemoshare mnemoshare/mnemoshare ... \
+  --set sandbox.enabled=true \
+  --set sandbox.runner.tls.issuerRef.name=<cert-manager issuer>
+```
+
+- `sandbox.createNamespace=true` makes the release create the namespace (with the pod security labels) and
+  delete it, with every sandbox Job, on uninstall.
+- The runner serves TLS from a cert-manager Certificate (`sandbox.runner.tls.issuerRef`, defaulting to
+  `keyguard.cert.*`) or an existing Secret (`tls.secretName`). `tls.enabled=false` also requires
+  `tls.allowPlaintext=true` and is for development only. Requests are authenticated with a shared secret
+  (`sandbox.runner.secretName`, key `secret`; generated and kept across upgrades when empty).
+- `replicas` defaults to 2 (a PodDisruptionBudget is added above 1); use 1 on single-node clusters.
+- With `networkPolicy.enabled=true` the runner may be called only by the pods hosting the engine (workers
+  when `workflowWorker.enabled`, otherwise the API) and may reach only DNS and the Kubernetes API server.
+  Set `sandbox.runner.egress.kubernetesApiTargets` to the API server address; unset it falls back to ports
+  443/6443 to any destination, listed in the install NOTES and a render failure under
+  `networkPolicy.strict=true`.
+- `sandbox.policy.egressAllowedCIDRs` is empty by default: sandboxed code has no network egress.
+- Needs a runtime image release that contains `/usr/local/bin/sandbox-runner`.
+
 ### Cloud-worker pool
 
 The `ices` workload is the cloud-worker pool: a stateless Deployment of the
