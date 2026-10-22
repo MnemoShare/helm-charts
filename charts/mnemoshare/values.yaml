@@ -2472,3 +2472,98 @@ keyguard:
     # `ca.crt` matches what `kubectl create secret generic --from-file=ca.crt=...`
     # produces.
     caSecretKey: ca.crt
+
+# ============================================================================
+# Sandbox runner
+# ============================================================================
+# Runs workflow scripts/commands as short-lived hardened Jobs in a separate
+# namespace (<release namespace><namespaceSuffix>). The runner is the only
+# workload with Kubernetes API access, and only through a Role in that
+# namespace; no Role or ClusterRole is created in the release namespace.
+#
+# Off by default. Needs a runtime-image release that ships the sandbox-runner
+# binary, cert-manager (or an existing TLS Secret) and a CNI that enforces
+# NetworkPolicy.
+sandbox:
+  enabled: false
+  # false (recommended): pre-create <release namespace>-sandbox with
+  #   kubectl create namespace <ns>-sandbox
+  #   kubectl label namespace <ns>-sandbox pod-security.kubernetes.io/enforce=restricted
+  # so it survives `helm uninstall`. true: the release creates it with those
+  # labels and deletes it (and every sandbox Job) on uninstall.
+  createNamespace: false
+  namespaceSuffix: -sandbox
+  runner:
+    # 2 mirrors Business+ and gives the runner a PodDisruptionBudget; use 1 on
+    # single-node or compose-style clusters.
+    replicas: 2
+    port: 8083
+    healthPort: 8084
+    # Same image as the application by default.
+    image:
+      repository: ""
+      tag: ""
+      digest: ""
+      pullPolicy: ""
+    # Secret with key `secret` (>= 32 chars). Empty: the chart generates one
+    # and keeps it across upgrades (helm lookup; not stable under `helm template`).
+    secretName: ""
+    tls:
+      enabled: true
+      # Development only. Plaintext carries the shared secret in the clear.
+      allowPlaintext: false
+      # Existing kubernetes.io/tls Secret. Empty: a cert-manager Certificate is
+      # rendered, issued by issuerRef or, when unset, keyguard.cert.*.
+      secretName: ""
+      issuerRef:
+        name: ""
+        kind: ""
+        group: ""
+      duration: 720h
+      renewBefore: 240h
+      # Secret with `ca.crt`; when set the runner requires client certificates.
+      clientCASecret: ""
+    egress:
+      # Kubernetes API server endpoints the runner may reach. Empty falls back
+      # to ports 443/6443 to ANY destination (listed in NOTES; a render failure
+      # under networkPolicy.strict=true).
+      kubernetesApiTargets: []
+      # - cidr: 10.96.0.1/32
+      #   port: 443
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 250m, memory: 128Mi}
+  policy:
+    # Script runtime image, pinned by digest.
+    defaultImage: ""
+    allowedRegistries: []
+    requireImageDigest: true
+    # Empty: sandboxes have no egress at all.
+    egressAllowedCIDRs: []
+    # Per-Job envelope enforced by the runner; defaults mirror Business+.
+    # Byte counts and seconds are strings so they render verbatim.
+    limits:
+      defaultCPU: 500m
+      maxCPU: "1"
+      defaultMemory: 512Mi
+      maxMemory: 1Gi
+      defaultEphemeralStorage: 512Mi
+      maxEphemeralStorage: 2Gi
+      defaultTimeoutSeconds: "300"
+      maxTimeoutSeconds: "1800"
+      maxConcurrentJobs: "3"
+      maxInputBytes: "268435456"
+      maxOutputBytes: "67108864"
+  # ResourceQuota in the sandbox namespace: the hard backstop behind the
+  # runner's concurrency check. Keep hard equal to maxConcurrentJobs times the
+  # per-Job maximums above; terminal pods do not count against it.
+  quota:
+    enabled: true
+    hard:
+      pods: "3"
+      requests.cpu: "3"
+      limits.cpu: "3"
+      requests.memory: 3Gi
+      limits.memory: 3Gi
+      requests.ephemeral-storage: 6Gi
+      limits.ephemeral-storage: 6Gi

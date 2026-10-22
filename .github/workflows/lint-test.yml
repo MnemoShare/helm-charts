@@ -38,7 +38,7 @@ jobs:
           repository: MnemoShare/mnemoshare
           # Keep the checker on the exact application revision represented by
           # the vendored migration/deployment contracts in this chart.
-          ref: 2632d97f2d5509585b89398f8361784b114c386d
+          ref: 51281e782d23ece9ac369259cc199fa6679aac21
           path: application
           # The application repository is private; this workflow's GITHUB_TOKEN
           # is scoped to helm-charts. Same org credential the application's
@@ -202,6 +202,9 @@ jobs:
 
       - name: Validate NetworkPolicy fallback notes and strict mode
         run: bash charts/mnemoshare/tests/network-policy-strict.sh
+
+      - name: Validate sandbox runner render, RBAC confinement and strict fallback
+        run: bash charts/mnemoshare/tests/sandbox-runner.sh
 
       - name: Validate migration contract updater
         run: bash charts/mnemoshare/tests/update-migration-result-contract-test.sh

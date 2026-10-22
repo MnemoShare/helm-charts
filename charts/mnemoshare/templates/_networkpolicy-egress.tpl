@@ -475,6 +475,9 @@ each condition identical to the template that renders the fallback rule.
 {{- $out = append $out (dict "id" "format-migration-kube-api" "rule" "format-migration hook Kubernetes API egress (443, 6443) to any destination" "set" "formatMigrations.networkPolicy.kubernetesApiTargets") -}}
 {{- end -}}
 {{- end -}}
+{{- if and .Values.sandbox.enabled (not .Values.sandbox.runner.egress.kubernetesApiTargets) -}}
+{{- $out = append $out (dict "id" "sandbox-kube-api" "rule" "sandbox runner Kubernetes API egress (443, 6443) to any destination" "set" "sandbox.runner.egress.kubernetesApiTargets") -}}
+{{- end -}}
 {{- end -}}
 {{- $out | toJson -}}
 {{- end -}}

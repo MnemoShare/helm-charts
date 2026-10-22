@@ -320,6 +320,248 @@
         "backoffLimit",
         "activeDeadlineSeconds"
       ]
+    },
+    "sandbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "createNamespace": {
+          "type": "boolean"
+        },
+        "namespaceSuffix": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^-[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        },
+        "runner": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "replicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "healthPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "image": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repository": {
+                  "type": "string"
+                },
+                "tag": {
+                  "type": "string"
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^(sha256:[a-f0-9]{64})?$"
+                },
+                "pullPolicy": {
+                  "type": "string"
+                }
+              }
+            },
+            "secretName": {
+              "type": "string"
+            },
+            "tls": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "allowPlaintext": {
+                  "type": "boolean"
+                },
+                "secretName": {
+                  "type": "string"
+                },
+                "issuerRef": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "group": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "duration": {
+                  "type": "string"
+                },
+                "renewBefore": {
+                  "type": "string"
+                },
+                "clientCASecret": {
+                  "type": "string"
+                }
+              }
+            },
+            "egress": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "kubernetesApiTargets": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "cidr",
+                      "port"
+                    ],
+                    "properties": {
+                      "cidr": {
+                        "type": "string"
+                      },
+                      "port": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 65535
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "resources": {
+              "type": "object"
+            }
+          }
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "defaultImage": {
+              "type": "string"
+            },
+            "allowedRegistries": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "requireImageDigest": {
+              "type": "boolean"
+            },
+            "egressAllowedCIDRs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "defaultCPU": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "maxCPU": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "defaultMemory": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "maxMemory": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "defaultEphemeralStorage": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "maxEphemeralStorage": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "defaultTimeoutSeconds": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "maxTimeoutSeconds": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "maxConcurrentJobs": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "maxInputBytes": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "maxOutputBytes": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "quota": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "hard": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "integer"
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
