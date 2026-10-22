@@ -144,6 +144,23 @@ service:
 ingress:
   enabled: true
   className: "nginx"
+  # nginx (default) or edge (MnemoShare Edge, Traefik). With edge: every Ingress uses
+  # ingress.edge.className, nginx.ingress.kubernetes.io/* annotations are dropped, and the mTLS
+  # passthrough is an IngressRouteTCP (needs the Traefik CRDs). TLS secret references are kept.
+  # Traefik streams without buffering, so SSE needs nothing extra; body size, timeouts and
+  # HTTP->HTTPS redirect are Edge entrypoint settings, not per-Ingress.
+  controller: nginx
+  edge:
+    className: mnemoshare-edge
+    # Traefik container port of the websecure entrypoint (NetworkPolicy license-server hairpin egress).
+    containerPort: 8443
+    passthrough:
+      entryPoints: [websecure]
+      # PROXY protocol v2 to the pod on the mTLS route. Enable together with
+      # mtls.passthroughProxyProtocol.mode, or the pod sees PROXY bytes instead of a TLS handshake.
+      proxyProtocol:
+        enabled: false
+        version: 2
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
@@ -880,6 +897,13 @@ mtls:
 
   # Verify certificate revocation via OCSP
   verifyRevocation: true
+
+  # PROXY protocol on the mTLS listener (app MNS-1602; needs an app release containing it). Off by default.
+  # Required mode with an Edge route that does not send the header fails every connection.
+  passthroughProxyProtocol:
+    mode: "off"        # off | optional | required
+    trustedCIDRs: []   # peer CIDRs (the Edge pods) allowed to send the header; required when mode != off
+    headerTimeout: ""  # Go duration; empty = app default
 
   # TLS server certificate for the mTLS listener
   # The pod needs a TLS cert to serve on port 8443
@@ -1942,6 +1966,10 @@ networkPolicy:
 
   # Namespace where ingress controller runs (for allowing ingress traffic)
   ingressNamespace: "ingress-nginx"
+  # Used instead of ingressNamespace when ingress.controller=edge.
+  edgeNamespace: "mnemoshare-edge"
+  # Further namespaces allowed alongside the controller namespace, e.g. [ingress-nginx] while both run.
+  extraIngressNamespaces: []
 
   # Extra ingress rules appended verbatim to the API ingress NetworkPolicy.
   # Use for traffic sources the standard rules don't cover — e.g. an AS2

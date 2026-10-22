@@ -278,11 +278,14 @@ no `to` (any destination, restricted to ports). Renders nothing without ports.
 {{- include "mnemoshare.np.rule" (dict "ports" (list 443) "public" (not $cidrs) "cidrs" $cidrs) }}
 - to:
     - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | default "ingress-nginx" }}
+        {{- include "mnemoshare.ingressNamespaceSelector" . | nindent 8 }}
   ports:
     - protocol: TCP
       port: 443
+    {{- if eq (include "mnemoshare.ingressController" .) "edge" }}
+    - protocol: TCP
+      port: {{ .Values.ingress.edge.containerPort | default 8443 }}
+    {{- end }}
 {{- if $ls.internalNamespace }}
 # In-cluster license server. 8443 is the Service's targetPort: Cilium enforces
 # egress against targetPort, and the public-URL fallback lands there.

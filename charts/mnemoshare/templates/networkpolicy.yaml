@@ -35,8 +35,7 @@ spec:
     # Allow traffic from ingress controller
     - from:
         - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | default "ingress-nginx" }}
+            {{- include "mnemoshare.ingressNamespaceSelector" . | nindent 12 }}
       ports:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
@@ -274,8 +273,7 @@ spec:
     # Allow traffic from ingress controller (for external MCP access)
     - from:
         - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | default "ingress-nginx" }}
+            {{- include "mnemoshare.ingressNamespaceSelector" . | nindent 12 }}
       ports:
         - protocol: TCP
           port: 9222
