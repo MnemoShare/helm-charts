@@ -130,6 +130,11 @@ helm install mnemoshare mnemoshare/mnemoshare \
 | `replicaCount` | Number of replicas | `2` |
 | `image.tag` | Image tag | `latest` |
 | `ingress.enabled` | Enable ingress | `true` |
+| `ingress.controller` | `nginx` or `edge` (MnemoShare Edge/Traefik: class `ingress.edge.className`, nginx annotations dropped, mTLS as `IngressRouteTCP`) | `nginx` |
+| `ingress.edge.passthrough.proxyProtocol.enabled` | Send PROXY v2 to the pod on the Edge mTLS route (pair with `mtls.passthroughProxyProtocol.mode`) | `false` |
+| `mtls.passthroughProxyProtocol.mode` | App `PASSTHROUGH_PROXY_PROTOCOL`: `off`, `optional`, `required` | `off` |
+| `networkPolicy.edgeNamespace` | Controller namespace allowed by NetworkPolicies when `ingress.controller=edge` | `mnemoshare-edge` |
+| `networkPolicy.extraIngressNamespaces` | Extra namespaces allowed alongside the controller namespace (e.g. `[ingress-nginx]` during an nginx-to-Edge overlap) | `[]` |
 | `autoscaling.enabled` | Enable HPA | `false` |
 | `sendgrid.apiKey` | SendGrid API key for emails | `""` |
 | `platformEmail.transport` | Tiered outbound email transport (`smtp` or `ses`; empty = auto) | `""` |

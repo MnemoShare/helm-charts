@@ -1,16 +1,44 @@
 {{- if and .Values.mtls.enabled .Values.mtls.ingress.enabled }}
+{{- if eq (include "mnemoshare.ingressController" .) "edge" }}
+# TLS passthrough: the Edge routes on SNI and never terminates TLS, so the pod performs the client-certificate handshake.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-mtls
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    {{- range (.Values.ingress.edge.passthrough.entryPoints | default (list "websecure")) }}
+    - {{ . }}
+    {{- end }}
+  routes:
+    {{- range .Values.mtls.ingress.hosts }}
+    - match: HostSNI(`{{ .host }}`)
+      services:
+        - name: {{ include "mnemoshare.fullname" $ }}
+          port: {{ $.Values.mtls.port | default 8443 }}
+          {{- if $.Values.ingress.edge.passthrough.proxyProtocol.enabled }}
+          proxyProtocol:
+            version: {{ $.Values.ingress.edge.passthrough.proxyProtocol.version | default 2 }}
+          {{- end }}
+    {{- end }}
+  tls:
+    passthrough: true
+{{- else }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "mnemoshare.fullname" . }}-mtls
   labels:
     {{- include "mnemoshare.labels" . | nindent 4 }}
-  {{- with .Values.mtls.ingress.annotations }}
+  {{- $ann := include "mnemoshare.ingressAnnotations" (dict "ctx" . "annotations" .Values.mtls.ingress.annotations) }}
+  {{- if $ann }}
   annotations:
-    {{- toYaml . | nindent 4 }}
+    {{- $ann | nindent 4 }}
   {{- end }}
 spec:
-  ingressClassName: {{ .Values.mtls.ingress.className | default "nginx" }}
+  ingressClassName: {{ include "mnemoshare.ingressClassName" (dict "ctx" . "name" (.Values.mtls.ingress.className | default "nginx")) }}
   {{- if .Values.mtls.ingress.tls }}
   tls:
     {{- range .Values.mtls.ingress.tls }}
@@ -34,4 +62,5 @@ spec:
                 port:
                   number: {{ $.Values.mtls.port | default 8443 }}
     {{- end }}
+{{- end }}
 {{- end }}
