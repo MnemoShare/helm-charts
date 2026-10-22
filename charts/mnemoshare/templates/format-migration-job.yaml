@@ -182,13 +182,9 @@ spec:
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           terminationMessagePolicy: FallbackToLogsOnError
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              umask 077
-              mkdir -p {{ $artifactDirectory | quote }}
-              chmod 0700 {{ $artifactDirectory | quote }}
-              exec /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint {{ $migrationContractFingerprint | quote }} --output {{ printf "%s/plan.json" $artifactDirectory | quote }} --result {{ printf "%s/result.json" $artifactDirectory | quote }}
+          command: ["/usr/local/bin/mnemoshare-migrate"]
+          args: ["launch", "--private-dir", {{ $artifactDirectory | quote }}, "--",
+                 "plan", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--output", {{ printf "%s/plan.json" $artifactDirectory | quote }}, "--result", {{ printf "%s/result.json" $artifactDirectory | quote }}]
           env:
             {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
           securityContext:
@@ -201,13 +197,9 @@ spec:
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           terminationMessagePolicy: FallbackToLogsOnError
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              umask 077
-              mkdir -p {{ $artifactDirectory | quote }}
-              chmod 0700 {{ $artifactDirectory | quote }}
-              exec /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint {{ $migrationContractFingerprint | quote }} --universe email-relay-mongo --output {{ printf "%s/email-relay-plan.json" $artifactDirectory | quote }} --result {{ printf "%s/email-relay-result.json" $artifactDirectory | quote }}
+          command: ["/usr/local/bin/mnemoshare-migrate"]
+          args: ["launch", "--private-dir", {{ $artifactDirectory | quote }}, "--",
+                 "plan", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--universe", "email-relay-mongo", "--output", {{ printf "%s/email-relay-plan.json" $artifactDirectory | quote }}, "--result", {{ printf "%s/email-relay-result.json" $artifactDirectory | quote }}]
           env:
             {{- include "mnemoshare.productionEnvironment" . | nindent 12 }}
             {{- include "mnemoshare.emailRelayMigrationEnv" . | nindent 12 }}
@@ -438,45 +430,19 @@ spec:
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           terminationMessagePolicy: FallbackToLogsOnError
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              umask 077
-              mkdir -p {{ $statusDirectory | quote }}
-              chmod 0700 {{ $statusDirectory | quote }}
-              if printf %s ordinary | cmp -s - /migration/decision || \
-                 printf 'ordinary\n' | cmp -s - /migration/decision; then
-                decision=ordinary
-              elif printf %s maintenance | cmp -s - /migration/decision || \
-                   printf 'maintenance\n' | cmp -s - /migration/decision; then
-                decision=maintenance
-              else
-                echo "migration decision must be byte-exact ordinary or maintenance" >&2
-                exit 1
-              fi
-              case "${decision}" in
-                ordinary|maintenance)
-                  {{- if $externalRelayUniverse }}
-                  /usr/local/bin/mnemoshare-migrate apply \
-                    --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan "{{ $artifactDirectory }}/plan.json" --expect-plan-digest "$(cat {{ $artifactDirectory }}/plan-digest)" \
-                    --exclusive --bootstrap-policy provision-untracked \
-                    --status {{ $statusFile | quote }} --termination-file {{ $terminationFile | quote }} --termination-message-file {{ $terminationMessageFile | quote }}
-                  exec /usr/local/bin/mnemoshare-migrate apply \
-                    --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --universe email-relay-mongo --plan "{{ $artifactDirectory }}/email-relay-plan.json" --expect-plan-digest "$(cat {{ $artifactDirectory }}/email-relay-plan-digest)" \
-                    --exclusive --bootstrap-policy provision-untracked \
-                    --status {{ $statusFile | quote }} --termination-file {{ $terminationFile | quote }} --termination-message-file {{ $terminationMessageFile | quote }}
-                  {{- else }}
-                  exec /usr/local/bin/mnemoshare-migrate apply \
-                    --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan "{{ $artifactDirectory }}/plan.json" --expect-plan-digest "$(cat {{ $artifactDirectory }}/plan-digest)" \
-                    --exclusive --bootstrap-policy provision-untracked \
-                    --status {{ $statusFile | quote }} --termination-file {{ $terminationFile | quote }} --termination-message-file {{ $terminationMessageFile | quote }}
-                  {{- end }}
-                  ;;
-                *)
-                  echo "invalid or missing migration decision: expected ordinary or maintenance" >&2
-                  exit 1
-                  ;;
-              esac
+          command: ["/usr/local/bin/mnemoshare-migrate"]
+          # launch refuses a /migration/decision that is not byte-exact
+          # ordinary or maintenance (optionally newline-terminated) before
+          # running apply, and runs the relay apply only after primary succeeds.
+          args: ["launch", "--private-dir", {{ $statusDirectory | quote }}, "--require-decision-file", "/migration/decision", "--",
+                 "apply", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--plan", {{ printf "%s/plan.json" $artifactDirectory | quote }}, "--expect-plan-digest", {{ printf "@file:%s/plan-digest" $artifactDirectory | quote }},
+                 "--exclusive", "--bootstrap-policy", "provision-untracked",
+                 "--status", {{ $statusFile | quote }}, "--termination-file", {{ $terminationFile | quote }}, "--termination-message-file", {{ $terminationMessageFile | quote }}
+                 {{- if $externalRelayUniverse }}, "--then",
+                 "apply", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--universe", "email-relay-mongo", "--plan", {{ printf "%s/email-relay-plan.json" $artifactDirectory | quote }}, "--expect-plan-digest", {{ printf "@file:%s/email-relay-plan-digest" $artifactDirectory | quote }},
+                 "--exclusive", "--bootstrap-policy", "provision-untracked",
+                 "--status", {{ $statusFile | quote }}, "--termination-file", {{ $terminationFile | quote }}, "--termination-message-file", {{ $terminationMessageFile | quote }}
+                 {{- end }}]
           env:
             {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
             {{- if $externalRelayUniverse }}
@@ -494,15 +460,12 @@ spec:
           image: {{ $migrationImage | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           terminationMessagePolicy: FallbackToLogsOnError
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              {{- if $externalRelayUniverse }}
-              /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan {{ $artifactDirectory }}/plan.json --expect-plan-digest "$(cat {{ $artifactDirectory }}/plan-digest)"
-              exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --universe email-relay-mongo --plan {{ $artifactDirectory }}/email-relay-plan.json --expect-plan-digest "$(cat {{ $artifactDirectory }}/email-relay-plan-digest)"
-              {{- else }}
-              exec /usr/local/bin/mnemoshare-migrate verify --contract embedded --expect-contract-fingerprint "{{ $migrationContractFingerprint }}" --plan {{ $artifactDirectory }}/plan.json --expect-plan-digest "$(cat {{ $artifactDirectory }}/plan-digest)"
-              {{- end }}
+          command: ["/usr/local/bin/mnemoshare-migrate"]
+          args: ["launch", "--",
+                 "verify", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--plan", {{ printf "%s/plan.json" $artifactDirectory | quote }}, "--expect-plan-digest", {{ printf "@file:%s/plan-digest" $artifactDirectory | quote }}
+                 {{- if $externalRelayUniverse }}, "--then",
+                 "verify", "--contract", "embedded", "--expect-contract-fingerprint", {{ $migrationContractFingerprint | quote }}, "--universe", "email-relay-mongo", "--plan", {{ printf "%s/email-relay-plan.json" $artifactDirectory | quote }}, "--expect-plan-digest", {{ printf "@file:%s/email-relay-plan-digest" $artifactDirectory | quote }}
+                 {{- end }}]
           env:
             {{- include "mnemoshare.formatMigrationEnv" . | nindent 12 }}
             {{- if $externalRelayUniverse }}

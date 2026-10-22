@@ -71,45 +71,37 @@ spec:
         - name: migration-operation
           image: {{ include "mnemoshare.migrationOperationTargetImage" . | quote }}
           imagePullPolicy: {{ .Values.migrationOperation.targetImage.pullPolicy }}
-          command: ["/bin/sh", "-ec"]
+          command: ["/usr/local/bin/mnemoshare-migrate"]
           args:
-            - |
-              phase="$0"
-              command="$phase"
-              if [ "$phase" = "reset" ]; then command="pre-1-reset-format-ledger"; fi
-              # The PVC root is provisioner-owned. All plan/result atomic
-              # publication happens in this caller-owned same-filesystem
-              # parent, retained across plan/apply/verify reconciliations.
-              umask 077
-              mkdir -p {{ $artifactDirectory | quote }}
-              chmod 0700 {{ $artifactDirectory | quote }}
-              if [ "$phase" = "apply" ] || [ "$phase" = "reset" ]; then
-                # The emptyDir mount is kubelet-owned and hosts kubelet's own
-                # termination-message file at its root. Create the status
-                # directory beside it as the actual non-root caller so the
-                # binary can enforce its caller-owned, non-world-writable
-                # filesystem contract.
-                mkdir -p {{ $statusDirectory | quote }}
-                chmod 0700 {{ $statusDirectory | quote }}
-              fi
-              set +e
-              if [ "$phase" = "plan" ]; then
-                exec /usr/local/bin/mnemoshare-migrate "$command" "$@"
-              fi
-              /usr/local/bin/mnemoshare-migrate "$command" "$@"
-              exit_code=$?
-              set -e
-              if [ "$phase" = "apply" ] || [ "$phase" = "reset" ]; then
-                # The migrate binary owns the typed terminal snapshot. Keeping
-                # it intact lets the deployment supervisor observe the last
-                # truthful checkpoint when apply succeeds or fails.
-                :
-              else
-                if [ "$exit_code" -eq 0 ]; then outcome=success; else outcome=failure; fi
-                printf '{"operationId":"%s","phase":"%s","universe":"%s","planDigest":"%s","outcome":"%s","exitCode":%s}\n' "{{ $operationID }}" "$phase" "{{ $universe }}" "{{ $planDigest }}" "$outcome" "$exit_code"
-              fi
-              exit "$exit_code"
+            - "launch"
+            # The PVC root is provisioner-owned. All plan/result atomic
+            # publication happens in this caller-owned same-filesystem
+            # parent, retained across plan/apply/verify reconciliations.
+            # launch applies umask 077, mkdir -p and chmod 0700 per directory.
+            - "--private-dir"
+            - {{ $artifactDirectory | quote }}
+            {{- if $instrumented }}
+            # The emptyDir mount is kubelet-owned and hosts kubelet's own
+            # termination-message file at its root. The status directory is
+            # created beside it as the actual non-root caller so the binary
+            # can enforce its caller-owned, non-world-writable contract.
+            - "--private-dir"
+            - {{ $statusDirectory | quote }}
+            {{- end }}
+            {{- if eq $phase "verify" }}
+            # Apply/reset own their typed terminal snapshot instead; plan
+            # reports through its result file.
+            - "--report-operation-id"
+            - {{ $operationID | quote }}
+            - "--report-phase"
             - {{ $phase | quote }}
+            - "--report-universe"
+            - {{ $universe | quote }}
+            - "--report-plan-digest"
+            - {{ $planDigest | quote }}
+            {{- end }}
+            - "--"
+            - {{ ternary "pre-1-reset-format-ledger" $phase (eq $phase "reset") | quote }}
             {{- if ne $phase "reset" }}
             - "--contract"
             - "embedded"

@@ -16,7 +16,7 @@ trap on_error ERR
 
 # This is deliberately an execution test, not a rendered-token test. The
 # caller supplies an image built from the exact application checkout selected
-# by CI; the rendered shell argv is then run by that image as uid 1000.
+# by CI; the rendered exec-form argv is then run by that image as uid 1000.
 #
 # The runner uid is not assumed to be 1000 or root (a CI runner is neither).
 # It only renders, extracts, and starts containers; every read, write and
@@ -67,13 +67,12 @@ base_values=(
 )
 
 extract_container() {
-  local manifest=$1 container=$2 script_out=$3 args_out=$4 message_out=$5
-  python3 - "$manifest" "$container" "$script_out" "$args_out" "$message_out" <<'PY'
-import base64
+  local manifest=$1 container=$2 name=$3
+  python3 - "$manifest" "$container" "$tmp/$name.argv" "$tmp/$name.message-path" <<'PY'
 import sys
 import yaml
 
-manifest, wanted, script_out, args_out, message_out = sys.argv[1:]
+manifest, wanted, argv_out, message_out = sys.argv[1:]
 for document in yaml.safe_load_all(open(manifest, encoding="utf-8")):
     if not isinstance(document, dict) or document.get("kind") != "Job":
         continue
@@ -82,14 +81,11 @@ for document in yaml.safe_load_all(open(manifest, encoding="utf-8")):
     for container in candidates:
         if container.get("name") != wanted:
             continue
-        command = container.get("command")
-        args = container.get("args")
-        if command != ["/bin/sh", "-ec"] or not isinstance(args, list) or len(args) < 1:
-            raise SystemExit(f"{wanted}: rendered command/args are not /bin/sh -ec")
-        with open(script_out, "w", encoding="utf-8") as out:
-            out.write(args[0])
-        with open(args_out, "w", encoding="utf-8") as out:
-            for arg in args[1:]:
+        argv = (container.get("command") or []) + (container.get("args") or [])
+        if container.get("command") != ["/usr/local/bin/mnemoshare-migrate"]:
+            raise SystemExit(f"{wanted}: rendered command is not exec-form mnemoshare-migrate")
+        with open(argv_out, "w", encoding="utf-8") as out:
+            for arg in argv:
                 if not isinstance(arg, str) or "\n" in arg:
                     raise SystemExit(f"{wanted}: non-scalar or multiline argument")
                 out.write(arg)
@@ -139,7 +135,7 @@ volume_write() {
 docker_prepare_volumes() {
   local root=$1
   # Host-created bind mounts are deliberately normalized by a root helper so
-  # the actual migration scripts exercise the same root-owned, setgid volume
+  # the actual migration commands exercise the same root-owned, setgid volume
   # boundary as kubelet-provisioned emptyDirs while still running as uid 1000.
   # The status emptyDir is exactly what kubelet provisions with fsGroup 1000:
   # root-owned, group 1000, setgid 2777.
@@ -168,10 +164,10 @@ kubelet_termination_message() {
 
 # The rendered Job containers mount only /migration and the status directory
 # on a read-only root filesystem; the gate grants nothing more (no /tmp). The
-# SQLite target lives in the caller-owned 0700 artifact directory the rendered
-# scripts create before exec, the directory the job contract already requires.
+# SQLite target lives in the caller-owned 0700 artifact directory that launch
+# creates before running the command, the directory the job contract requires.
 docker_run() {
-  local volume_root=$1 status_root=$2 message_mount=$3 script=$4
+  local volume_root=$1 status_root=$2 message_mount=$3 entrypoint=$4
   local timeout_seconds=${DOCKER_RUN_TIMEOUT:-}
   shift 4
   local -a mounts=(-v "$volume_root:/migration" -v "$status_root:/run/mnemoshare-migration")
@@ -183,7 +179,7 @@ docker_run() {
     --env ENVIRONMENT=production --env CUSTOMER_ID=ci-test \
     --env DB_DRIVER=sqlite --env SQLITE_PATH=/migration/artifacts/sqlite.db \
     "${mounts[@]}" \
-    --entrypoint /bin/sh "$image" -ec "$script" "$@")
+    --entrypoint "$entrypoint" "$image" "$@")
   if [ -n "$timeout_seconds" ]; then
     timeout "$timeout_seconds" "${command[@]}"
   else
@@ -196,12 +192,13 @@ docker_run() {
 # terminationMessagePath gets kubelet's bind-mounted message file.
 execute_rendered() {
   local name=$1 tail_lines=$2 root=$3 message_path message_mount=""
-  shift 3
+  local -a argv
+  mapfile -t argv < "$tmp/$name.argv"
   message_path=$(<"$tmp/$name.message-path")
   if [ -n "$message_path" ]; then
     message_mount="$(kubelet_termination_message "$root" "$name"):$message_path"
   fi
-  if ! docker_run "$root/migration" "$root/status" "$message_mount" "$(<"$tmp/$name.script")" "$@" > "$tmp/$name.log" 2>&1; then
+  if ! docker_run "$root/migration" "$root/status" "$message_mount" "${argv[@]}" > "$tmp/$name.log" 2>&1; then
     cat "$tmp/$name.log" >&2
     echo "rendered $name container failed" >&2
     return 1
@@ -241,17 +238,14 @@ assert_completed_terminal() {
 }
 
 # The chart's automatic mode deliberately admits MongoDB/PostgreSQL only. The
-# rendered shell programs are nevertheless exercised against an isolated real
+# rendered migration commands are nevertheless exercised against an isolated real
 # SQLite target here, which gives the gate a deterministic apply/verify store.
 helm template hook "$chart_dir" "${base_values[@]}" > "$tmp/hook.yaml"
 new_volume_root hook_root
-extract_container "$tmp/hook.yaml" plan-before-drain "$tmp/hook-plan.script" "$tmp/hook-plan.args" "$tmp/hook-plan.message-path"
-extract_container "$tmp/hook.yaml" apply "$tmp/hook-apply.script" "$tmp/hook-apply.args" "$tmp/hook-apply.message-path"
-extract_container "$tmp/hook.yaml" verify "$tmp/hook-verify.script" "$tmp/hook-verify.args" "$tmp/hook-verify.message-path"
-mapfile -t hook_plan_args < "$tmp/hook-plan.args"
-mapfile -t hook_apply_args < "$tmp/hook-apply.args"
-mapfile -t hook_verify_args < "$tmp/hook-verify.args"
-execute_rendered hook-plan 5 "$hook_root" "${hook_plan_args[@]}"
+extract_container "$tmp/hook.yaml" plan-before-drain hook-plan
+extract_container "$tmp/hook.yaml" apply hook-apply
+extract_container "$tmp/hook.yaml" verify hook-verify
+execute_rendered hook-plan 5 "$hook_root"
 volume_test "$hook_root" -d /migration/artifacts
 volume_stat "$hook_root" /migration/artifacts %a 700
 volume_test "$hook_root" -s /migration/artifacts/plan.json
@@ -262,9 +256,9 @@ hook_plan_digest=$(volume_cat "$hook_root" /migration/artifacts/result.json | jq
 # decision and digest for apply as uid 1000 and needs kubectl otherwise.
 volume_write "$hook_root" /migration/decision "$hook_decision"
 volume_write "$hook_root" /migration/artifacts/plan-digest "$hook_plan_digest"
-execute_rendered hook-apply 10 "$hook_root" "${hook_apply_args[@]}"
+execute_rendered hook-apply 10 "$hook_root"
 assert_completed_terminal "$hook_root" hook-apply
-execute_rendered hook-verify 5 "$hook_root" "${hook_verify_args[@]}"
+execute_rendered hook-verify 5 "$hook_root"
 
 # Operation plan/apply/verify uses the same real SQLite target and retains its
 # caller-owned artifacts across three separately rendered Jobs.
@@ -281,9 +275,8 @@ helm template operation "$chart_dir" "${base_values[@]}" \
   --set migrationOperation.planDigest="$plan_digest_placeholder" \
   --set migrationOperation.verifiedPlanDigest="$plan_digest_placeholder" > "$tmp/operation-plan.yaml"
 new_volume_root operation_root
-extract_container "$tmp/operation-plan.yaml" migration-operation "$tmp/operation-plan.script" "$tmp/operation-plan.args" "$tmp/operation-plan.message-path"
-mapfile -t operation_plan_args < "$tmp/operation-plan.args"
-execute_rendered operation-plan 5 "$operation_root" "${operation_plan_args[@]}"
+extract_container "$tmp/operation-plan.yaml" migration-operation operation-plan
+execute_rendered operation-plan 5 "$operation_root"
 plan_digest=$(volume_cat "$operation_root" /migration/artifacts/primary-result.json | jq -er '.planDigest | select(test("^[a-f0-9]{64}$"))')
 volume_test "$operation_root" -s /migration/artifacts/primary-plan.json
 volume_test "$operation_root" -s /migration/artifacts/primary-result.json
@@ -300,9 +293,8 @@ helm template operation "$chart_dir" "${base_values[@]}" \
   --set migrationOperation.transport.existingClaim=ci-migration \
   --set migrationOperation.planDigest="$plan_digest" \
   --set migrationOperation.verifiedPlanDigest="$plan_digest" > "$tmp/operation-apply.yaml"
-extract_container "$tmp/operation-apply.yaml" migration-operation "$tmp/operation-apply.script" "$tmp/operation-apply.args" "$tmp/operation-apply.message-path"
-mapfile -t operation_apply_args < "$tmp/operation-apply.args"
-execute_rendered operation-apply 10 "$operation_root" "${operation_apply_args[@]}"
+extract_container "$tmp/operation-apply.yaml" migration-operation operation-apply
+execute_rendered operation-apply 10 "$operation_root"
 assert_completed_terminal "$operation_root" operation-apply
 
 helm template operation "$chart_dir" "${base_values[@]}" \
@@ -316,8 +308,7 @@ helm template operation "$chart_dir" "${base_values[@]}" \
   --set migrationOperation.transport.existingClaim=ci-migration \
   --set migrationOperation.planDigest="$plan_digest" \
   --set migrationOperation.verifiedPlanDigest="$plan_digest" > "$tmp/operation-verify.yaml"
-extract_container "$tmp/operation-verify.yaml" migration-operation "$tmp/operation-verify.script" "$tmp/operation-verify.args" "$tmp/operation-verify.message-path"
-mapfile -t operation_verify_args < "$tmp/operation-verify.args"
-execute_rendered operation-verify 5 "$operation_root" "${operation_verify_args[@]}"
+extract_container "$tmp/operation-verify.yaml" migration-operation operation-verify
+execute_rendered operation-verify 5 "$operation_root"
 
 echo 'migration Jobs executed in-image as uid 1000: hook plan/apply/verify and operation plan/apply/verify'

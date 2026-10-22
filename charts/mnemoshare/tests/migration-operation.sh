@@ -55,6 +55,30 @@ assert_operation_routing_labels() {
   grep -Fq 'mnemoshare.io/migration-operation-universe: "primary"' <<<"$pod_labels"
 }
 
+# The operation container runs mnemoshare-migrate in exec form; launch owns the
+# private directories, phase-specific outcome line and exit-status propagation.
+assert_operation_argv() {
+  local render=$1 expected=$2 actual
+  actual=$(python3 -c '
+import sys, yaml
+for document in yaml.safe_load_all(sys.stdin):
+    if not document or document.get("kind") != "Job":
+        continue
+    for container in document["spec"]["template"]["spec"]["containers"]:
+        if container["name"] == "migration-operation":
+            print(" ".join((container.get("command") or []) + (container.get("args") or [])))
+            sys.exit(0)
+sys.exit("migration-operation container not rendered")
+' <<<"$render")
+  if [ "$actual" != "$expected" ]; then
+    printf 'migration-operation argv mismatch\n  actual:   %s\n  expected: %s\n' "$actual" "$expected" >&2
+    return 1
+  fi
+}
+migrate=/usr/local/bin/mnemoshare-migrate
+status_args="--status /run/mnemoshare-migration/status/status.json --termination-file /run/mnemoshare-migration/status/termination.json --termination-message-file /run/mnemoshare-migration/termination-message"
+contract_args="--contract embedded --expect-contract-fingerprint $fingerprint"
+
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
 jq -e '
   .commands.apply.args[-6:] == ["--status", "<status-file>", "--termination-file", "<status-dir>/termination.json", "--termination-message-file", "<termination-message-file>"] and
@@ -95,8 +119,7 @@ for phase in reset plan down apply verify up; do
       inbound=$(awk '/# Source: mnemoshare\/templates\/inbound-gateway-deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$inbound_render")
       grep -Fq 'replicas: 0' <<<"$inbound"
       ! grep -Fq 'activeDeadlineSeconds:' <<<"$render"
-      grep -Fq -- '- "reset"' <<<"$render"
-      grep -Fq 'if [ "$phase" = "reset" ]; then command="pre-1-reset-format-ledger"; fi' <<<"$render"
+      assert_operation_argv "$render" "$migrate launch --private-dir /migration/artifacts --private-dir /run/mnemoshare-migration/status -- pre-1-reset-format-ledger --exclusive --confirm-before-first-1.0 $status_args --max-inactivity 5m --absolute-deadline 6h"
       grep -Fq -- '- "--exclusive"' <<<"$render"
       grep -Fq -- '- "--confirm-before-first-1.0"' <<<"$render"
       grep -Fq -- '- "--status"' <<<"$render"
@@ -126,20 +149,11 @@ for phase in reset plan down apply verify up; do
       grep -Fq -- '"--result"' <<<"$render"
       grep -Fq -- '- "/migration/artifacts/primary-plan.json"' <<<"$render"
       grep -Fq -- '- "/migration/artifacts/primary-result.json"' <<<"$render"
-      grep -Fq 'mkdir -p "/migration/artifacts"' <<<"$render"
-      grep -Fq 'chmod 0700 "/migration/artifacts"' <<<"$render"
       grep -Fq -- '- "plan"' <<<"$render"
       grep -Fq -- '- "--contract"' <<<"$render"
       grep -Fq -- '- "embedded"' <<<"$render"
-      grep -Fq 'phase="$0"' <<<"$render"
-      grep -Fq 'exec /usr/local/bin/mnemoshare-migrate "$command" "$@"' <<<"$render"
-      grep -Fq '/usr/local/bin/mnemoshare-migrate "$command" "$@"' <<<"$render"
-      ! grep -Fq 'elif [ "$phase" = "plan" ]' <<<"$render"
-	  if grep -Eq '^[[:space:]]+shift([[:space:]]|$)' <<<"$render"; then
-	    echo 'migration wrapper must not discard the first contract argument' >&2
-	    exit 1
-	  fi
-	  ! grep -Fq '/run/mnemoshare-migration/' <<<"$render"
+      assert_operation_argv "$render" "$migrate launch --private-dir /migration/artifacts -- plan $contract_args --output /migration/artifacts/primary-plan.json --result /migration/artifacts/primary-result.json"
+      ! grep -Fq '/run/mnemoshare-migration/' <<<"$render"
       ;;
     down)
       deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1} active{print} active&&/^---$/{exit}' <<<"$render")
@@ -176,15 +190,12 @@ for phase in reset plan down apply verify up; do
       grep -Fq 'fsGroup: 1000' <<<"$render"
       grep -Fq 'runAsNonRoot: true' <<<"$render"
       grep -Fq 'runAsUser: 1000' <<<"$render"
-      grep -Fq 'umask 077' <<<"$render"
-      grep -Fq 'mkdir -p "/run/mnemoshare-migration/status"' <<<"$render"
-      grep -Fq 'chmod 0700 "/run/mnemoshare-migration/status"' <<<"$render"
+      assert_operation_argv "$render" "$migrate launch --private-dir /migration/artifacts --private-dir /run/mnemoshare-migration/status -- apply $contract_args --plan /migration/artifacts/primary-plan.json --expect-plan-digest $plan --exclusive --bootstrap-policy provision-untracked $status_args"
       grep -Fq 'startupProbe:' <<<"$render"
       grep -Fq 'livenessProbe:' <<<"$render"
       test "$(grep -Fc 'command: ["/usr/local/bin/mnemoshare-migrate", "status", "--file", "/run/mnemoshare-migration/status/status.json", "--termination-file", "/run/mnemoshare-migration/status/termination.json", "--termination-message-file", "/run/mnemoshare-migration/termination-message", "--max-inactivity", "5m", "--absolute-deadline", "6h"]' <<<"$render")" -eq 2
       grep -Fq 'failureThreshold: 60' <<<"$render"
       grep -Fq 'periodSeconds: 30' <<<"$render"
-      grep -Fq 'if [ "$phase" = "apply" ] || [ "$phase" = "reset" ]; then' <<<"$render"
       ;;
     verify)
       assert_operation_routing_labels "$render" "$phase"
@@ -196,6 +207,7 @@ for phase in reset plan down apply verify up; do
       grep -Fq -- '- "verify"' <<<"$render"
       grep -Fq -- '"--expect-contract-fingerprint"' <<<"$render"
       grep -Fq -- '"--expect-plan-digest"' <<<"$render"
+      assert_operation_argv "$render" "$migrate launch --private-dir /migration/artifacts --report-operation-id ci-op --report-phase verify --report-universe primary --report-plan-digest $plan -- verify $contract_args --plan /migration/artifacts/primary-plan.json --expect-plan-digest $plan"
       ! grep -Fq '/run/mnemoshare-migration/' <<<"$render"
       ;;
     up)
@@ -245,6 +257,9 @@ for phase in plan apply verify; do
   grep -Fq 'key: relay-db-uri' <<<"$relay_render"
   grep -Fq 'name: RELAY_DB_NAME' <<<"$relay_render"
   ! grep -Fq '/migration/artifacts/primary-plan.json' <<<"$relay_render"
+  if [ "$phase" = verify ]; then
+    assert_operation_argv "$relay_render" "$migrate launch --private-dir /migration/artifacts --report-operation-id ci-op --report-phase verify --report-universe email-relay-mongo --report-plan-digest $plan -- verify $contract_args --universe email-relay-mongo --plan /migration/artifacts/email-relay-plan.json --expect-plan-digest $plan"
+  fi
 done
 
 # A configured external universe must be planned before down; failure occurs

@@ -111,7 +111,7 @@ tagged=$(render_profile gateway --set emailGateway.mode=gateway --set image.tag=
 grep -Fq "image: \"mnemoshare/mnemoshare@${digest}\"" <<<"$tagged"
 api_deployment=$(awk '/# Source: mnemoshare\/templates\/deployment.yaml/{active=1;next} active&&/^---$/{exit} active{print}' <<<"$gateway")
 grep -A1 -F 'name: ENVIRONMENT' <<<"$api_deployment" | grep -Fq 'value: "production"'
-! grep -Fq -- '--universe email-relay-mongo' <<<"$gateway"
+! grep -Fq -- '"--universe", "email-relay-mongo"' <<<"$gateway"
 if ! jq -e '[.executables[] | select(.id == "emailgateway") | .profiles[] | select(.id == "gateway") | .durable_resources[]? | select(.id == "gateway-spool")] | length == 1' "${contract_dir}/contract.json" >/dev/null; then
   grep -Fq 'type: RollingUpdate' <<<"$gateway"
 fi
@@ -120,11 +120,11 @@ grep -Fq 'persistentVolumeClaim:' <<<"$inbound"
 grep -Fq 'type: Recreate' <<<"$inbound"
 no_store=$(render_profile relay-no-store --set emailGateway.mode=relay --set emailGateway.smtpAuthRequired=false --set emailGateway.relay.spoolSharedKey=spool)
 grep -Fq 'name: RELAY_SMTP_AUTH_REQUIRED' <<<"$no_store"
-! grep -Fq -- '--universe email-relay-mongo' <<<"$no_store"
+! grep -Fq -- '"--universe", "email-relay-mongo"' <<<"$no_store"
 dkim=$(render_profile relay-dkim --set emailGateway.mode=relay --set emailGateway.smtpAuthRequired=false --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.db.uri=mongodb://relay)
-grep -Fq -- '--universe email-relay-mongo' <<<"$dkim"
+grep -Fq -- '"--universe", "email-relay-mongo"' <<<"$dkim"
 tokens=$(render_profile relay-dkim-and-tokens --set emailGateway.mode=relay --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.db.uri=mongodb://relay)
-grep -Fq -- '--universe email-relay-mongo' <<<"$tokens"
+grep -Fq -- '"--universe", "email-relay-mongo"' <<<"$tokens"
 grep -Fq -- '--from-literal=external-plan-digest="${external_plan_digest}"' <<<"$tokens"
 grep -Fq 'app.kubernetes.io/component in (email-gateway,sftp-gateway,mcp)' <<<"$tokens"
 grep -Fq 'external-universe=email-relay-mongo' <<<"$tokens"
@@ -134,8 +134,8 @@ grep -Fq 'stored_external_digest="$(kubectl get "${state_resource}" -o jsonpath=
 grep -Fq 'replanned email-relay-mongo digest drifted from durable target plan' <<<"$tokens"
 grep -Fq 'fresh install with an empty writer census found existing application pods' <<<"$tokens"
 grep -Fq 'app.kubernetes.io/component in (api,workflow-worker,ices,inbound-gateway,email-gateway,sftp-gateway,mcp)' <<<"$tokens"
-primary_apply_line=$(grep -n -m1 -- '/usr/local/bin/mnemoshare-migrate apply' <<<"$tokens" | cut -d: -f1)
-relay_apply_line=$(grep -n -m1 -- '--universe email-relay-mongo --plan' <<<"$tokens" | cut -d: -f1)
+primary_apply_line=$(grep -n -m1 -- '"apply", "--contract"' <<<"$tokens" | cut -d: -f1)
+relay_apply_line=$(grep -n -m1 -- '"--universe", "email-relay-mongo", "--plan"' <<<"$tokens" | cut -d: -f1)
 test -n "$primary_apply_line"
 test -n "$relay_apply_line"
 test "$primary_apply_line" -lt "$relay_apply_line"

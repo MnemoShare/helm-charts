@@ -25,15 +25,6 @@ SHELL_TOOLS = {"sh", "bash", "ash", "dash", "zsh", "busybox", "wget", "curl", "n
 SHELL_ALLOWLIST = {
     # smallstep/step-ca image, not built from our runtime image.
     ("-step-ca", "init-ca"),
-    # Remaining shell in OUR image: umask/mkdir/chmod, byte-exact decision-file
-    # compare and plan-digest reads around mnemoshare-migrate. Blocks distroless
-    # until that logic moves into the migrate binary. Do not add to this list.
-    ("-format-migration", "plan-before-drain"),
-    ("-format-migration", "plan-email-relay-mongo-before-drain"),
-    ("-format-migration", "apply"),
-    ("-format-migration", "verify"),
-    # Same reason: phase dispatch, mkdir/chmod and exit-code handling around mnemoshare-migrate.
-    ("-migration-", "migration-operation"),
 }
 # Containers on formatMigrations.orchestratorImage (docker.io/alpine/k8s: kubectl + shell, not ours).
 SHELL_ALLOWED_IMAGE_PREFIXES = ("docker.io/alpine/k8s",)
