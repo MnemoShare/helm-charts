@@ -178,10 +178,44 @@ stateful_render=$(helm template test "$chart_dir" "${base[@]}" \
   --set redis.external.host=redis.example.com)
 assert_image_in_source "$stateful_render" 'templates/workflow-worker-statefulset.yaml'
 assert_has 'command: ["/bin/sh", "-ec"]'
-assert_has 'mkdir -p "/migration/artifacts"'
-assert_has 'chmod 0700 "/migration/artifacts"'
-assert_has "exec /usr/local/bin/mnemoshare-migrate plan --contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --output \"/migration/artifacts/plan.json\" --result \"/migration/artifacts/result.json\""
-assert_has "verify --contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --plan /migration/artifacts/plan.json --expect-plan-digest \"\$(cat /migration/artifacts/plan-digest)\""
+# Containers on the application image run mnemoshare-migrate in exec form;
+# launch owns umask/mkdir/chmod, the decision check and the digest-file reads.
+container_argv() {
+  python3 -c '
+import sys, yaml
+for document in yaml.safe_load_all(sys.stdin):
+    if not document or document.get("kind") != "Job" or not document["metadata"]["name"].endswith("-format-migration"):
+        continue
+    pod = document["spec"]["template"]["spec"]
+    for container in (pod.get("initContainers") or []) + (pod.get("containers") or []):
+        if container["name"] == sys.argv[1]:
+            print(" ".join((container.get("command") or []) + (container.get("args") or [])))
+            sys.exit(0)
+sys.exit("container %s not rendered" % sys.argv[1])
+' "$1" <<<"$2"
+}
+assert_argv() {
+  local name=$1 rendered=$2 expected=$3 actual
+  actual=$(container_argv "$name" "$rendered")
+  if [ "$actual" != "$expected" ]; then
+    printf 'format-migration %s argv mismatch\n  actual:   %s\n  expected: %s\n' "$name" "$actual" "$expected" >&2
+    exit 1
+  fi
+}
+migrate=/usr/local/bin/mnemoshare-migrate
+status_args="--status /run/mnemoshare-migration/status/status.json --termination-file /run/mnemoshare-migration/status/termination.json --termination-message-file /run/mnemoshare-migration/termination-message"
+for rendered in "$render" "$upgrade_render"; do
+  assert_argv plan-before-drain "$rendered" "$migrate launch --private-dir /migration/artifacts -- plan --contract embedded --expect-contract-fingerprint ${migration_fingerprint} --output /migration/artifacts/plan.json --result /migration/artifacts/result.json"
+  assert_argv apply "$rendered" "$migrate launch --private-dir /run/mnemoshare-migration/status --require-decision-file /migration/decision -- apply --contract embedded --expect-contract-fingerprint ${migration_fingerprint} --plan /migration/artifacts/plan.json --expect-plan-digest-file /migration/artifacts/plan-digest --exclusive --bootstrap-policy provision-untracked ${status_args}"
+  assert_argv verify "$rendered" "$migrate launch -- verify --contract embedded --expect-contract-fingerprint ${migration_fingerprint} --plan /migration/artifacts/plan.json --expect-plan-digest-file /migration/artifacts/plan-digest"
+done
+relay_render=$(helm template test "$chart_dir" "${base[@]}" \
+  --set emailGateway.enabled=true --set emailGateway.mode=relay \
+  --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.db.uri=mongodb://relay)
+relay_flags="--contract embedded --expect-contract-fingerprint ${migration_fingerprint} --universe email-relay-mongo"
+assert_argv plan-email-relay-mongo-before-drain "$relay_render" "$migrate launch --private-dir /migration/artifacts -- plan ${relay_flags} --output /migration/artifacts/email-relay-plan.json --result /migration/artifacts/email-relay-result.json"
+assert_argv apply "$relay_render" "$migrate launch --private-dir /run/mnemoshare-migration/status --require-decision-file /migration/decision -- apply --contract embedded --expect-contract-fingerprint ${migration_fingerprint} --plan /migration/artifacts/plan.json --expect-plan-digest-file /migration/artifacts/plan-digest --exclusive --bootstrap-policy provision-untracked ${status_args} --then apply ${relay_flags} --plan /migration/artifacts/email-relay-plan.json --expect-plan-digest-file /migration/artifacts/email-relay-plan-digest --exclusive --bootstrap-policy provision-untracked ${status_args}"
+assert_argv verify "$relay_render" "$migrate launch -- verify --contract embedded --expect-contract-fingerprint ${migration_fingerprint} --plan /migration/artifacts/plan.json --expect-plan-digest-file /migration/artifacts/plan-digest --then verify ${relay_flags} --plan /migration/artifacts/email-relay-plan.json --expect-plan-digest-file /migration/artifacts/email-relay-plan-digest"
 assert_has 'case "${decision}" in'
 assert_has 'selected_pods="$(kubectl get pods -l "${selector}" -o name)"'
 assert_has 'if [ -n "${selected_pods}" ]; then'
@@ -320,27 +354,6 @@ done
 assert_has 'jq --stream -c . /migration/artifacts/result.json > /migration/artifacts/result-events.jsonl'
 assert_has 'jq --slurp -e -f /migration/artifacts/migration-result-v1.jq /migration/artifacts/result-events.jsonl'
 
-decision_is_valid_value() {
-  local candidate=$1
-  printf %s ordinary | cmp -s - <(printf %s "$candidate") ||
-    printf 'ordinary\n' | cmp -s - <(printf %s "$candidate") ||
-    printf %s maintenance | cmp -s - <(printf %s "$candidate") ||
-    printf 'maintenance\n' | cmp -s - <(printf %s "$candidate")
-}
-for valid in ordinary maintenance; do
-  decision_is_valid_value "$valid"
-  decision_is_valid_value "${valid}"$'\n'
-done
-if decision_is_valid_value $'ordinary\nunterminated'; then
-  echo 'decision parser accepted a second unterminated line' >&2
-  exit 1
-fi
-assert_has 'exec /usr/local/bin/mnemoshare-migrate apply \'
-assert_has "--contract embedded --expect-contract-fingerprint \"${migration_fingerprint}\" --plan \"/migration/artifacts/plan.json\" --expect-plan-digest \"\$(cat /migration/artifacts/plan-digest)\" \\"
-assert_has '--exclusive --bootstrap-policy provision-untracked'
-assert_has 'mkdir -p "/run/mnemoshare-migration/status"'
-assert_has 'chmod 0700 "/run/mnemoshare-migration/status"'
-assert_has '--status "/run/mnemoshare-migration/status/status.json" --termination-file "/run/mnemoshare-migration/status/termination.json" --termination-message-file "/run/mnemoshare-migration/termination-message"'
 assert_has 'terminationMessagePath: "/run/mnemoshare-migration/termination-message"'
 assert_has '- name: migration-status'
 assert_has 'mountPath: /run/mnemoshare-migration'
