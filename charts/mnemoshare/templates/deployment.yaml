@@ -479,6 +479,9 @@ spec:
         {{- if include "mnemoshare.keyguard.enabled" . }}
         {{- include "mnemoshare.keyguard.volumeMountsMain" . | nindent 8 }}
         {{- end }}
+        {{- if not .Values.workflowWorker.enabled }}
+        {{- with (include "mnemoshare.sandbox.engineMounts" . | trim) }}{{ . | nindent 8 }}{{- end }}
+        {{- end }}
       {{- if include "mnemoshare.keyguard.enabled" . }}
       # KeyGuard federation-sidecar (MSC-371) — mints AWS-usable JWT
       # in-pod from Step-CA mTLS cert + projected SA token.
@@ -528,6 +531,9 @@ spec:
       {{- end }}
       {{- if include "mnemoshare.keyguard.enabled" . }}
       {{- include "mnemoshare.keyguard.volumes" . | nindent 6 }}
+      {{- end }}
+      {{- if not .Values.workflowWorker.enabled }}
+      {{- with (include "mnemoshare.sandbox.engineVolumes" . | trim) }}{{ . | nindent 6 }}{{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

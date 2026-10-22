@@ -40,7 +40,16 @@ mnemoshare-sandbox-runner
 {{- include "mnemoshare.applicationImage" (dict "root" . "component" .Values.sandbox.runner.image "name" "sandbox-runner") -}}
 {{- end }}
 
-{{/* Env for the pods that host the engine; the runner URL and shared secret. */}}
+{{/* True when engine pods verify the runner against the chart-issued CA. */}}
+{{- define "mnemoshare.sandbox.engineCA" -}}
+{{- if and .Values.sandbox.enabled .Values.sandbox.runner.tls.enabled -}}true{{- else -}}false{{- end -}}
+{{- end }}
+
+{{/*
+Env for the pods that host the engine. The runner CA comes from ca.crt of the
+runner TLS secret; no engine client certificate is provisioned, so
+SANDBOX_RUNNER_CLIENT_CERT_FILE / _KEY_FILE are not set.
+*/}}
 {{- define "mnemoshare.sandbox.engineEnv" -}}
 {{- if .Values.sandbox.enabled }}
 - name: SANDBOX_RUNNER_URL
@@ -50,7 +59,48 @@ mnemoshare-sandbox-runner
     secretKeyRef:
       name: {{ include "mnemoshare.sandbox.secretName" . }}
       key: secret
+{{- if eq (include "mnemoshare.sandbox.engineCA" .) "true" }}
+- name: SANDBOX_RUNNER_CA_FILE
+  value: /etc/sandbox-runner-ca/ca.crt
+- name: SANDBOX_RUNNER_SERVER_NAME
+  value: {{ printf "%s.%s.svc" (include "mnemoshare.sandbox.runnerName" .) .Release.Namespace | quote }}
 {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "mnemoshare.sandbox.engineMounts" -}}
+{{- if eq (include "mnemoshare.sandbox.engineCA" .) "true" }}
+- name: sandbox-runner-ca
+  mountPath: /etc/sandbox-runner-ca
+  readOnly: true
+{{- end }}
+{{- end }}
+
+{{/* Only ca.crt is projected: the engine never receives the runner's private key. */}}
+{{- define "mnemoshare.sandbox.engineVolumes" -}}
+{{- if eq (include "mnemoshare.sandbox.engineCA" .) "true" }}
+- name: sandbox-runner-ca
+  secret:
+    secretName: {{ include "mnemoshare.sandbox.tlsSecretName" . }}
+    items:
+      - key: ca.crt
+        path: ca.crt
+{{- end }}
+{{- end }}
+
+{{/*
+Reference of the script-runtime image the runner uses when a step names none.
+A plain string is used verbatim. Empty when no digest is set: the runner then
+has no default image and run_command cannot start (fail closed).
+*/}}
+{{- define "mnemoshare.sandbox.defaultImage" -}}
+{{- $d := .Values.sandbox.policy.defaultImage -}}
+{{- if kindIs "string" $d -}}
+{{- $d -}}
+{{- else if $d -}}
+{{- $digest := trimPrefix "sha256:" ($d.digest | default "") -}}
+{{- if $digest -}}{{ required "sandbox.policy.defaultImage.repository is required with a digest" $d.repository }}@sha256:{{ $digest }}{{- end -}}
+{{- end -}}
 {{- end }}
 
 {{- define "mnemoshare.sandbox.validate" -}}
@@ -64,6 +114,10 @@ mnemoshare-sandbox-runner
 {{- end -}}
 {{- if and .Values.sandbox.runner.tls.enabled (not .Values.sandbox.runner.tls.secretName) (not .Values.sandbox.runner.tls.issuerRef.name) (not (and .Values.keyguard .Values.keyguard.cert .Values.keyguard.cert.issuerName)) -}}
 {{- fail "sandbox.runner.tls needs sandbox.runner.tls.secretName, sandbox.runner.tls.issuerRef.name or keyguard.cert.issuerName (or set tls.enabled=false with tls.allowPlaintext=true for development)" -}}
+{{- end -}}
+{{- $defaultImage := include "mnemoshare.sandbox.defaultImage" . -}}
+{{- if and $defaultImage .Values.sandbox.policy.requireImageDigest (not (contains "@sha256:" $defaultImage)) -}}
+{{- fail "sandbox.policy.defaultImage must be pinned by digest (@sha256:...) while sandbox.policy.requireImageDigest is true" -}}
 {{- end -}}
 {{- end -}}
 {{- end }}
