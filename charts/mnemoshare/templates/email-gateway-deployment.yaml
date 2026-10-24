@@ -238,6 +238,9 @@ spec:
         - name: RELAY_HOSTS
           value: {{ join "," .Values.emailGateway.relayHosts | quote }}
         {{- end }}
+        {{- with (include "mnemoshare.emailGatewayMisdirectedEnv" .) }}
+        {{- . | nindent 8 }}
+        {{- end }}
         {{- with .Values.emailGateway.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

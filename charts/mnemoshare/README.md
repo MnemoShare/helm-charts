@@ -143,6 +143,9 @@ helm install mnemoshare mnemoshare/mnemoshare \
 | `sesAdmin.region` | SESv2 admin region (domain-authenticated sending) | `""` |
 | `sesAdmin.roleArn` | IAM role for SESv2 admin calls | `""` |
 | `sesEvents.webhookToken` | Token enabling the SES events webhook | `""` |
+| `emailGateway.misdirected.checkTimeoutMs` | `MISDIRECTED_CHECK_TIMEOUT_MS`: wait for the API's misdirected-email verdict before sending unchecked (positive integer, ms) | unset (app default `3000`) |
+| `emailGateway.misdirected.maxHeldBytes` | `MISDIRECTED_MAX_HELD_BYTES`: cap on raw message bytes held in gateway memory; past it mail is sent, not held. Must be at most half of `emailGateway.resources.limits.memory` | unset (app default `67108864`) |
+| `emailGateway.misdirected.syncIntervalSec` | `MISDIRECTED_SYNC_INTERVAL_SEC`: how often held messages are reconciled with the API (positive integer, seconds) | unset (app default `30`) |
 
 See [values.yaml](./values.yaml) for all configuration options.
 
@@ -247,6 +250,33 @@ threatFeed:
   threatFox:
     enabled: true
     url: "https://threatfox-api.abuse.ch/v2/files/exports/{auth_key}/recent.json"
+```
+
+### Size the misdirected-email held-message cap
+
+With the misdirected-email gate in hold mode the outbound gateway keeps held
+messages in memory until the sender confirms or the hold expires.
+`emailGateway.misdirected.maxHeldBytes` (`MISDIRECTED_MAX_HELD_BYTES`) bounds
+the **raw RFC 822 bytes** of those messages only; parsed copies, DLP working
+memory and in-flight messages are not counted. A separate, fixed limit of 1000
+held messages also applies. When either limit is reached, new messages are
+**sent rather than held**, so a low cap trades protection for memory.
+
+The gateway container defaults to a 512Mi limit and also buffers every message
+in flight (up to 25 MiB times `workerCount`, 100 MiB at the default of 4), and
+DLP parsing expands attachments. The application default of 64 MiB (an eighth
+of 512Mi) leaves that headroom, so the chart leaves the variable unset. The
+chart refuses to render a cap above half of `emailGateway.resources.limits.memory`
+and any non-positive value (the application silently ignores those):
+
+```yaml
+emailGateway:
+  resources:
+    limits:
+      memory: 1Gi
+  misdirected:
+    maxHeldBytes: 134217728   # 128 MiB, an eighth of 1Gi
+    syncIntervalSec: 30
 ```
 
 ### Custom Resource Limits

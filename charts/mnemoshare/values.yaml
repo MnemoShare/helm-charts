@@ -1575,6 +1575,24 @@ emailGateway:
   workerCount: 4
   queueSize: 1000
 
+  # Misdirected-email gate tuning (MISDIRECTED_* on the gateway). Every key
+  # is unset by default and renders no env, so the application default applies.
+  # Values must be positive integers; the application silently ignores
+  # anything else, so the chart refuses to render them instead.
+  misdirected:
+    # MISDIRECTED_CHECK_TIMEOUT_MS: how long to wait for the API's verdict
+    # before sending the message unchecked. Application default: 3000.
+    checkTimeoutMs: null
+    # MISDIRECTED_MAX_HELD_BYTES: cap on the raw RFC 822 bytes of messages the
+    # gateway keeps in memory while held; past it new messages are SENT, not
+    # held. Application default: 67108864 (64 MiB, an eighth of the default
+    # 512Mi memory limit). Rendering fails above half of
+    # emailGateway.resources.limits.memory. Raise only together with the limit.
+    maxHeldBytes: null
+    # MISDIRECTED_SYNC_INTERVAL_SEC: how often held messages are reconciled
+    # with the API. Application default: 30.
+    syncIntervalSec: null
+
   # Maximum SMTP recipients per message
   maxRecipients: 100
 
