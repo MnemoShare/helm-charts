@@ -190,6 +190,33 @@
               }
             }
           }
+        },
+        "misdirected": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "checkTimeoutMs": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "maxHeldBytes": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "syncIntervalSec": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          }
         }
       }
     },

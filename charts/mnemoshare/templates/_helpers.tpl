@@ -1068,3 +1068,33 @@ matchExpressions:
     {{- end }}
 {{- end -}}
 {{- end }}
+
+{{/* Parses a Kubernetes memory quantity (512Mi, 1Gi, 500M, 1073741824) to bytes. */}}
+{{- define "mnemoshare.quantityBytes" -}}
+{{- $s := toString . -}}
+{{- $num := regexFind "^[0-9]+(\\.[0-9]+)?" $s | float64 -}}
+{{- $suf := regexFind "[A-Za-z]+$" $s -}}
+{{- $mult := dict "" 1 "k" 1000 "K" 1000 "M" 1000000 "G" 1000000000 "T" 1000000000000 "Ki" 1024 "Mi" 1048576 "Gi" 1073741824 "Ti" 1099511627776 -}}
+{{- if not (hasKey $mult $suf) -}}{{- fail (printf "unsupported memory quantity %q" $s) -}}{{- end -}}
+{{- printf "%d" (int64 (mulf $num (float64 (get $mult $suf)))) -}}
+{{- end }}
+
+{{/* Env for emailGateway.misdirected.*, emitted only for keys that are set. */}}
+{{- define "mnemoshare.emailGatewayMisdirectedEnv" -}}
+{{- $m := .Values.emailGateway.misdirected | default dict -}}
+{{- $limit := ((.Values.emailGateway.resources | default dict).limits | default dict).memory -}}
+{{- range $pair := list (list "checkTimeoutMs" "MISDIRECTED_CHECK_TIMEOUT_MS") (list "maxHeldBytes" "MISDIRECTED_MAX_HELD_BYTES") (list "syncIntervalSec" "MISDIRECTED_SYNC_INTERVAL_SEC") -}}
+{{- $key := index $pair 0 -}}
+{{- $val := get $m $key -}}
+{{- if and (not (kindIs "invalid" $val)) (ne (toString $val) "") -}}
+{{- $n := int64 $val -}}
+{{- if le $n 0 -}}{{- fail (printf "emailGateway.misdirected.%s must be a positive integer, got %v" $key $val) -}}{{- end -}}
+{{- if and (eq $key "maxHeldBytes") $limit -}}
+{{- $limitBytes := include "mnemoshare.quantityBytes" $limit | int64 -}}
+{{- if gt (mul $n 2) $limitBytes -}}{{- fail (printf "emailGateway.misdirected.maxHeldBytes (%d) exceeds half of emailGateway.resources.limits.memory (%s); the work queue and DLP parsing share that memory, so raise the limit or lower the cap" $n $limit) -}}{{- end -}}
+{{- end }}
+- name: {{ index $pair 1 }}
+  value: {{ printf "%d" $n | quote }}
+{{- end -}}
+{{- end -}}
+{{- end }}
