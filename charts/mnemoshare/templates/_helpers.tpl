@@ -745,3 +745,54 @@ matchExpressions:
     {{- end }}
 {{- end -}}
 {{- end }}
+
+{{/* Parses a Kubernetes memory quantity (512Mi, 1Gi, 500M, 5e8, 1073741824) to bytes. */}}
+{{- define "mnemoshare.quantityBytes" -}}
+{{- $q := . -}}
+{{- if or (kindIs "float64" $q) (kindIs "int64" $q) (kindIs "int" $q) -}}
+{{- printf "%d" (int64 $q) -}}
+{{- else -}}
+{{- $s := toString $q -}}
+{{- if not (regexMatch "^([0-9]+(\\.[0-9]+)?)([eE][+-]?[0-9]+)?([A-Za-z]*)$" $s) -}}{{- fail (printf "unsupported memory quantity %q" $s) -}}{{- end -}}
+{{- $num := regexFind "^[0-9]+(\\.[0-9]+)?" $s -}}
+{{- $rest := trimPrefix $num $s -}}
+{{- $exp := regexFind "^[eE][+-]?[0-9]+" $rest -}}
+{{- $suf := trimPrefix $exp $rest -}}
+{{- $mult := dict "" 1.0 "n" 0.000000001 "u" 0.000001 "m" 0.001 "k" 1000.0 "K" 1000.0 "M" 1000000.0 "G" 1000000000.0 "T" 1000000000000.0 "P" 1000000000000000.0 "E" 1000000000000000000.0 "Ki" 1024.0 "Mi" 1048576.0 "Gi" 1073741824.0 "Ti" 1099511627776.0 "Pi" 1125899906842624.0 "Ei" 1152921504606846976.0 -}}
+{{- if not (hasKey $mult $suf) -}}{{- fail (printf "unsupported memory quantity %q" $s) -}}{{- end -}}
+{{- $v := float64 $num -}}
+{{- if $exp -}}
+{{- $e := trimPrefix "+" (trimPrefix "e" (lower $exp)) | atoi -}}
+{{- $ae := $e -}}{{- if lt $e 0 -}}{{- $ae = mul $e -1 -}}{{- end -}}
+{{- if gt $ae 30 -}}{{- fail (printf "unsupported memory quantity %q" $s) -}}{{- end -}}
+{{- range until $ae -}}{{- if gt $e 0 -}}{{- $v = mulf $v 10.0 -}}{{- else -}}{{- $v = divf $v 10.0 -}}{{- end -}}{{- end -}}
+{{- end -}}
+{{- printf "%d" (int64 (mulf $v (get $mult $suf))) -}}
+{{- end -}}
+{{- end }}
+
+{{/* Env for emailGateway.misdirected.*, emitted only for keys that are set. */}}
+{{- define "mnemoshare.emailGatewayMisdirectedEnv" -}}
+{{- $m := .Values.emailGateway.misdirected | default dict -}}
+{{- $limit := ((.Values.emailGateway.resources | default dict).limits | default dict).memory -}}
+{{- range $pair := list (list "checkTimeoutMs" "MISDIRECTED_CHECK_TIMEOUT_MS") (list "maxHeldBytes" "MISDIRECTED_MAX_HELD_BYTES") (list "syncIntervalSec" "MISDIRECTED_SYNC_INTERVAL_SEC") -}}
+{{- $key := index $pair 0 -}}
+{{- $val := get $m $key -}}
+{{- if and (not (kindIs "invalid" $val)) (ne (printf "%v" $val) "") -}}
+{{- $ok := false -}}
+{{- if or (kindIs "float64" $val) (kindIs "int64" $val) (kindIs "int" $val) -}}
+{{- $f := float64 $val -}}
+{{- if and (ge $f 1.0) (eq $f (floor $f)) (lt $f 9e18) -}}{{- $ok = true -}}{{- end -}}
+{{- else if and (kindIs "string" $val) (regexMatch "^[1-9][0-9]{0,17}$" $val) -}}{{- $ok = true -}}
+{{- end -}}
+{{- if not $ok -}}{{- fail (printf "emailGateway.misdirected.%s must be a positive integer, got %v" $key $val) -}}{{- end -}}
+{{- $n := int64 $val -}}
+{{- if and (eq $key "maxHeldBytes") $limit -}}
+{{- $limitBytes := include "mnemoshare.quantityBytes" $limit | int64 -}}
+{{- if gt (mul $n 2) $limitBytes -}}{{- fail (printf "emailGateway.misdirected.maxHeldBytes (%d) exceeds half of emailGateway.resources.limits.memory (%v); the work queue and DLP parsing share that memory, so raise the limit or lower the cap" $n $limit) -}}{{- end -}}
+{{- end }}
+- name: {{ index $pair 1 }}
+  value: {{ printf "%d" $n | quote }}
+{{- end -}}
+{{- end -}}
+{{- end }}
