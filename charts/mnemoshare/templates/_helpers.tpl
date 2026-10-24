@@ -762,7 +762,7 @@ matchExpressions:
 {{- if not (hasKey $mult $suf) -}}{{- fail (printf "unsupported memory quantity %q" $s) -}}{{- end -}}
 {{- $v := float64 $num -}}
 {{- if $exp -}}
-{{- $e := trimPrefix "+" (trimPrefix "e" (lower $exp)) | int -}}
+{{- $e := trimPrefix "+" (trimPrefix "e" (lower $exp)) | atoi -}}
 {{- $ae := $e -}}{{- if lt $e 0 -}}{{- $ae = mul $e -1 -}}{{- end -}}
 {{- if gt $ae 30 -}}{{- fail (printf "unsupported memory quantity %q" $s) -}}{{- end -}}
 {{- range until $ae -}}{{- if gt $e 0 -}}{{- $v = mulf $v 10.0 -}}{{- else -}}{{- $v = divf $v 10.0 -}}{{- end -}}{{- end -}}
