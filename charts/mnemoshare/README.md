@@ -258,16 +258,28 @@ With the misdirected-email gate in hold mode the outbound gateway keeps held
 messages in memory until the sender confirms or the hold expires.
 `emailGateway.misdirected.maxHeldBytes` (`MISDIRECTED_MAX_HELD_BYTES`) bounds
 the **raw RFC 822 bytes** of those messages only; parsed copies, DLP working
-memory and in-flight messages are not counted. A separate, fixed limit of 1000
-held messages also applies. When either limit is reached, new messages are
-**sent rather than held**, so a low cap trades protection for memory.
+memory, in-flight messages and the work queue are not counted. A separate,
+fixed limit of 1000 held messages also applies. When either limit is reached,
+new messages are **sent rather than held**, so a low cap trades protection for
+memory.
 
-The gateway container defaults to a 512Mi limit and also buffers every message
-in flight (up to 25 MiB times `workerCount`, 100 MiB at the default of 4), and
-DLP parsing expands attachments. The application default of 64 MiB (an eighth
-of 512Mi) leaves that headroom, so the chart leaves the variable unset. The
-chart refuses to render a cap above half of `emailGateway.resources.limits.memory`
-and any non-positive value (the application silently ignores those):
+The cap is only one consumer of the container's memory (512Mi by default). In
+gateway mode every accepted message is queued in memory as raw bytes until a
+worker takes it; that queue is bounded by message count
+(`emailGateway.queueSize`, default 1000), not bytes, so it can hold far more
+than the limit if senders submit large messages faster than the workers drain
+them. Each worker also buffers its message (up to 25 MiB times `workerCount`,
+100 MiB at the default of 4), and DLP parsing expands attachments. Size
+`queueSize`, `workerCount` and the memory limit together; do not read the held
+cap as the gateway's memory budget. The application default of 64 MiB (an
+eighth of 512Mi) leaves headroom for the workers, so the chart leaves the
+variable unset.
+
+The chart refuses to render a cap above half of
+`emailGateway.resources.limits.memory`. That check is skipped when the limit is
+unset (no limit, no ceiling to compare against). It also refuses anything that
+is not a positive integer (a whole number of at least 1, or a decimal string
+without leading zeros), which the application would otherwise silently ignore:
 
 ```yaml
 emailGateway:
