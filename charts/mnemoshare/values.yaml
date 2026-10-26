@@ -452,6 +452,13 @@ diskBuffer:
     existingClaim:
       claimName: ""
 
+# Proxies whose X-Forwarded-* headers the application trusts (comma-separated
+# CIDRs or a list). Empty trusts no proxy: the TCP peer is the client. Behind an
+# ingress or load balancer, set the range its pods/nodes connect from; never a
+# catch-all (0.0.0.0/0, ::/0, or all of RFC1918).
+network:
+  trustedProxyCIDRs: ""
+
 # CORS settings
 cors:
   allowedOrigins: ""  # Comma-separated list, e.g., "https://example.com,https://app.example.com"

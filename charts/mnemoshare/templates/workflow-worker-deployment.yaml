@@ -55,6 +55,7 @@ spec:
         command:
           {{- toYaml (.Values.workflowWorker.command | default (list "/usr/local/bin/workflow-worker")) | nindent 10 }}
         env:
+        {{- include "mnemoshare.trustedProxyEnv" . | nindent 8 }}
         # 8081 is the KeyGuard sidecar's port in the same pod network namespace.
         - name: HEALTH_ADDR
           value: ":8082"
