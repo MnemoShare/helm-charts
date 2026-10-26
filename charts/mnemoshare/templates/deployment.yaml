@@ -68,6 +68,7 @@ spec:
           protocol: TCP
         {{- end }}
         env:
+        {{- include "mnemoshare.trustedProxyEnv" (dict "root" . "extraEnv" .Values.extraEnv) | nindent 8 }}
         {{- include "mnemoshare.vault.k8sTokenEnv" . | nindent 8 }}
         # Tenant Identity — required for dispatch keyspace isolation (MNI-26 onwards).
         # cmd/api fatals at boot if CUSTOMER_ID is empty when a dispatch backend that

@@ -302,6 +302,10 @@ upgrade to this chart before uninstalling.
 
 See [values.yaml](./values.yaml) for all configuration options.
 
+### Trusted proxies
+
+`network.trustedProxyCIDRs` (comma-separated CIDRs or a list) sets `TRUSTED_PROXY_CIDRS` on the api and mcp pods, the processes that read `X-Forwarded-For`. It is empty by default, which trusts no proxy: `X-Forwarded-For` is ignored and the TCP peer is the client. Behind an ingress controller or load balancer, set it to the range those pods connect from, or every client is recorded as the proxy and sessions bind to it. Never use a catch-all (`0.0.0.0/0`, `::/0`, or all of RFC1918). A `TRUSTED_PROXY_CIDRS` entry in `extraEnv` takes precedence and is not rendered twice.
+
 ## Advanced Configuration
 
 ### Using Existing Secrets
