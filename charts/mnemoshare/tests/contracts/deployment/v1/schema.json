@@ -485,6 +485,32 @@
               "const": true
             }
           }
+        },
+        "posture": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rule",
+            "risk"
+          ],
+          "properties": {
+            "rule": {
+              "$ref": "#/$defs/nonempty"
+            },
+            "risk": {
+              "$ref": "#/$defs/nonempty"
+            },
+            "default": {
+              "type": "string"
+            },
+            "exception": {
+              "type": "string",
+              "pattern": "^[A-Z]+-[0-9]+$"
+            },
+            "regulated": {
+              "const": true
+            }
+          }
         }
       }
     }
