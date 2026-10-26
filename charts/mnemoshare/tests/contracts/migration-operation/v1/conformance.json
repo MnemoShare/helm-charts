@@ -17,9 +17,9 @@
   ],
   "deploymentContractBytes": {
     "v1/README.md": "405f2d8e9902a40b6aee973f47c6869bba7cec9331b315c5d993b5d6c69f3288",
-    "v1/SHA256SUMS": "8abe5c24c8b6502fc896ec04bd3dfad17757558880ae35be689c51fcc1720d88",
+    "v1/SHA256SUMS": "a24daf427212a6c390c4d5a76232cf4c850ab34811d9c211a2414e56fa6dbb4a",
     "v1/conformance.json": "f5d7fb3ee63b106b111c382bebc3c02c3e434b89ccd02b6e33072a3638dabf26",
-    "v1/contract.json": "fc75b91ed341dbdb4f7f545fc33f6fb04eae8af9d05fcd0c87a46354745e96d0",
+    "v1/contract.json": "72ad5e2143c72ba8f5472287d938f1e79330a461c3896950a6284de0b6091a05",
     "v1/schema.json": "f1ee2dee6f4521afd71e2457b1ef287dc5931d4c1a360dff084e8f489b2f3ea5"
   },
   "lifecycle": [
