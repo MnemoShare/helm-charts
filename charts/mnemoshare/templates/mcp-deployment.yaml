@@ -79,7 +79,7 @@ spec:
           containerPort: {{ $process.probe.port }}
           protocol: TCP
         env:
-        {{- include "mnemoshare.trustedProxyEnv" . | nindent 8 }}
+        {{- include "mnemoshare.trustedProxyEnv" (dict "root" . "extraEnv" (list)) | nindent 8 }}
         {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
         {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         # MCP API Key - Required for authentication

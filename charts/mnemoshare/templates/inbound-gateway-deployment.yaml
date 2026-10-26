@@ -54,7 +54,6 @@ spec:
           containerPort: 10070
           protocol: TCP
         env:
-        {{- include "mnemoshare.trustedProxyEnv" . | nindent 8 }}
         {{- include "mnemoshare.licenseEnv" . | nindent 8 }}
         {{- include "mnemoshare.productionEnvironment" . | nindent 8 }}
         {{- include "mnemoshare.dataPlaneKMSEnv" . | nindent 8 }}

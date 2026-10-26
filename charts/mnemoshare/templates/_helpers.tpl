@@ -1070,13 +1070,16 @@ matchExpressions:
 {{- end }}
 
 {{/*
-TRUSTED_PROXY_CIDRS for every process that reads X-Forwarded-For. Empty trusts
-no proxy; set network.trustedProxyCIDRs to the ingress/load-balancer range.
+TRUSTED_PROXY_CIDRS for the processes that read X-Forwarded-For (api, mcp-admin).
+Empty trusts no proxy. An entry with the same name in extraEnv wins; it is not
+rendered twice.
 */}}
 {{- define "mnemoshare.trustedProxyEnv" -}}
-{{- $cidrs := .Values.network.trustedProxyCIDRs -}}
+{{- $cidrs := .root.Values.network.trustedProxyCIDRs -}}
 {{- if kindIs "slice" $cidrs }}{{ $cidrs = join "," $cidrs }}{{ end -}}
-{{- if $cidrs }}
+{{- $overridden := false -}}
+{{- range .extraEnv }}{{ if eq .name "TRUSTED_PROXY_CIDRS" }}{{ $overridden = true }}{{ end }}{{ end -}}
+{{- if and $cidrs (not $overridden) }}
 - name: TRUSTED_PROXY_CIDRS
   value: {{ $cidrs | quote }}
 {{- end }}
