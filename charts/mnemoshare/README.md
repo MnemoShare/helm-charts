@@ -149,6 +149,10 @@ helm install mnemoshare mnemoshare/mnemoshare \
 
 See [values.yaml](./values.yaml) for all configuration options.
 
+### Trusted proxies
+
+`network.trustedProxyCIDRs` (comma-separated CIDRs or a list) sets `TRUSTED_PROXY_CIDRS` on the api and mcp pods, the processes that read `X-Forwarded-For`. It is empty by default, which leaves the application default (loopback and private ranges); `none` trusts no proxy. Set it to the range your ingress controller or load balancer connects from, never a catch-all (`0.0.0.0/0`, `::/0`, or all of RFC1918). A `TRUSTED_PROXY_CIDRS` entry in `extraEnv` takes precedence and is not rendered twice. A future application release (v0.22.0) will make an unset value trust no proxy.
+
 ## Advanced Configuration
 
 ### Using Existing Secrets
