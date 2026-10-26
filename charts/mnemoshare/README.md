@@ -149,6 +149,10 @@ helm install mnemoshare mnemoshare/mnemoshare \
 
 See [values.yaml](./values.yaml) for all configuration options.
 
+### Trusted proxies
+
+`network.trustedProxyCIDRs` (comma-separated CIDRs or a list) sets `TRUSTED_PROXY_CIDRS` on the api, mcp, inbound-gateway and workflow-worker pods. It is empty by default, which trusts no proxy: `X-Forwarded-For` is ignored and the TCP peer is the client. Behind an ingress controller or load balancer, set it to the range those pods connect from, or every client is recorded as the proxy and sessions bind to it. Never use a catch-all (`0.0.0.0/0`, `::/0`, or all of RFC1918).
+
 ## Advanced Configuration
 
 ### Using Existing Secrets

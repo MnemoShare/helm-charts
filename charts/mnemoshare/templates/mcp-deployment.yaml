@@ -79,6 +79,7 @@ spec:
           protocol: TCP
         {{- end }}
         env:
+        {{- include "mnemoshare.trustedProxyEnv" . | nindent 8 }}
         # MCP API Key - Required for authentication
         - name: MNEMOSHARE_MCP_KEY
           valueFrom:

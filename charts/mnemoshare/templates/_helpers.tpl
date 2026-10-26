@@ -796,3 +796,16 @@ matchExpressions:
 {{- end -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+TRUSTED_PROXY_CIDRS for every process that reads X-Forwarded-For. Empty trusts
+no proxy; set network.trustedProxyCIDRs to the ingress/load-balancer range.
+*/}}
+{{- define "mnemoshare.trustedProxyEnv" -}}
+{{- $cidrs := .Values.network.trustedProxyCIDRs -}}
+{{- if kindIs "slice" $cidrs }}{{ $cidrs = join "," $cidrs }}{{ end -}}
+{{- if $cidrs }}
+- name: TRUSTED_PROXY_CIDRS
+  value: {{ $cidrs | quote }}
+{{- end }}
+{{- end }}
