@@ -48,6 +48,8 @@ spec:
           containerPort: 8081
           protocol: TCP
         env:
+        - name: ENVIRONMENT
+          value: {{ .Values.environment | default "production" | quote }}
         - name: GATEWAY_MODE
           value: {{ .Values.emailGateway.mode | quote }}
         {{- if $tlsSecret }}
@@ -197,6 +199,12 @@ spec:
           value: {{ .Values.emailGateway.relay.rateLimit | quote }}
         - name: RELAY_RATE_BURST
           value: {{ .Values.emailGateway.relay.rateBurst | quote }}
+        {{- if or .Values.emailGateway.relay.db.uri .Values.emailGateway.relay.db.existingSecret }}
+        # Relay tokens live in the relay DB, so the AUTH requirement is only
+        # rendered when one is configured (the gateway refuses to start otherwise).
+        - name: RELAY_SMTP_AUTH_REQUIRED
+          value: {{ .Values.emailGateway.relay.smtpAuthRequired | quote }}
+        {{- end }}
         {{- if .Values.emailGateway.relay.dnsServers }}
         - name: DNS_SERVERS
           value: {{ .Values.emailGateway.relay.dnsServers | quote }}

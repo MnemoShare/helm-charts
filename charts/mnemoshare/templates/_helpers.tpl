@@ -212,6 +212,8 @@ Values consumed (all optional — only emitted when set):
   - .Values.kms.envelopeEnabled
 */}}
 {{- define "mnemoshare.integrationEnv" -}}
+- name: ENVIRONMENT
+  value: {{ .Values.environment | default "production" | quote }}
 {{- with .Values.richMedia -}}
 {{- if .url }}
 - name: RICH_MEDIA_URL
