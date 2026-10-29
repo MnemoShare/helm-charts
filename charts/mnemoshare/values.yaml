@@ -383,14 +383,22 @@ diskBuffer:
 network:
   trustedProxyCIDRs: ""
 
-# CORS settings
+# ENVIRONMENT for every MnemoShare process. "production" keeps the
+# production-only guards on (a required mTLS listener that cannot start is
+# fatal; the platform SMTP transport refuses TLS mode "none" to a non-local
+# relay; Vault transit refuses insecure HTTP). Set "development" to relax.
+environment: production
+
+# CORS settings (rendered as CORS_ORIGINS)
 cors:
   allowedOrigins: ""  # Comma-separated list, e.g., "https://example.com,https://app.example.com"
 
-# Rate limiting
+# Rate limiting (rendered as SECURITY_RATE_LIMIT_*; the api window is a fixed 60 s)
 rateLimit:
-  requests: 100
-  window: "1m"
+  requests: 100   # general limit per minute per client IP and path (SECURITY_RATE_LIMIT_GENERAL)
+  auth: 0         # sign-in endpoints per minute; 0 = app default (5)
+  mfa: 0          # MFA verification per minute; 0 = app default (3)
+  window: "1m"    # deprecated: ignored, the window is always 60 s
 
 # Startup probe (MNS-1033).
 #
@@ -616,8 +624,9 @@ clamav:
     # When true, the api and worker refuse uploads/scans if ICAP is
     # unreachable (fail-closed for compliance — HIPAA/HITRUST tenants
     # typically want this). Default false = fail-open (continue without
-    # AV scan if the ICAP endpoint is down). Sets DEFAULT_ICAP_REQUIRED
-    # env var on the api Deployment and workflow-worker.
+    # AV scan if the ICAP endpoint is down). Rendered as ICAP_REQUIRED
+    # ("true" or "false") on the api Deployment, ICES and workflow-worker;
+    # the app defaults to true when the variable is absent.
     required: false
 
   # Node selector for ClamAV pods
@@ -1644,6 +1653,9 @@ emailGateway:
     rateLimit: 10
     # Burst size
     rateBurst: 20
+    # Require SMTP AUTH on the relay listener (RELAY_SMTP_AUTH_REQUIRED). Rendered
+    # only when relay.db is configured, because the relay tokens live there.
+    smtpAuthRequired: true
     # Custom DNS servers for MX lookups (comma-separated). Empty = node defaults.
     dnsServers: ""
     # Spool directory (PVC mount path — must be writable)

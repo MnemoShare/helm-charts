@@ -81,6 +81,8 @@ spec:
         env:
         {{- include "mnemoshare.trustedProxyEnv" (dict "root" . "extraEnv" (list)) | nindent 8 }}
         # MCP API Key - Required for authentication
+        - name: ENVIRONMENT
+          value: {{ .Values.environment | default "production" | quote }}
         - name: MNEMOSHARE_MCP_KEY
           valueFrom:
             secretKeyRef:
