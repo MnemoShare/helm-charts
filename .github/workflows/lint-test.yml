@@ -266,6 +266,7 @@ jobs:
           digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           helm template profiled charts/mnemoshare \
             --set customerId=ci-test \
+            --set network.trustedProxyCIDRs=none \
             --set image.digest="$digest" \
             --set deploymentContract.sourceCommit="$deployment_commit" \
             --set deploymentContract.contractFingerprint="$deployment_fingerprint" \
@@ -280,6 +281,7 @@ jobs:
           # also plans, applies and verifies that universe.
           helm template relay charts/mnemoshare \
             --set customerId=ci-test \
+            --set network.trustedProxyCIDRs=none \
             --set image.digest="$digest" \
             --set deploymentContract.sourceCommit="$deployment_commit" \
             --set deploymentContract.contractFingerprint="$deployment_fingerprint" \
@@ -300,6 +302,7 @@ jobs:
           # may coexist with an externally supplied target image.
           helm template operation charts/mnemoshare \
             --set customerId=ci-test \
+            --set network.trustedProxyCIDRs=none \
             --set formatMigrations.mode=automatic \
             --set image.digest="$digest" \
             --set migrationOperation.enabled=true \
@@ -497,6 +500,97 @@ jobs:
           assert_required_fails "keyguard.roleArn" "roleArn" --set keyguard.roleArn=
           assert_required_fails "keyguard.cert.issuerName" "issuerName" --set keyguard.cert.issuerName=
           assert_required_fails "keyguard.sidecar.image.tag" "tag" --set keyguard.sidecar.image.tag=
+
+      - name: Validate trusted-proxy CIDR guard
+        if: github.event_name == 'pull_request'
+        run: |
+          # Ingress left enabled on purpose: the guard only fires when a
+          # proxy fronts the api or mcp pods.
+          BASE_VALUES=(
+            --set customerId=ci-test
+            --set formatMigrations.mode=disabled
+            --set mongodb.external.enabled=true
+            --set mongodb.external.uri=mongodb://test:test@localhost:27017/test
+            --set s3.bucket=test-bucket
+            --set s3.accessKey=test-key
+            --set s3.secretKey=test-secret
+            --set-string jwt.ecPrivateKey=test-ec-key
+            --set encryption.key=test-encryption-key-exactly-32by
+            --set license.key=test-license-key
+            --set appUrl=https://test.example.com
+            --set ingress.enabled=true
+          )
+          tpl() { helm template mnemoshare charts/mnemoshare "${BASE_VALUES[@]}" "$@"; }
+          # Counts TRUSTED_PROXY_CIDRS env entries in one workload's container.
+          count_in() {
+            awk -v sect="$2" '
+              /^# Source: / { active = ($0 ~ sect); next }
+              active && /- name: TRUSTED_PROXY_CIDRS$/ { n++ }
+              END { print n + 0 }' <<<"$1"
+          }
+          expect_count() {
+            local label=$1 got=$2 want=$3
+            if [ "$got" != "$want" ]; then
+              echo "✗ ${label}: expected ${want} TRUSTED_PROXY_CIDRS entries, got ${got}"
+              exit 1
+            fi
+            echo "✓ ${label}"
+          }
+
+          # (a) ingress on, no value: refused with the explanatory message.
+          set +e
+          OUT=$(tpl 2>&1)
+          STATUS=$?
+          set -e
+          if [ $STATUS -eq 0 ]; then
+            echo "✗ ingress without network.trustedProxyCIDRs rendered but should have failed"
+            exit 1
+          fi
+          if ! echo "$OUT" | grep -q "network.trustedProxyCIDRs is required"; then
+            echo "✗ failure didn't mention network.trustedProxyCIDRs is required. Got:"
+            echo "$OUT"
+            exit 1
+          fi
+          echo "✓ ingress without network.trustedProxyCIDRs fails fast"
+
+          # (b) value set: api and mcp each carry it exactly once.
+          OUT=$(tpl --set network.trustedProxyCIDRs=10.244.0.0/16 \
+            --set mcp.enabled=true --set mcp.apiKey.key=x)
+          expect_count "api carries TRUSTED_PROXY_CIDRS" "$(count_in "$OUT" 'templates/deployment.yaml')" 1
+          expect_count "mcp carries TRUSTED_PROXY_CIDRS" "$(count_in "$OUT" 'templates/mcp-deployment.yaml')" 1
+          if [ "$(echo "$OUT" | grep -c 'value: "10.244.0.0/16"')" -lt 2 ]; then
+            echo "✗ TRUSTED_PROXY_CIDRS value 10.244.0.0/16 not rendered on both pods"
+            exit 1
+          fi
+
+          # (c) "none" is the explicit opt-out and renders as the literal value.
+          OUT=$(tpl --set network.trustedProxyCIDRs=none)
+          expect_count "none renders on api" "$(count_in "$OUT" 'templates/deployment.yaml')" 1
+          if ! echo "$OUT" | grep -q 'value: "none"'; then
+            echo "✗ network.trustedProxyCIDRs=none did not render value \"none\""
+            exit 1
+          fi
+
+          # (d) api extraEnv override: one entry on the api, no duplicate, no value needed.
+          OUT=$(tpl --set 'extraEnv[0].name=TRUSTED_PROXY_CIDRS' --set 'extraEnv[0].value=192.0.2.0/24')
+          expect_count "extraEnv override is not duplicated" "$(count_in "$OUT" 'templates/deployment.yaml')" 1
+          if ! echo "$OUT" | grep -q 'value: 192.0.2.0/24\|value: "192.0.2.0/24"'; then
+            echo "✗ extraEnv TRUSTED_PROXY_CIDRS value missing from api"
+            exit 1
+          fi
+
+          # An api-only override does not satisfy the mcp pod.
+          set +e
+          OUT=$(tpl --set 'extraEnv[0].name=TRUSTED_PROXY_CIDRS' --set 'extraEnv[0].value=192.0.2.0/24' \
+            --set mcp.enabled=true --set mcp.apiKey.key=x 2>&1)
+          STATUS=$?
+          set -e
+          if [ $STATUS -eq 0 ] || ! echo "$OUT" | grep -q "does not satisfy the mcp pod"; then
+            echo "✗ api-only extraEnv override must not satisfy the mcp pod. Got:"
+            echo "$OUT"
+            exit 1
+          fi
+          echo "✓ api-only extraEnv override does not satisfy mcp"
 
       - name: Validate 1.21.0 chart-unification paths
         if: github.event_name == 'pull_request'
