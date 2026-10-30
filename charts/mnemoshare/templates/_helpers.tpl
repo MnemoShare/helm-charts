@@ -801,14 +801,19 @@ matchExpressions:
 
 {{/*
 TRUSTED_PROXY_CIDRS for the processes that read X-Forwarded-For (api, mcp-admin).
-Empty leaves the application default. An entry with the same name in extraEnv
-wins; it is not rendered twice.
+Required whenever an Ingress fronts the api or mcp pods: the application default
+trusts every private-range peer, so a client on the cluster network could forge
+its IP. An entry with the same name in extraEnv wins; it is not rendered twice.
 */}}
 {{- define "mnemoshare.trustedProxyEnv" -}}
 {{- $cidrs := .root.Values.network.trustedProxyCIDRs -}}
 {{- if kindIs "slice" $cidrs }}{{ $cidrs = join "," $cidrs }}{{ end -}}
 {{- $overridden := false -}}
 {{- range .extraEnv }}{{ if eq .name "TRUSTED_PROXY_CIDRS" }}{{ $overridden = true }}{{ end }}{{ end -}}
+{{- $fronted := or .root.Values.ingress.enabled (and .root.Values.mcp.enabled .root.Values.mcp.ingress.enabled) -}}
+{{- if and $fronted (not $cidrs) (not $overridden) -}}
+{{- fail "network.trustedProxyCIDRs is required when an Ingress is enabled: set it to the range your ingress controller or load balancer connects from (for example the cluster pod CIDR), or \"none\" when clients reach the api Service directly. Never a catch-all (0.0.0.0/0, ::/0, all of RFC1918)." -}}
+{{- end -}}
 {{- if and $cidrs (not $overridden) }}
 - name: TRUSTED_PROXY_CIDRS
   value: {{ $cidrs | quote }}

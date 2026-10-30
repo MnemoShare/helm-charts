@@ -376,9 +376,12 @@ diskBuffer:
       claimName: ""
 
 # Proxies whose X-Forwarded-* headers the application trusts (comma-separated
-# CIDRs or a list). Empty leaves the application default (loopback and private
-# ranges until v0.22.0, MSC-730); "none" trusts no proxy. Behind an ingress or
-# load balancer, set the range its pods/nodes connect from; never a catch-all
+# CIDRs or a list). REQUIRED when ingress.enabled (or mcp.ingress.enabled) is
+# true: the chart refuses to render without it, because the application default
+# (loopback and private ranges until v0.22.0) lets any client on the cluster
+# network forge its IP. Set the range the ingress controller or load balancer
+# connects from (usually the cluster pod CIDR); "none" trusts no proxy and is
+# right when clients reach the api Service directly. Never a catch-all
 # (0.0.0.0/0, ::/0, or all of RFC1918).
 network:
   trustedProxyCIDRs: ""
