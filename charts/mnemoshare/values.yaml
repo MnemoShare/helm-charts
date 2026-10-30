@@ -453,9 +453,13 @@ diskBuffer:
       claimName: ""
 
 # Proxies whose X-Forwarded-* headers the application trusts (comma-separated
-# CIDRs or a list). Empty trusts no proxy: the TCP peer is the client. Behind an
-# ingress or load balancer, set the range its pods/nodes connect from; never a
-# catch-all (0.0.0.0/0, ::/0, or all of RFC1918).
+# CIDRs or a list). REQUIRED when ingress.enabled (or mcp.ingress.enabled) is
+# true: the chart refuses to render without it. Empty trusts no proxy: the TCP
+# peer is the client, so behind an ingress every user would be recorded as the
+# ingress address. Set the range the ingress controller or load balancer
+# connects from (usually the cluster pod CIDR); "none" is right only when
+# clients reach the api Service directly. Never a catch-all (0.0.0.0/0, ::/0,
+# or all of RFC1918).
 network:
   trustedProxyCIDRs: ""
 
