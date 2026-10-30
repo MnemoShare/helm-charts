@@ -20,6 +20,7 @@ relay_profile=(
 base=(
   --set customerId=ci-test
   --set formatMigrations.mode=operator
+  --set network.trustedProxyCIDRs=none
   --set image.digest="$target"
   --set migrationOperation.enabled=true
   --set migrationOperation.contractFingerprint="$fingerprint"

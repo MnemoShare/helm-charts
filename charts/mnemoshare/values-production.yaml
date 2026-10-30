@@ -82,6 +82,10 @@ ingress:
       hosts:
         - mnemoshare.yourdomain.com
 
+# REQUIRED behind an Ingress; rendering fails until set. Uncomment and edit.
+# network:
+#   trustedProxyCIDRs: ""  # your cluster pod CIDR (e.g. 10.244.0.0/16 kubeadm, 10.42.0.0/16 k3s); "none" only when clients reach the api Service directly
+
 # Resources - Adjust based on load
 resources:
   requests:

@@ -6,7 +6,7 @@ contract_dir=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v1
 upstream=$(sed -n 's/^commit=//p' "${contract_dir}/UPSTREAM")
 fingerprint=$(jq -er .fingerprint "${contract_dir}/contract.json")
 digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-identity=(--set "deploymentContract.sourceCommit=${upstream}" --set "deploymentContract.contractFingerprint=${fingerprint}" --set "deploymentContract.imageDigest=${digest}" --set "image.digest=${digest}")
+identity=(--set "deploymentContract.sourceCommit=${upstream}" --set "deploymentContract.contractFingerprint=${fingerprint}" --set "deploymentContract.imageDigest=${digest}" --set "image.digest=${digest}" --set network.trustedProxyCIDRs=none)
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
 test "$(sed -n 's/^commit=//p' "${contract_dir}/UPSTREAM")" = "$upstream"
 test "$(sed -n 's/^path=//p' "${contract_dir}/UPSTREAM")" = contracts/deployment/v1
@@ -72,7 +72,7 @@ expect_failure 'deploymentContract.contractFingerprint=deadbeef' 'deploymentCont
 expect_failure 'image.digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'deploymentContract.imageDigest must equal the application image digest selected for this operation'
 
 # Contract identity is chart-wide, not conditional on an optional workload.
-if output=$(helm template bad-default "$chart_dir" --set customerId=test --set deploymentContract.sourceCommit=deadbeef 2>&1); then
+if output=$(helm template bad-default "$chart_dir" --set customerId=test --set network.trustedProxyCIDRs=none --set deploymentContract.sourceCommit=deadbeef 2>&1); then
   echo 'default workload rendered with a foreign deployment contract identity' >&2; exit 1
 fi
 grep -Fq 'deploymentContract.sourceCommit must equal vendored application commit' <<<"$output"
@@ -262,5 +262,5 @@ expect_layout_failure 'requires workflowWorker.metrics.enabled=true' "${worker[@
 
 if output=$(helm template missing "$chart_dir" --set customerId=test "${identity[@]}" --set mcp.enabled=true 2>&1); then echo 'MCP rendered without API key binding' >&2; exit 1; fi
 grep -Fq 'mcp.enabled requires mcp.apiKey.existingSecret or mcp.apiKey.key' <<<"$output"
-derived=$(helm template derived "$chart_dir" --set customerId=test --set mcp.enabled=true --set mcp.apiKey.key=x)
+derived=$(helm template derived "$chart_dir" --set customerId=test --set network.trustedProxyCIDRs=none --set mcp.enabled=true --set mcp.apiKey.key=x)
 grep -Eq 'image: "mnemoshare/mnemoshare@sha256:[a-f0-9]{64}"' <<<"$derived"

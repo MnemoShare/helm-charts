@@ -87,6 +87,7 @@ base=(
   --set deploymentContract.contractFingerprint="$expected_fingerprint"
   --set deploymentContract.imageDigest="$digest"
   --set emailGateway.enabled=true
+  --set network.trustedProxyCIDRs=none
 )
 
 render_profile() {

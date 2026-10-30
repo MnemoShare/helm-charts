@@ -1083,7 +1083,7 @@ extraEnv wins; it is not rendered twice.
 {{- range .extraEnv }}{{ if eq .name "TRUSTED_PROXY_CIDRS" }}{{ $overridden = true }}{{ end }}{{ end -}}
 {{- $fronted := or .root.Values.ingress.enabled (and .root.Values.mcp.enabled .root.Values.mcp.ingress.enabled) -}}
 {{- if and $fronted (not $cidrs) (not $overridden) -}}
-{{- fail "network.trustedProxyCIDRs is required when an Ingress is enabled: set it to the range your ingress controller or load balancer connects from (for example the cluster pod CIDR), or \"none\" when clients reach the api Service directly. Never a catch-all (0.0.0.0/0, ::/0, all of RFC1918)." -}}
+{{- fail "network.trustedProxyCIDRs is required when an Ingress is enabled: set it to the range your ingress controller or load balancer connects from (for example the cluster pod CIDR), or \"none\" when clients reach the api Service directly. Never a catch-all (0.0.0.0/0, ::/0, all of RFC1918). An extraEnv entry on the api does not satisfy the mcp pod; set network.trustedProxyCIDRs." -}}
 {{- end -}}
 {{- if and $cidrs (not $overridden) }}
 - name: TRUSTED_PROXY_CIDRS
