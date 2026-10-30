@@ -151,7 +151,7 @@ See [values.yaml](./values.yaml) for all configuration options.
 
 ### Trusted proxies
 
-`network.trustedProxyCIDRs` (comma-separated CIDRs or a list) sets `TRUSTED_PROXY_CIDRS` on the api and mcp pods, the processes that read `X-Forwarded-For`. It is empty by default, which leaves the application default (loopback and private ranges); `none` trusts no proxy. Set it to the range your ingress controller or load balancer connects from, never a catch-all (`0.0.0.0/0`, `::/0`, or all of RFC1918). A `TRUSTED_PROXY_CIDRS` entry in `extraEnv` takes precedence and is not rendered twice. A future application release (v0.22.0) will make an unset value trust no proxy.
+`network.trustedProxyCIDRs` (comma-separated CIDRs or a list) sets `TRUSTED_PROXY_CIDRS` on the api and mcp pods, the processes that read `X-Forwarded-For`. **It is required whenever `ingress.enabled` or `mcp.ingress.enabled` is true**: the chart fails to render without it (since chart 1.31.0), because the application default (loopback and private ranges) lets any client on the cluster network forge its IP, and network access policies, rate limits and session binding all key on that IP. Set it to the range your ingress controller or load balancer connects from (usually the cluster pod CIDR, for example `10.244.0.0/16` on kubeadm or `10.42.0.0/16` on k3s), never a catch-all (`0.0.0.0/0`, `::/0`, or all of RFC1918). `none` trusts no proxy and is correct only when clients reach the api Service directly. A `TRUSTED_PROXY_CIDRS` entry in `extraEnv` takes precedence and is not rendered twice. Application v0.22.0 makes an unset value trust no proxy.
 
 ## Advanced Configuration
 
