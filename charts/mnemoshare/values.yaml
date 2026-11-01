@@ -2144,13 +2144,8 @@ mcp:
     digest: ""  # Automatic mode defaults to and must equal image.digest.
     pullPolicy: IfNotPresent
 
-  # Compatibility view of the now-fixed Kubernetes transport. Noncanonical
-  # retained values fail with an explicit migration error.
+  # The MCP server only serves HTTP; mcp.transport.type is deprecated.
   transport:
-    # Fixed by deployment contract v1.
-    type: "http"
-
-    # HTTP transport settings (when transport.type = "http")
     http:
       # Fixed internal port.
       containerPort: 9222
