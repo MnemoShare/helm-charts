@@ -212,7 +212,7 @@ would have supervised beside the API has another resident host.
 {{- define "mnemoshare.validateMCPContract" -}}
 {{- include "mnemoshare.requireDeploymentContractIdentity" . -}}
 {{- include "mnemoshare.requireUnifiedComponentImage" (dict "root" . "component" .Values.mcp.image "name" "mcp") -}}
-{{- if ne .Values.mcp.transport.type "http" -}}{{- fail "mcp.transport.type is fixed to http by deployment contract v1; stdio Kubernetes deployments are no longer supported" -}}{{- end -}}
+{{- if and (hasKey .Values.mcp.transport "type") (ne (toString .Values.mcp.transport.type) "http") -}}{{- fail "mcp.transport.type is deprecated; the MCP server only serves HTTP" -}}{{- end -}}
 {{- if ne (int .Values.mcp.transport.http.containerPort) 9222 -}}{{- fail "mcp.transport.http.containerPort is fixed to 9222 by deployment contract v1; vary only mcp.service.port" -}}{{- end -}}
 {{- if and (hasKey .Values.mcp.transport.http "port") (ne (int .Values.mcp.transport.http.port) (int .Values.mcp.service.port)) -}}{{- fail "mcp.transport.http.port is retired; keep it equal to mcp.service.port while migrating values" -}}{{- end -}}
 {{- if ne .Values.mcp.logging.level "info" -}}{{- fail "mcp.logging.level is fixed to info by deployment contract v1" -}}{{- end -}}

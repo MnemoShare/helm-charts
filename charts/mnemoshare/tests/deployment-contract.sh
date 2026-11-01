@@ -59,7 +59,7 @@ expect_failure() {
   fi
   grep -Fq "$expected" <<<"$output" || { echo "override $override lacked migration error: $expected" >&2; exit 1; }
 }
-expect_failure 'mcp.transport.type=stdio' 'mcp.transport.type is fixed to http'
+expect_failure 'mcp.transport.type=grpc' 'mcp.transport.type is deprecated; the MCP server only serves HTTP'
 expect_failure 'mcp.transport.http.containerPort=9999' 'mcp.transport.http.containerPort is fixed to 9222'
 expect_failure 'mcp.logging.level=debug' 'mcp.logging.level is fixed to info'
 expect_failure 'mcp.logging.format=console' 'mcp.logging.format is fixed to json'

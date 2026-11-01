@@ -466,7 +466,6 @@ inboundGateway:
 ```yaml
 mcp:
   enabled: true
-  transport: "http"        # "http" for remote access, "stdio" for local
   service:
     port: 9222
   ingress:
