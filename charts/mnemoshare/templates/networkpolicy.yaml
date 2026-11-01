@@ -269,7 +269,7 @@ spec:
     - Ingress
     - Egress
   ingress:
-    {{- if and (eq .Values.mcp.transport.type "http") .Values.mcp.ingress.enabled }}
+    {{- if .Values.mcp.ingress.enabled }}
     # Allow traffic from ingress controller (for external MCP access)
     - from:
         - namespaceSelector:

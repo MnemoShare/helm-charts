@@ -66,18 +66,14 @@ spec:
         # install with `mcp.enabled=true`.
         command: ["/usr/local/bin/mcp-admin"]
         args:
-          - "--transport={{ .Values.mcp.transport.type }}"
-          {{- if eq .Values.mcp.transport.type "http" }}
+          - "--transport=http"
           - "--http-addr=:{{ .Values.mcp.transport.http.containerPort }}"
-          {{- end }}
           - "--log-level={{ .Values.mcp.logging.level }}"
           - "--log-format={{ .Values.mcp.logging.format }}"
-        {{- if eq .Values.mcp.transport.type "http" }}
         ports:
         - name: http
           containerPort: {{ .Values.mcp.transport.http.containerPort }}
           protocol: TCP
-        {{- end }}
         env:
         {{- include "mnemoshare.trustedProxyEnv" (dict "root" . "extraEnv" (list)) | nindent 8 }}
         # MCP API Key - Required for authentication
@@ -119,7 +115,6 @@ spec:
         - name: MNEMOSHARE_APP_URL
           value: {{ .Values.appUrl | quote }}
         {{- end }}
-        {{- if eq .Values.mcp.transport.type "http" }}
         livenessProbe:
           httpGet:
             path: /health
@@ -136,7 +131,6 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
-        {{- end }}
         resources:
           {{- toYaml .Values.mcp.resources | nindent 12 }}
         volumeMounts:

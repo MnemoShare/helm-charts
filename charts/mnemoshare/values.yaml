@@ -2030,12 +2030,6 @@ mcp:
 
   # Transport configuration
   transport:
-    # Transport type: "stdio" or "http"
-    # - stdio: For direct Claude Code integration via kubectl exec
-    # - http: For HTTP-based MCP clients
-    type: "http"
-
-    # HTTP transport settings (when transport.type = "http")
     http:
       # Port for HTTP transport
       port: 9222
