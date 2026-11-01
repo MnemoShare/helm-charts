@@ -45,6 +45,8 @@ grep -Fq "email-gateway) printf '%s=%s" <<<"$migration_render"
 grep -Fq 'sftp-gateway|mcp) ;; # legacy v1.25.11 state' <<<"$migration_render"
 grep -Fq 'mv /migration/writer-replicas /migration/desired-replicas' <<<"$migration_render"
 
+legacy_render=$(helm template legacy "$chart_dir" --set customerId=test "${identity[@]}" --set mcp.enabled=true --set mcp.apiKey.key=x --set mcp.transport.type=http)
+grep -Fq -- '- --transport=http' <<<"$legacy_render"
 port_render=$(helm template port "$chart_dir" --set customerId=test "${identity[@]}" --set mcp.enabled=true --set mcp.apiKey.key=x --set mcp.service.port=8443)
 grep -Fq 'port: 8443' <<<"$port_render"
 grep -Fq 'containerPort: 9222' <<<"$port_render"
