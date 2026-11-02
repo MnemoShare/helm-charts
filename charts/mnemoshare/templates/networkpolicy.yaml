@@ -467,21 +467,31 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Inbound content-filter port and Postfix socketmap domain lookups.
-    # Container ports per the deployment template: 8080 (mgmt/health),
-    # 10025 (content-filter), 10070 (socketmap).
     - ports:
+        - protocol: TCP
+          port: 8080
+    {{- if has .Values.inboundGateway.service.type (list "LoadBalancer" "NodePort") }}
+    # Public MX entry: the Service forwards port 25 to the content filter.
+    # Never the socketmap, which answers which domains are configured.
+    - from:
+        {{- $cidrs := ((.Values.inboundGateway.networkPolicy).allowedSourceCIDRs) | default (list "0.0.0.0/0" "::/0") }}
+        {{- range $cidrs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 10025
+    {{- end }}
+    {{- with .Values.networkPolicy.inboundGatewayFeeders }}
+    - from:
+        {{- toYaml . | nindent 8 }}
+      ports:
         - protocol: TCP
           port: 10025
         - protocol: TCP
           port: 10070
-        - protocol: TCP
-          port: 8080
-    # Intra-namespace traffic from API for status/control.
-    - from:
-        - podSelector:
-            matchLabels:
-              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+    {{- end }}
   egress:
     {{- include "mnemoshare.np.dns" . | nindent 4 }}
     # MnemoShare API (inbound message upload, audit)

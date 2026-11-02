@@ -1776,6 +1776,18 @@ inboundGateway:
     type: LoadBalancer
     port: 25
     annotations: {}
+    # Set Local when restricting inboundGateway.networkPolicy.allowedSourceCIDRs (LoadBalancer/NodePort only): under the
+    # Kubernetes default (Cluster) the pod sees a node IP, not the client.
+    externalTrafficPolicy: ""
+
+  networkPolicy:
+    # Sources admitted to the content filter through a LoadBalancer or
+    # NodePort Service (the filter is then the public MX). Empty admits any
+    # address, which on most CNIs includes every pod; that is acceptable
+    # because the filter itself refuses recipients outside the active inbound
+    # domains. A restricted list needs service.externalTrafficPolicy: Local.
+    # Ignored for ClusterIP; use networkPolicy.inboundGatewayFeeders.
+    allowedSourceCIDRs: []
 
   # Resource requests/limits
   resources:
@@ -1888,6 +1900,23 @@ networkPolicy:
   #         - protocol: TCP
   #           port: 8080
   extraApiIngress: []
+
+  # Peers (NetworkPolicy `from` entries) allowed to reach the inbound gateway's
+  # content filter (10025) and socketmap (10070): the MX-facing Postfix or the
+  # proxy in front of it. Required when inboundGateway.service.type is
+  # ClusterIP, or nothing can deliver mail. Never admit the whole cluster:
+  # whatever reaches 10025 can submit mail, and 10070 enumerates domains.
+  #
+  # Example (Postfix reached through a Tailscale ingress proxy):
+  #   inboundGatewayFeeders:
+  #     - namespaceSelector:
+  #         matchLabels:
+  #           kubernetes.io/metadata.name: tailscale
+  #       podSelector:
+  #         matchLabels:
+  #           tailscale.com/parent-resource: inbound-gateway-tailscale
+  #           tailscale.com/parent-resource-ns: my-namespace
+  inboundGatewayFeeders: []
 
   # Legacy database knobs (kept for upgrades; prefer networkPolicy.database).
   mongodb:
