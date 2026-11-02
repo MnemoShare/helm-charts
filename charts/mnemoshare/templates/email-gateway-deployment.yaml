@@ -199,6 +199,14 @@ spec:
           value: {{ .Values.emailGateway.relay.rateLimit | quote }}
         - name: RELAY_RATE_BURST
           value: {{ .Values.emailGateway.relay.rateBurst | quote }}
+        {{- $srcOverridden := false }}
+        {{- range .Values.emailGateway.extraEnv }}{{ if eq .name "RELAY_ALLOWED_SOURCE_CIDRS" }}{{ $srcOverridden = true }}{{ end }}{{ end }}
+        {{- if not $srcOverridden }}
+        {{- $src := .Values.emailGateway.relay.allowedSourceCIDRs }}
+        {{- if kindIs "slice" $src }}{{ $src = join "," $src }}{{ end }}
+        - name: RELAY_ALLOWED_SOURCE_CIDRS
+          value: {{ required "emailGateway.relay.allowedSourceCIDRs is required in relay and inbound-relay modes: the IPs or CIDRs allowed to submit mail (in Kubernetes, the submitting pods' CIDR). The gateway refuses to start without it." $src | quote }}
+        {{- end }}
         {{- if or .Values.emailGateway.relay.db.uri .Values.emailGateway.relay.db.existingSecret }}
         # Relay tokens live in the relay DB, so the AUTH requirement is only
         # rendered when one is configured (the gateway refuses to start otherwise).
