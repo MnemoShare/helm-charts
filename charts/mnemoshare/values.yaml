@@ -1659,8 +1659,9 @@ emailGateway:
     # Sources allowed to submit to the relay (RELAY_ALLOWED_SOURCE_CIDRS): IPs or
     # CIDRs, as a list or a comma-separated string. Required in relay and
     # inbound-relay modes; anything else gets 550 at connect. Catch-alls and
-    # prefixes wider than /8 (IPv4) or /32 (IPv6) are refused. Inside Kubernetes
-    # the relay sees pod IPs, so list the submitting pods' CIDR.
+    # prefixes wider than /8 (IPv4) or /32 (IPv6) are refused. Through a ClusterIP
+    # Service the relay sees pod IPs (list the submitting pods' CIDR); through a
+    # LoadBalancer/NodePort it sees node IPs unless externalTrafficPolicy is Local.
     allowedSourceCIDRs: ""
     # Require SMTP AUTH on the relay listener (RELAY_SMTP_AUTH_REQUIRED). Rendered
     # only when relay.db is configured, because the relay tokens live there.

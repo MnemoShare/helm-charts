@@ -235,6 +235,45 @@ jobs:
           assert_required_fails "keyguard.cert.issuerName" "issuerName" --set keyguard.cert.issuerName=
           assert_required_fails "keyguard.sidecar.image.tag" "tag" --set keyguard.sidecar.image.tag=
 
+      - name: Validate relay-mode source allowlist
+        if: github.event_name == 'pull_request'
+        run: |
+          # The relay modes refuse to start without RELAY_ALLOWED_SOURCE_CIDRS, so
+          # the chart must fail at render rather than ship a crash-looping pod.
+          BASE=(
+            --set customerId=ci-test
+            --set mongodb.external.enabled=true
+            --set mongodb.external.uri=mongodb://test:test@localhost:27017/test
+            --set s3.bucket=test-bucket
+            --set s3.accessKey=test-key
+            --set s3.secretKey=test-secret
+            --set-string jwt.ecPrivateKey=test-ec-key
+            --set encryption.key=test-encryption-key-exactly-32by
+            --set license.key=test-license-key
+            --set appUrl=https://test.example.com
+            --set ingress.enabled=false
+            --set emailGateway.enabled=true
+          )
+          render() { helm template mnemoshare charts/mnemoshare "${BASE[@]}" "$@"; }
+          for mode in relay inbound-relay; do
+            set +e; OUT=$(render --set emailGateway.mode=$mode 2>&1); STATUS=$?; set -e
+            if [ $STATUS -eq 0 ] || ! echo "$OUT" | grep -q "allowedSourceCIDRs is required"; then
+              echo "✗ $mode without allowedSourceCIDRs should fail to render"; echo "$OUT" | tail -5; exit 1
+            fi
+            echo "✓ $mode without allowedSourceCIDRs fails"
+            render --set emailGateway.mode=$mode --set 'emailGateway.relay.allowedSourceCIDRs={10.244.0.0/16,fd00::/64}' \
+              | grep -A1 'name: RELAY_ALLOWED_SOURCE_CIDRS' | grep -q '"10.244.0.0/16,fd00::/64"' \
+              || { echo "✗ $mode list value not joined"; exit 1; }
+            echo "✓ $mode list value renders"
+            N=$(render --set emailGateway.mode=$mode --set 'emailGateway.extraEnv[0].name=RELAY_ALLOWED_SOURCE_CIDRS' \
+              --set 'emailGateway.extraEnv[0].value=10.0.0.0/16' | grep -c 'name: RELAY_ALLOWED_SOURCE_CIDRS')
+            [ "$N" = 1 ] || { echo "✗ $mode extraEnv override rendered $N entries"; exit 1; }
+            echo "✓ $mode extraEnv override wins"
+          done
+          N=$(render --set emailGateway.mode=gateway | grep -c 'RELAY_ALLOWED_SOURCE_CIDRS' || true)
+          [ "$N" = 0 ] || { echo "✗ gateway mode rendered RELAY_ALLOWED_SOURCE_CIDRS"; exit 1; }
+          echo "✓ gateway mode unaffected"
+
       - name: Validate 1.21.0 chart-unification paths
         if: github.event_name == 'pull_request'
         run: |
