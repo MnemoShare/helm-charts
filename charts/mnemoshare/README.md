@@ -652,6 +652,10 @@ the MCP init container. Worker and ICES now expose a `health` container port (80
 
 The inbound gateway NetworkPolicy no longer opens 10025 and 10070 to every pod. If your inbound gateway Service is `ClusterIP` and something in the cluster (a Postfix, a proxy) feeds the content filter, set `networkPolicy.inboundGatewayFeeders` before upgrading, or inbound mail stops.
 
+### Upgrade note: relay source allowlist (chart 1.31.3)
+
+With `emailGateway.mode` set to `relay` or `inbound-relay`, the gateway now refuses to start without an allowlist of submitting sources, and the chart fails to render without `emailGateway.relay.allowedSourceCIDRs`. That value takes IPs or CIDRs, as a list or a comma-separated string. Anything not listed gets 550 at connect. Catch-alls and prefixes wider than /8 (IPv4) or /32 (IPv6) are refused. Through a ClusterIP Service the relay sees pod IPs, so list the submitting pods' CIDR; through a LoadBalancer or NodePort it sees node IPs unless `externalTrafficPolicy` is `Local`. `gateway` mode (the default) is unaffected.
+
 ## Uninstalling
 
 ```bash
