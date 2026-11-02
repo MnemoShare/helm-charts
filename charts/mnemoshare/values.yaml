@@ -1776,11 +1776,17 @@ inboundGateway:
     type: LoadBalancer
     port: 25
     annotations: {}
+    # Set Local when restricting networkPolicy.allowedSourceCIDRs: under the
+    # Kubernetes default (Cluster) the pod sees a node IP, not the client.
+    externalTrafficPolicy: ""
 
   networkPolicy:
     # Sources admitted to the content filter through a LoadBalancer or
     # NodePort Service (the filter is then the public MX). Empty admits any
-    # address. Ignored for ClusterIP; use networkPolicy.inboundGatewayFeeders.
+    # address, which on most CNIs includes every pod; that is acceptable
+    # because the filter itself refuses recipients outside the active inbound
+    # domains. A restricted list needs service.externalTrafficPolicy: Local.
+    # Ignored for ClusterIP; use networkPolicy.inboundGatewayFeeders.
     allowedSourceCIDRs: []
 
   # Resource requests/limits

@@ -155,7 +155,7 @@ See [values.yaml](./values.yaml) for all configuration options.
 
 ### Inbound email gateway reachability
 
-With `networkPolicy.enabled`, the inbound gateway's content filter (10025) and socketmap (10070) are closed to other pods. With a `LoadBalancer` or `NodePort` Service (the default), the filter is the public MX: port 10025 admits `inboundGateway.networkPolicy.allowedSourceCIDRs` (empty means any address), and the socketmap stays closed. With a `ClusterIP` Service behind your own Postfix or proxy, list that peer in `networkPolicy.inboundGatewayFeeders` (NetworkPolicy `from` entries); it gets both ports. Without a feeder, nothing can deliver mail.
+With `networkPolicy.enabled`, the inbound gateway's content filter (10025) and socketmap (10070) are closed to other pods. With a `LoadBalancer` or `NodePort` Service (the default), the filter is the public MX: port 10025 admits `inboundGateway.networkPolicy.allowedSourceCIDRs` (empty means any address), and the socketmap stays closed. A restricted list only works when the pod sees the client address: set `inboundGateway.service.externalTrafficPolicy: Local`. With a `ClusterIP` Service behind your own Postfix or proxy, list that peer in `networkPolicy.inboundGatewayFeeders` (NetworkPolicy `from` entries); it gets both ports. Without a feeder, nothing can deliver mail.
 
 ## Advanced Configuration
 

@@ -12,6 +12,9 @@ metadata:
   {{- end }}
 spec:
   type: {{ .Values.inboundGateway.service.type }}
+  {{- with .Values.inboundGateway.service.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ . }}
+  {{- end }}
   ports:
   - name: smtp
     port: {{ .Values.inboundGateway.service.port }}
