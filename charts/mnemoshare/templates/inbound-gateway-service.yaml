@@ -12,8 +12,8 @@ metadata:
   {{- end }}
 spec:
   type: {{ .Values.inboundGateway.service.type }}
-  {{- with .Values.inboundGateway.service.externalTrafficPolicy }}
-  externalTrafficPolicy: {{ . }}
+  {{- if and .Values.inboundGateway.service.externalTrafficPolicy (has .Values.inboundGateway.service.type (list "LoadBalancer" "NodePort")) }}
+  externalTrafficPolicy: {{ .Values.inboundGateway.service.externalTrafficPolicy }}
   {{- end }}
   ports:
   - name: smtp

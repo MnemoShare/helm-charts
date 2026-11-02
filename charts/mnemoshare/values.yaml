@@ -1776,7 +1776,7 @@ inboundGateway:
     type: LoadBalancer
     port: 25
     annotations: {}
-    # Set Local when restricting networkPolicy.allowedSourceCIDRs: under the
+    # Set Local when restricting inboundGateway.networkPolicy.allowedSourceCIDRs (LoadBalancer/NodePort only): under the
     # Kubernetes default (Cluster) the pod sees a node IP, not the client.
     externalTrafficPolicy: ""
 
