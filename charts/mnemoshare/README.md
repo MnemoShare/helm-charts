@@ -153,6 +153,10 @@ See [values.yaml](./values.yaml) for all configuration options.
 
 `network.trustedProxyCIDRs` (comma-separated CIDRs or a list) sets `TRUSTED_PROXY_CIDRS` on the api and mcp pods, the processes that read `X-Forwarded-For`. **It is required whenever `ingress.enabled` or `mcp.ingress.enabled` is true**: the chart fails to render without it (since chart 1.31.0), because the application default (loopback and private ranges) lets any client on the cluster network forge its IP, and network access policies, rate limits and session binding all key on that IP. Set it to the range your ingress controller or load balancer connects from (usually the cluster pod CIDR, for example `10.244.0.0/16` on kubeadm or `10.42.0.0/16` on k3s), never a catch-all (`0.0.0.0/0`, `::/0`, or all of RFC1918). `none` trusts no proxy and is correct only when clients reach the api Service directly. A `TRUSTED_PROXY_CIDRS` entry in `extraEnv` takes precedence and is not rendered twice. Application v0.22.0 makes an unset value trust no proxy.
 
+### Inbound email gateway reachability
+
+With `networkPolicy.enabled`, the inbound gateway's content filter (10025) and socketmap (10070) are closed to other pods. With a `LoadBalancer` or `NodePort` Service (the default), the filter is the public MX: port 10025 admits `inboundGateway.networkPolicy.allowedSourceCIDRs` (empty means any address), and the socketmap stays closed. With a `ClusterIP` Service behind your own Postfix or proxy, list that peer in `networkPolicy.inboundGatewayFeeders` (NetworkPolicy `from` entries); it gets both ports. Without a feeder, nothing can deliver mail.
+
 ## Advanced Configuration
 
 ### Using Existing Secrets
@@ -643,6 +647,10 @@ Probes and init containers no longer use `/bin/sh`, `pgrep` or `wget`. They call
 app PR #4081, MNS-1549). Older images fail the probes (worker/ICES restart loops) and
 the MCP init container. Worker and ICES now expose a `health` container port (8082,
 `/healthz` and `/readyz`). Deploy the new app image first.
+
+### Upgrade note: inbound gateway ingress (chart 1.31.2)
+
+The inbound gateway NetworkPolicy no longer opens 10025 and 10070 to every pod. If your inbound gateway Service is `ClusterIP` and something in the cluster (a Postfix, a proxy) feeds the content filter, set `networkPolicy.inboundGatewayFeeders` before upgrading, or inbound mail stops.
 
 ## Uninstalling
 

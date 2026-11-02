@@ -467,15 +467,22 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Health only. The content filter (10025) and socketmap (10070) must never
-    # be open to every pod: anything that reaches 10025 can submit mail.
     - ports:
         - protocol: TCP
           port: 8080
+    {{- if has .Values.inboundGateway.service.type (list "LoadBalancer" "NodePort") }}
+    # Public MX entry: the Service forwards port 25 to the content filter.
+    # Never the socketmap, which answers which domains are configured.
     - from:
-        - podSelector:
-            matchLabels:
-              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+        {{- $cidrs := ((.Values.inboundGateway.networkPolicy).allowedSourceCIDRs) | default (list "0.0.0.0/0" "::/0") }}
+        {{- range $cidrs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 10025
+    {{- end }}
     {{- with .Values.networkPolicy.inboundGatewayFeeders }}
     - from:
         {{- toYaml . | nindent 8 }}

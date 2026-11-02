@@ -1777,6 +1777,12 @@ inboundGateway:
     port: 25
     annotations: {}
 
+  networkPolicy:
+    # Sources admitted to the content filter through a LoadBalancer or
+    # NodePort Service (the filter is then the public MX). Empty admits any
+    # address. Ignored for ClusterIP; use networkPolicy.inboundGatewayFeeders.
+    allowedSourceCIDRs: []
+
   # Resource requests/limits
   resources:
     requests:
@@ -1891,8 +1897,9 @@ networkPolicy:
 
   # Peers (NetworkPolicy `from` entries) allowed to reach the inbound gateway's
   # content filter (10025) and socketmap (10070): the MX-facing Postfix or the
-  # proxy in front of it. Empty admits only this release's own pods. Never
-  # admit the whole cluster: whatever reaches 10025 can submit mail.
+  # proxy in front of it. Required when inboundGateway.service.type is
+  # ClusterIP, or nothing can deliver mail. Never admit the whole cluster:
+  # whatever reaches 10025 can submit mail, and 10070 enumerates domains.
   #
   # Example (Postfix reached through a Tailscale ingress proxy):
   #   inboundGatewayFeeders:
@@ -1902,6 +1909,7 @@ networkPolicy:
   #       podSelector:
   #         matchLabels:
   #           tailscale.com/parent-resource: inbound-gateway-tailscale
+  #           tailscale.com/parent-resource-ns: my-namespace
   inboundGatewayFeeders: []
 
   # Legacy database knobs (kept for upgrades; prefer networkPolicy.database).
