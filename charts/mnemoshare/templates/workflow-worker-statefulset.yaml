@@ -92,6 +92,7 @@ spec:
         - name: ICES_STANDALONE
           value: "true"
         {{- end }}
+        {{- with (include "mnemoshare.sandbox.engineEnv" . | trim) }}{{ . | nindent 8 }}{{- end }}
         # Database Configuration (supports MongoDB and PostgreSQL for distributed workers)
         - name: DB_DRIVER
           value: {{ .Values.database.driver | default "mongodb" | quote }}
@@ -325,6 +326,7 @@ spec:
         {{- if include "mnemoshare.keyguard.enabled" . }}
         {{- include "mnemoshare.keyguard.volumeMountsMain" . | nindent 8 }}
         {{- end }}
+        {{- with (include "mnemoshare.sandbox.engineMounts" . | trim) }}{{ . | nindent 8 }}{{- end }}
         ports:
         - name: health
           containerPort: 8082
@@ -347,7 +349,7 @@ spec:
       # KeyGuard federation-sidecar (MSC-371).
       {{- include "mnemoshare.keyguard.sidecarContainer" (dict "root" . "component" "worker") | nindent 6 }}
       {{- end }}
-      {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled .Values.vault.kubernetesAuth.enabled (include "mnemoshare.keyguard.enabled" .) }}
+      {{- if or .Values.diskBuffer.enabled .Values.workflowWorker.tmpVolume.enabled .Values.vault.kubernetesAuth.enabled (include "mnemoshare.keyguard.enabled" .) (eq (include "mnemoshare.sandbox.engineCA" .) "true") }}
       volumes:
       {{- include "mnemoshare.vault.k8sTokenVolume" . | nindent 6 }}
       {{- if .Values.workflowWorker.tmpVolume.enabled }}
@@ -383,6 +385,7 @@ spec:
       {{- if include "mnemoshare.keyguard.enabled" . }}
       {{- include "mnemoshare.keyguard.volumes" (dict "root" . "component" "worker") | nindent 6 }}
       {{- end }}
+      {{- with (include "mnemoshare.sandbox.engineVolumes" . | trim) }}{{ . | nindent 6 }}{{- end }}
       {{- end }}
       {{- with .Values.workflowWorker.nodeSelector }}
       nodeSelector:

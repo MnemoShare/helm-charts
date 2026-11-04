@@ -2457,3 +2457,123 @@ keyguard:
     # `ca.crt` matches what `kubectl create secret generic --from-file=ca.crt=...`
     # produces.
     caSecretKey: ca.crt
+
+# ============================================================================
+# Sandbox runner
+# ============================================================================
+# Runs workflow scripts/commands as short-lived hardened Jobs in a separate
+# namespace (<release namespace><namespaceSuffix>). The runner is the only
+# workload with Kubernetes API access, and only through a Role in that
+# namespace; no Role or ClusterRole is created in the release namespace.
+#
+# Off by default. Needs a runtime-image release that ships the sandbox-runner
+# binary, cert-manager (or an existing TLS Secret) and a CNI that enforces
+# NetworkPolicy.
+sandbox:
+  enabled: false
+  # false (recommended): pre-create <release namespace>-sandbox with
+  #   kubectl create namespace <ns>-sandbox
+  #   kubectl label namespace <ns>-sandbox pod-security.kubernetes.io/enforce=restricted
+  # so it survives `helm uninstall`. true: the release creates it with those
+  # labels and deletes it (and every sandbox Job) on uninstall.
+  createNamespace: false
+  namespaceSuffix: -sandbox
+  runner:
+    # 2 mirrors Business+ and gives the runner a PodDisruptionBudget; use 1 on
+    # single-node or compose-style clusters.
+    replicas: 2
+    port: 8083
+    healthPort: 8084
+    # Same image as the application by default.
+    image:
+      repository: ""
+      tag: ""
+      digest: ""
+      pullPolicy: ""
+    # Secret with key `secret` (>= 32 chars). Empty: the chart generates one
+    # and keeps it across upgrades (helm lookup; not stable under `helm template`).
+    secretName: ""
+    tls:
+      enabled: true
+      # Development only. Plaintext carries the shared secret in the clear.
+      allowPlaintext: false
+      # Existing kubernetes.io/tls Secret. Empty: a cert-manager Certificate is
+      # rendered, issued by issuerRef or, when unset, keyguard.cert.*.
+      secretName: ""
+      issuerRef:
+        name: ""
+        kind: ""
+        group: ""
+      duration: 720h
+      renewBefore: 240h
+      # Secret with `ca.crt`; when set the runner requires client certificates.
+      clientCASecret: ""
+    # Input staging and output collection for sandbox Jobs. Needs Kubernetes
+    # 1.29+ (native sidecars) in the cluster that runs the Jobs. Jobs reach the
+    # replica that owns their run by pod IP on this port; there is no Service
+    # port and no sessionAffinity. The staging and output volumes are sized
+    # from sandbox.policy.limits (concurrency times the per-run byte caps).
+    # Needs the runner image pinned by digest while policy.requireImageDigest.
+    staging:
+      enabled: true
+      port: 8085
+    egress:
+      # Kubernetes API server endpoints the runner may reach. Empty falls back
+      # to ports 443/6443 to ANY destination (listed in NOTES).
+      kubernetesApiTargets: []
+      # - cidr: 10.96.0.1/32
+      #   port: 443
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 250m, memory: 128Mi}
+  policy:
+    # Image run_command and run_script use when a step names none. The digest
+    # is empty until a release publishes the image; set it to the published
+    # sha256 to turn run_command on. While empty the runner has NO default
+    # image: run_command is refused ("no default image is configured") and
+    # run_script runs only with an explicit image the policy allows. A plain
+    # string (a full repo@sha256:... reference) is accepted in place of the map.
+    defaultImage:
+      repository: docker.io/mnemoshare/script-runtime
+      digest: ""
+    # Registries a step-supplied image (run_script) may come from, as hosts or
+    # host/path prefixes. Empty = only the default image can run, so run_script
+    # needs this set to be useful. The default image bypasses it.
+    allowedRegistries: []
+    # Executable allow/deny lists applied by the runner to the step's command
+    # (full path or base name; deny wins). Empty allow = any command may run
+    # inside the sandbox, which is the containment boundary.
+    commandAllow: []
+    commandDeny: []
+    requireImageDigest: true
+    # Empty: sandboxes have no egress at all.
+    egressAllowedCIDRs: []
+    # Per-Job envelope enforced by the runner; defaults mirror Business+.
+    # Byte counts and seconds are strings so they render verbatim.
+    limits:
+      defaultCPU: 500m
+      maxCPU: "1"
+      defaultMemory: 512Mi
+      maxMemory: 1Gi
+      defaultEphemeralStorage: 512Mi
+      maxEphemeralStorage: 2Gi
+      defaultTimeoutSeconds: "300"
+      maxTimeoutSeconds: "1800"
+      maxConcurrentJobs: "3"
+      maxInputBytes: "268435456"
+      maxOutputBytes: "67108864"
+  # ResourceQuota in the sandbox namespace: the hard backstop behind the
+  # runner's concurrency check. Keep hard equal to maxConcurrentJobs times the
+  # per-Job maximums above plus 200m CPU, 256Mi memory and 32Mi ephemeral
+  # storage per Job for its init and sidecar containers; terminal pods do not
+  # count against it.
+  quota:
+    enabled: true
+    hard:
+      pods: "3"
+      requests.cpu: 3600m
+      limits.cpu: 3600m
+      requests.memory: 3840Mi
+      limits.memory: 3840Mi
+      requests.ephemeral-storage: 6240Mi
+      limits.ephemeral-storage: 6240Mi

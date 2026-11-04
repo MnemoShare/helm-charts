@@ -1,0 +1,43 @@
+{{- if and .Values.sandbox.enabled .Values.sandbox.quota.enabled }}
+{{- $sandboxNS := include "mnemoshare.sandbox.namespace" . }}
+{{- $limits := .Values.sandbox.policy.limits | default dict }}
+# Concurrency is enforced by the runner; this quota is the cluster-side
+# backstop and bounds the namespace if the runner is bypassed or misbehaves.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: mnemoshare-sandbox
+  namespace: {{ $sandboxNS }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-runner
+spec:
+  hard:
+    {{- range $k, $v := .Values.sandbox.quota.hard }}
+    {{ $k | quote }}: {{ $v | quote }}
+    {{- end }}
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: mnemoshare-sandbox
+  namespace: {{ $sandboxNS }}
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox-runner
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: {{ $limits.defaultCPU | default "500m" | quote }}
+        memory: {{ $limits.defaultMemory | default "512Mi" | quote }}
+        ephemeral-storage: {{ $limits.defaultEphemeralStorage | default "512Mi" | quote }}
+      defaultRequest:
+        cpu: {{ $limits.defaultCPU | default "500m" | quote }}
+        memory: {{ $limits.defaultMemory | default "512Mi" | quote }}
+        ephemeral-storage: {{ $limits.defaultEphemeralStorage | default "512Mi" | quote }}
+      max:
+        cpu: {{ $limits.maxCPU | default "1" | quote }}
+        memory: {{ $limits.maxMemory | default "1Gi" | quote }}
+        ephemeral-storage: {{ $limits.maxEphemeralStorage | default "2Gi" | quote }}
+{{- end }}

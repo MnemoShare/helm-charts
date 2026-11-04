@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# Sandbox runner renders: off by default, confined RBAC, engine-host wiring,
+# TLS/plaintext gate, staging and runner policy.
+set -euo pipefail
+
+chart=${1:-charts/mnemoshare}
+base=(
+  --set customerId=ci-test
+  --set mongodb.external.enabled=true
+  --set mongodb.external.uri=mongodb://test:test@localhost:27017/test
+  --set s3.bucket=test-bucket --set s3.accessKey=test-key --set s3.secretKey=test-secret
+  --set-string jwt.ecPrivateKey=test-ec-key
+  --set encryption.key=test-encryption-key-exactly-32by
+  --set license.key=test-license-key
+  --set appUrl=https://test.example.com
+  --set ingress.enabled=false
+  --set network.trustedProxyCIDRs=none
+  --namespace tenant
+)
+digestA=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+unpinned=(--set sandbox.enabled=true --set sandbox.runner.tls.issuerRef.name=issuer)
+on=("${unpinned[@]}" --set sandbox.runner.image.digest=$digestA)
+worker=(--set workflowWorker.enabled=true --set redis.mode=external --set redis.external.host=redis.example.com)
+here=$(cd "$(dirname "$0")/../../.." && pwd)
+
+fail() { echo "sandbox-runner: $*" >&2; exit 1; }
+render() { helm template t "$chart" "${base[@]}" "$@"; }
+
+out=$(render)
+! grep -q "sandbox" <<<"$out" || fail "sandbox resources rendered with sandbox.enabled=false"
+! grep -q "SANDBOX_RUNNER" <<<"$out" || fail "sandbox env rendered with sandbox.enabled=false"
+
+# Business shape: the API hosts the engine.
+out=$(render "${on[@]}" --set sandbox.runner.replicas=1)
+python3 "$here/hack/check-render.py" <(echo "$out") >/dev/null || fail "api-host render fails the render guards"
+for want in "namespace: tenant-sandbox" "kind: Certificate" "name: SANDBOX_RUNNER_URL" \
+  "https://mnemoshare-sandbox-runner.tenant.svc:8083" "name: SANDBOX_NAMESPACE" "value: \"tenant-sandbox\""; do
+  grep -qF -- "$want" <<<"$out" || fail "api-host render lacks: $want"
+done
+! grep -q "kind: PodDisruptionBudget" <<<"$out" || fail "single-replica runner renders a PDB"
+! grep -q "kind: Namespace" <<<"$out" || fail "namespace rendered although createNamespace=false"
+[[ $(grep -c "name: SANDBOX_RUNNER_URL" <<<"$out") == 1 ]] || fail "engine env must be on exactly one workload"
+role=$(awk '/^kind: Role$/{a=1} a&&/^---$/{exit} a' <<<"$out")
+! grep -Eq "secrets|exec|persistentvolumeclaims|\*" <<<"$role" || fail "runner Role is too broad"
+
+# Quota backstop and runner caps render with the Business+ defaults.
+for want in "kind: ResourceQuota" "kind: LimitRange" '"pods": "3"' "name: SANDBOX_MAX_CONCURRENT_JOBS" \
+  "name: SANDBOX_MAX_INPUT_BYTES" "name: SANDBOX_MAX_OUTPUT_BYTES"; do
+  grep -qF -- "$want" <<<"$out" || fail "quota render lacks: $want"
+done
+quota=$(render "${on[@]}" --set sandbox.quota.enabled=false)
+! grep -q "kind: ResourceQuota" <<<"$quota" || fail "quota rendered with sandbox.quota.enabled=false"
+small=$(render "${on[@]}" --set-string sandbox.policy.limits.maxConcurrentJobs=1 --set-string sandbox.quota.hard.pods=1)
+grep -qF '"pods": "1"' <<<"$small" || fail "quota hard overrides not honoured"
+
+# Staging and output wiring, sized from the tier caps (Business+ defaults).
+for want in "name: SANDBOX_INIT_IMAGE" "fieldPath: status.podIP" 'name: SANDBOX_STAGING_ADDR' 'value: ":8085"' \
+  "name: SANDBOX_STAGING_DIR" "name: SANDBOX_OUTPUT_DIR" "containerPort: 8085" \
+  'name: SANDBOX_STAGING_MAX_TOTAL_BYTES' 'value: "805306368"' 'name: SANDBOX_OUTPUT_MAX_TOTAL_BYTES' 'value: "201326592"' \
+  "name: SANDBOX_STAGING_CA_FILE" "value: /etc/sandbox-runner/tls/ca.crt" \
+  'value: "mnemoshare-sandbox-runner.tenant.svc"' "sizeLimit: 928Mi" "sizeLimit: 280Mi" "ephemeral-storage: 1336Mi" \
+  "kubernetes.io/metadata.name: tenant-sandbox" 'mnemoshare.com/sandbox: "true"'; do
+  grep -qF -- "$want" <<<"$out" || fail "staging render lacks: $want"
+done
+init=$(grep -A1 'name: SANDBOX_INIT_IMAGE' <<<"$out" | tail -1)
+grep -qF '@sha256:' <<<"$init" || fail "init image is not digest-pinned: $init"
+[[ $(grep -c 'name: SANDBOX_INIT_IMAGE' <<<"$out") == 1 ]] || fail "SANDBOX_INIT_IMAGE must be on the runner only"
+! grep -q 'sessionAffinity' <<<"$out" || fail "runner Service must not set sessionAffinity"
+python3 -c '
+import sys, yaml
+docs = [d for d in yaml.safe_load_all(sys.stdin) if d]
+np = next(d for d in docs if d["kind"] == "NetworkPolicy" and d["metadata"]["name"] == "mnemoshare-sandbox-runner-ingress")
+rules = [r for r in np["spec"]["ingress"] if any(p["port"] == 8085 for p in r["ports"])]
+assert len(rules) == 1 and len(rules[0]["from"]) == 1
+peer = rules[0]["from"][0]
+assert peer["namespaceSelector"]["matchLabels"] == {"kubernetes.io/metadata.name": "tenant-sandbox"}
+assert peer["podSelector"]["matchLabels"] == {"mnemoshare.com/sandbox": "true"}
+' <<<"$out" || fail "staging ingress peer is not exactly sandbox pods in the sandbox namespace"
+staged=$(render "${on[@]}" --set sandbox.runner.staging.enabled=false)
+for bad in SANDBOX_INIT_IMAGE SANDBOX_STAGING_ADDR "containerPort: 8085" "name: staging" "name: outputs"; do
+  ! grep -qF -- "$bad" <<<"$staged" || fail "staging disabled but render has: $bad"
+done
+# A tag-pinned runner image would crash on an unpinned init image, so staging is skipped.
+tagged=$(render "${unpinned[@]}")
+! grep -qF "SANDBOX_INIT_IMAGE" <<<"$tagged" || fail "staging rendered for an unpinned runner image"
+grep -qF "name: mnemoshare-sandbox-runner" <<<"$tagged" || fail "runner missing for an unpinned image"
+if render "${on[@]}" --set sandbox.runner.staging.port=8083 >/dev/null 2>&1; then fail "staging port may not equal the API port"; fi
+# Quota defaults carry the init + sidecar containers (+200m, +256Mi, +32Mi per Job).
+for want in '"limits.cpu": "3600m"' '"limits.memory": "3840Mi"' '"limits.ephemeral-storage": "6240Mi"'; do
+  grep -qF -- "$want" <<<"$out" || fail "quota render lacks: $want"
+done
+python3 "$here/hack/check-render.py" <(echo "$staged") >/dev/null || fail "staging-disabled render fails the render guards"
+
+# Business+ shape: workers host the engine.
+out=$(render "${on[@]}" "${worker[@]}")
+python3 "$here/hack/check-render.py" <(echo "$out") >/dev/null || fail "worker-host render fails the render guards"
+grep -q "kind: PodDisruptionBudget" <<<"$out" || fail "two-replica runner lacks a PDB"
+grep -Eq "app.kubernetes.io/component: workflow-worker" <<<"$(awk '/name: mnemoshare-sandbox-runner-ingress/{a=1} a&&/^---$/{exit} a' <<<"$out")" || fail "runner ingress is not limited to workers"
+
+out=$(render "${on[@]}" --set sandbox.createNamespace=true)
+grep -q "pod-security.kubernetes.io/enforce: restricted" <<<"$out" || fail "created namespace is not pod-security restricted"
+
+# TLS/plaintext gate and issuer requirement.
+if render --set sandbox.enabled=true >/dev/null 2>&1; then fail "TLS enabled with no issuer or secret rendered"; fi
+if render --set sandbox.enabled=true --set sandbox.runner.tls.enabled=false >/dev/null 2>&1; then fail "plaintext rendered without allowPlaintext"; fi
+render --set sandbox.enabled=true --set sandbox.runner.tls.enabled=false --set sandbox.runner.tls.allowPlaintext=true |
+  grep -q 'name: SANDBOX_RUNNER_ALLOW_PLAINTEXT' || fail "plaintext opt-in not passed to the runner"
+
+# The API-server fallback is called out in NOTES until targets are set.
+notes=$(mktemp -d); trap 'rm -rf "$notes"' EXIT
+cp -R "$chart" "$notes/chart"
+{ echo '{{- define "notes-probe" -}}'; cat "$notes/chart/templates/NOTES.txt"; echo '{{- end -}}'; } >"$notes/chart/templates/_notes-probe.tpl"
+echo 'notes: {{ include "notes-probe" . | toJson }}' >"$notes/chart/templates/notes-probe.yaml"
+out=$(helm template t "$notes/chart" "${base[@]}" "${on[@]}" --show-only templates/notes-probe.yaml)
+grep -qF "Kubernetes API egress falls back" <<<"$out" || fail "NOTES missing the sandbox API fallback"
+api=(--set "sandbox.runner.egress.kubernetesApiTargets[0].cidr=10.96.0.1/32" --set "sandbox.runner.egress.kubernetesApiTargets[0].port=443")
+out=$(helm template t "$notes/chart" "${base[@]}" "${on[@]}" "${api[@]}" --show-only templates/notes-probe.yaml)
+! grep -qF "Kubernetes API egress falls back" <<<"$out" || fail "NOTES list the fallback although targets are set"
+render "${on[@]}" "${api[@]}" | grep -qF 'cidr: "10.96.0.1/32"' || fail "API server target not rendered as runner egress"
+
+# Runner policy: no default image until a digest is set (fail closed), then the
+# digest-pinned reference; command lists render in the runner's comma format.
+out=$(render "${on[@]}")
+for bad in SANDBOX_DEFAULT_IMAGE SANDBOX_COMMAND_ALLOW SANDBOX_COMMAND_DENY; do
+  ! grep -qF -- "name: $bad" <<<"$out" || fail "$bad rendered by default"
+done
+digest=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+out=$(render "${on[@]}" --set "sandbox.policy.defaultImage.digest=sha256:$digest" \
+  --set "sandbox.policy.commandAllow={bash,/usr/bin/python3}" --set "sandbox.policy.commandDeny={curl}")
+for want in "value: \"docker.io/mnemoshare/script-runtime@sha256:$digest\"" 'value: "bash,/usr/bin/python3"' 'value: "curl"'; do
+  grep -qF -- "$want" <<<"$out" || fail "runner policy render lacks: $want"
+done
+if render "${on[@]}" --set sandbox.policy.defaultImage=docker.io/x/y:latest >/dev/null 2>&1; then fail "unpinned default image rendered"; fi
+
+# Engine pods verify the runner against ca.crt only; the runner pod gets none of it.
+out=$(render "${on[@]}")
+for want in "name: SANDBOX_RUNNER_CA_FILE" "value: /etc/sandbox-runner-ca/ca.crt" "name: SANDBOX_RUNNER_SERVER_NAME" \
+  'value: "mnemoshare-sandbox-runner.tenant.svc"' "name: sandbox-runner-ca" "path: ca.crt"; do
+  grep -qF -- "$want" <<<"$out" || fail "engine CA wiring lacks: $want"
+done
+[[ $(grep -c "name: SANDBOX_RUNNER_CA_FILE" <<<"$out") == 1 ]] || fail "runner CA env must be on exactly one workload"
+! grep -q "SANDBOX_RUNNER_CLIENT_CERT_FILE" <<<"$out" || fail "client certificate env rendered without a provisioned client certificate"
+out=$(render "${on[@]}" "${worker[@]}")
+[[ $(grep -c "name: SANDBOX_RUNNER_CA_FILE" <<<"$out") == 1 ]] || fail "worker-host: runner CA env must be on exactly one workload"
+python3 -c '
+import sys, yaml
+for d in yaml.safe_load_all(sys.stdin):
+    if not d or d.get("kind") not in ("Deployment", "StatefulSet"):
+        continue
+    spec = d["spec"]["template"]["spec"]
+    has = any(v["name"] == "sandbox-runner-ca" for v in spec.get("volumes", []))
+    env = any(e["name"] == "SANDBOX_RUNNER_CA_FILE" for c in spec["containers"] for e in c.get("env", []))
+    mounted = any(m["name"] == "sandbox-runner-ca" for c in spec["containers"] for m in c.get("volumeMounts", []))
+    assert has == env == mounted, d["metadata"]["name"]
+' <<<"$out" || fail "runner CA volume, mount and env are not on the same pods"
+plain=$(render --set sandbox.enabled=true --set sandbox.runner.tls.enabled=false --set sandbox.runner.tls.allowPlaintext=true)
+! grep -q "SANDBOX_RUNNER_CA_FILE" <<<"$plain" || fail "CA env rendered for a plaintext runner"
+echo "sandbox-runner: ok"

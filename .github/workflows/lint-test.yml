@@ -48,6 +48,10 @@ jobs:
           pip install pyyaml
           hack/render-matrix.sh
 
+      - name: Validate sandbox runner render, RBAC confinement and engine wiring
+        if: github.event_name == 'pull_request'
+        run: bash charts/mnemoshare/tests/sandbox-runner.sh
+
       - name: Validate chart templates (default — sftpGateway disabled)
         if: github.event_name == 'pull_request'
         run: |
