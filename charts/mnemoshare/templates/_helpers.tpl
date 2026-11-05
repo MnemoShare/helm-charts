@@ -170,6 +170,8 @@ Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"ecdsa").
 {{- $existing := lookup "v1" "Secret" $root.Release.Namespace (printf "%s-secrets" (include "mnemoshare.fullname" $root)) -}}
 {{- if and $existing $existing.data (index $existing.data .secretKey) -}}
 {{- $_ := set $memo .name (index $existing.data .secretKey | b64dec) -}}
+{{- else if $root.Release.IsUpgrade -}}
+{{- fail (printf "refusing to generate a new %s on upgrade: the previous value was not found in Secret %s-secrets, and a new one would make existing data unreadable. Set encryption.key / jwt.ecPrivateKey or existingSecrets.encryption / existingSecrets.jwt." .secretKey (include "mnemoshare.fullname" $root)) -}}
 {{- else if eq .generator "ecdsa" -}}
 {{- $_ := set $memo .name (genPrivateKey "ecdsa") -}}
 {{- else -}}

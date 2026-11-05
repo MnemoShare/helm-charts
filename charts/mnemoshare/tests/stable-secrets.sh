@@ -47,26 +47,34 @@ want=$(printf 'mnemoshare-internal-api:%s' "$enc" | shasum -a 256 | cut -d' ' -f
 [ "$(secret_value "$out" -sftp-gateway internal-api-secret)" = "$want" ] || fail "sftp secret not derived from the rendered generated key"
 
 if [ "${STABLE_SECRETS_CLUSTER:-}" = 1 ]; then
+  ctx=$(kubectl config current-context)
+  case "$ctx" in
+    kind-*) ;;
+    *) [ "${STABLE_SECRETS_CONTEXT:-}" = "$ctx" ] || fail "refusing to run against context '$ctx': use a kind cluster or set STABLE_SECRETS_CONTEXT=$ctx" ;;
+  esac
+
   ns=stable-secrets-$$
-  trap 'kubectl delete namespace "$ns" --wait=false >/dev/null 2>&1 || true' EXIT
+  trap 'helm uninstall t -n "$ns" >/dev/null 2>&1 || true; kubectl delete namespace "$ns" --wait=false >/dev/null 2>&1 || true' EXIT
   kubectl create namespace "$ns" >/dev/null
-  dry() { helm install t "$chart" -n "$ns" "${base[@]}" --dry-run=server "$@"; }
+  live=(--no-hooks --set formatMigrations.mode=disabled)
+  field() { kubectl -n "$ns" get secret t-mnemoshare-secrets -o "jsonpath={.data.$1}"; }
 
-  out=$(dry)
-  [ "$(secret_value "$out" -secrets encryption-key)" ] || fail "no key rendered on first install"
-  kubectl -n "$ns" create secret generic t-mnemoshare-secrets \
-    --from-literal=encryption-key=existing-encryption-key-32byte \
-    --from-literal=jwt-ec-private-key=existing-ec-key >/dev/null
-  kubectl -n "$ns" label secret t-mnemoshare-secrets app.kubernetes.io/managed-by=Helm >/dev/null
-  kubectl -n "$ns" annotate secret t-mnemoshare-secrets meta.helm.sh/release-name=t "meta.helm.sh/release-namespace=$ns" >/dev/null
+  helm install t "$chart" -n "$ns" "${base[@]}" "${live[@]}" >/dev/null
+  enc=$(field encryption-key); jwt=$(field 'jwt-ec-private-key')
+  [ -n "$enc" ] && [ -n "$jwt" ] || fail "no keys generated on first install"
 
-  out=$(dry)
-  [ "$(secret_value "$out" -secrets encryption-key)" = existing-encryption-key-32byte ] || fail "existing encryption key not reused"
-  [ "$(secret_value "$out" -secrets jwt-ec-private-key)" = existing-ec-key ] || fail "existing JWT key not reused"
-  want=$(printf 'mnemoshare-internal-api:%s' existing-encryption-key-32byte | shasum -a 256 | cut -d' ' -f1)
-  [ "$(secret_value "$out" -sftp-gateway internal-api-secret)" = "$want" ] || fail "sftp secret not derived from the existing key"
+  helm upgrade t "$chart" -n "$ns" "${base[@]}" "${live[@]}" >/dev/null
+  [ "$(field encryption-key)" = "$enc" ] || fail "encryption key changed on upgrade"
+  [ "$(field 'jwt-ec-private-key')" = "$jwt" ] || fail "JWT key changed on upgrade"
 
-  out=$(dry "${explicit[@]}")
-  [ "$(secret_value "$out" -secrets encryption-key)" = explicit-encryption-key-32bytes ] || fail "explicit value must win over the existing Secret"
+  err=$(helm upgrade t "$chart" -n "$ns" "${base[@]}" "${live[@]}" --set nameOverride=other 2>&1) && fail "upgrade under a new Secret name must fail"
+  grep -q "refusing to generate" <<<"$err" || fail "unexpected upgrade failure: $err"
+  [ "$(field encryption-key)" = "$enc" ] || fail "encryption key lost after refused upgrade"
+
+  helm upgrade t "$chart" -n "$ns" "${base[@]}" "${live[@]}" --set encryption.key=explicit-encryption-key-32bytes >/dev/null
+  [ "$(field encryption-key)" = "$(printf explicit-encryption-key-32bytes | base64)" ] || fail "explicit value must win on upgrade"
+
+  helm uninstall t -n "$ns" >/dev/null
+  kubectl -n "$ns" get secret t-mnemoshare-secrets >/dev/null || fail "Secret not kept on uninstall"
 fi
 echo "stable-secrets: ok"
