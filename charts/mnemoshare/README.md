@@ -121,7 +121,7 @@ migration orchestration:
 > upgrade failure followed by automatic rollback could restart old writers
 > against the migrated database. Retry the same target forward instead.
 
-- `automatic` renders a pre-install/pre-upgrade hook using the target application
+- `automatic` (default) renders a pre-install/pre-upgrade hook using the target application
   image. The plan runs before any disruption. An `ordinary` decision preserves
   the running fleet; a `maintenance` decision removes the API HPA and enabled
   workflow-worker/ICES KEDA controllers, scales only the seven application-plane
@@ -133,11 +133,7 @@ migration orchestration:
   the complete lifecycle. The chart emits no migration Job, state or target
   objects, cleanup or mode-fence hooks, RBAC, ServiceAccounts, or migration
   NetworkPolicies, and does not require Kubernetes API targets for them.
-- `disabled` (default) renders no migration Job for externally coordinated maintenance.
-  `automatic` runs `/usr/local/bin/mnemoshare-migrate` from the target image; no published
-  application image contains it yet, so with one the pre-install hook can never finish
-  and the install stays in `pending-install` until Helm times out. Select `automatic`
-  only with an image that ships the executable.
+- `disabled` renders no migration Job for externally coordinated maintenance.
   Disabled mode retains the chart-owned pre-upgrade fence and pre-delete cleanup
   path that reject unresolved release-owned automatic-migration state. Resolve it
   by retrying the exact frozen automatic target or by an explicit external state

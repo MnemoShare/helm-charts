@@ -8,7 +8,6 @@ deployment_commit=$(sed -n 's/^commit=//p' "$chart_dir/tests/contracts/deploymen
 deployment_fingerprint=$(jq -er .fingerprint "$chart_dir/tests/contracts/deployment/v1/contract.json")
 base=(
   --set customerId=ci-test
-  --set formatMigrations.mode=automatic
   --set mongodb.external.enabled=true
   --set mongodb.external.uri=mongodb://test:test@localhost:27017/test
   --set s3.bucket=test-bucket

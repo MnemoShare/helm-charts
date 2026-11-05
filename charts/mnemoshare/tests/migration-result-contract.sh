@@ -15,7 +15,6 @@ test "$(sed -n 's/^sha256sums=//p' "${contract_dir}/UPSTREAM")" = "$(sha256sum "
 
 render=$(helm template test "$chart_dir" \
   --set customerId=ci-test \
-  --set formatMigrations.mode=automatic \
   --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
   --set mongodb.external.enabled=true \
   --set mongodb.external.uri=mongodb://test:test@localhost:27017/test \

@@ -17,7 +17,6 @@ chart=$work/chart
 
 base=(
   --set customerId=ci-test
-  --set formatMigrations.mode=automatic
   --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   --set cors.allowedOrigins=https://ci.example.com
   --set mongodb.external.enabled=true

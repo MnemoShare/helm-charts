@@ -82,7 +82,6 @@ chart_dir=${1:-$(cd "$(dirname "$0")/.." && pwd)}
 digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 base=(
   --set customerId=test
-  --set formatMigrations.mode=automatic
   --set image.digest="$digest"
   --set deploymentContract.sourceCommit="$expected_commit"
   --set deploymentContract.contractFingerprint="$expected_fingerprint"

@@ -6,7 +6,7 @@ contract_dir=$(cd "$(dirname "$0")" && pwd)/contracts/deployment/v1
 upstream=$(sed -n 's/^commit=//p' "${contract_dir}/UPSTREAM")
 fingerprint=$(jq -er .fingerprint "${contract_dir}/contract.json")
 digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-identity=(--set "deploymentContract.sourceCommit=${upstream}" --set "deploymentContract.contractFingerprint=${fingerprint}" --set "deploymentContract.imageDigest=${digest}" --set "image.digest=${digest}" --set network.trustedProxyCIDRs=none --set formatMigrations.mode=automatic)
+identity=(--set "deploymentContract.sourceCommit=${upstream}" --set "deploymentContract.contractFingerprint=${fingerprint}" --set "deploymentContract.imageDigest=${digest}" --set "image.digest=${digest}" --set network.trustedProxyCIDRs=none)
 (cd "$contract_dir" && sha256sum -c SHA256SUMS)
 test "$(sed -n 's/^commit=//p' "${contract_dir}/UPSTREAM")" = "$upstream"
 test "$(sed -n 's/^path=//p' "${contract_dir}/UPSTREAM")" = contracts/deployment/v1
