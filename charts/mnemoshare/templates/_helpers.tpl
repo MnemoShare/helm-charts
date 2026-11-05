@@ -253,7 +253,15 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{ include "mnemoshare.migrationOperationContractLabels" . }}
 {{- range $key, $value := .Values.commonLabels }}
+{{- if kindIs "string" $value }}
+{{ $key }}: {{ $value | quote }}
+{{- else if kindIs "bool" $value }}
 {{ $key }}: {{ toString $value | quote }}
+{{- else if and (has (kindOf $value) (list "float64" "int" "int64")) (eq (float64 $value) (floor (float64 $value))) (lt (float64 $value) 1e15) (gt (float64 $value) -1e15) }}
+{{ $key }}: {{ printf "%d" (int64 $value) | quote }}
+{{- else }}
+{{- fail (printf "commonLabels.%s must be a string, boolean or whole number (label values are strings); quote it or use --set-string" $key) }}
+{{- end }}
 {{- end }}
 {{- end }}
 
@@ -479,21 +487,29 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Non-empty when cluster access works and no revision of this release ever reached
-deployed or superseded: a retried failed first install, which has no keys to keep.
+Non-empty only when this release has Helm records in its namespace (Secret or
+ConfigMap driver) and none ever reached deployed or superseded: a retried failed
+first install, which has no keys to keep. No record found (sql driver, foreign
+storage namespace, no cluster access) stays empty so callers refuse.
 */}}
 {{- define "mnemoshare.firstInstallRetry" -}}
-{{- $items := lookup "v1" "Secret" .Release.Namespace "" -}}
-{{- if $items -}}
+{{- $found := false -}}
 {{- $live := false -}}
+{{- range $kind := list "Secret" "ConfigMap" -}}
+{{- $items := lookup "v1" $kind $.Release.Namespace "" -}}
+{{- if $items -}}
 {{- range $items.items -}}
 {{- $l := .metadata.labels | default dict -}}
-{{- if and (eq (get $l "owner") "helm") (eq (get $l "name") $.Release.Name) (has (get $l "status") (list "deployed" "superseded")) -}}
+{{- if and (eq (get $l "owner") "helm") (eq (get $l "name") $.Release.Name) (or (ne $kind "Secret") (eq (.type | default "") "helm.sh/release.v1")) -}}
+{{- $found = true -}}
+{{- if has (get $l "status") (list "deployed" "superseded") -}}
 {{- $live = true -}}
 {{- end -}}
 {{- end -}}
-{{- if not $live -}}true{{- end -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and $found (not $live) -}}true{{- end -}}
 {{- end }}
 
 {{/*
