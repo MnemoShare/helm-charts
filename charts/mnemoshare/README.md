@@ -121,7 +121,7 @@ migration orchestration:
 > upgrade failure followed by automatic rollback could restart old writers
 > against the migrated database. Retry the same target forward instead.
 
-- `automatic` (default) renders a pre-install/pre-upgrade hook using the target application
+- `automatic` renders a pre-install/pre-upgrade hook using the target application
   image. The plan runs before any disruption. An `ordinary` decision preserves
   the running fleet; a `maintenance` decision removes the API HPA and enabled
   workflow-worker/ICES KEDA controllers, scales only the seven application-plane
@@ -133,7 +133,11 @@ migration orchestration:
   the complete lifecycle. The chart emits no migration Job, state or target
   objects, cleanup or mode-fence hooks, RBAC, ServiceAccounts, or migration
   NetworkPolicies, and does not require Kubernetes API targets for them.
-- `disabled` renders no migration Job for externally coordinated maintenance.
+- `disabled` (default) renders no migration Job for externally coordinated maintenance.
+  `automatic` runs `/usr/local/bin/mnemoshare-migrate` from the target image; no published
+  application image contains it yet, so with one the pre-install hook can never finish
+  and the install stays in `pending-install` until Helm times out. Select `automatic`
+  only with an image that ships the executable.
   Disabled mode retains the chart-owned pre-upgrade fence and pre-delete cleanup
   path that reject unresolved release-owned automatic-migration state. Resolve it
   by retrying the exact frozen automatic target or by an explicit external state
@@ -268,7 +272,7 @@ upgrade to this chart before uninstalling.
 | `s3.bucket` | S3 bucket name | `mnemoshare-files` |
 | `s3.accessKey` | S3 access key | `AKIA...` |
 | `s3.secretKey` | S3 secret key | `xxx` |
-| `jwt.ecPrivateKey` | PEM-encoded ECDSA P-256 private key for ES256 JWT signing (generated on first install if empty, then reused from the release Secret on upgrade) | `""` |
+| `jwt.ecPrivateKey` | PEM-encoded ECDSA P-256 private key for ES256 JWT signing (generated on first install if empty, then reused from the release Secret on upgrade; a release that never reached `deployed`, such as a failed first install, still counts as a first install, so `helm upgrade --install` retries it) | `""` |
 | `encryption.key` | File encryption key (32 bytes); if empty, generated on first install and reused from the release Secret on upgrade (not under `helm template`) | `your-key` |
 | `license.key` | MnemoShare license key | `your-license` |
 | `appUrl` | Application URL | `https://example.com` |

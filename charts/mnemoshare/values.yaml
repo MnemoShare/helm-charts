@@ -50,7 +50,10 @@ fullnameOverride: ""
 # control resources; disabled keeps the chart's stale-state fence and cleanup
 # while leaving migration execution to externally coordinated maintenance.
 formatMigrations:
-  mode: automatic
+  # No published application image ships the migration executable the automatic
+  # hook runs, so automatic fails every install against one; set it only with a
+  # target image that does.
+  mode: disabled
   orchestratorImage:
     # alpine/k8s is shell-capable; unlike registry.k8s.io/kubectl it includes
     # /bin/sh and the cmp utility used by the fail-closed orchestration script.

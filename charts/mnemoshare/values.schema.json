@@ -225,7 +225,7 @@
             "operator",
             "disabled"
           ],
-          "default": "automatic",
+          "default": "disabled",
           "description": "automatic renders chart-owned migration orchestration; operator renders no chart-owned migration control resources; disabled retains stale-state fencing and cleanup without executing migrations"
         },
         "orchestratorImage": {

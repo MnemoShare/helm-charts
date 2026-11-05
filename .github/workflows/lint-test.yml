@@ -76,6 +76,7 @@ jobs:
           # Note: Full install test skipped because the app requires real MongoDB/S3
           helm template mnemoshare charts/mnemoshare \
             --set customerId="ci-test" \
+            --set formatMigrations.mode=automatic \
             --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             --set mongodb.external.enabled=true \
             --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
@@ -266,6 +267,7 @@ jobs:
           digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           helm template profiled charts/mnemoshare \
             --set customerId=ci-test \
+            --set formatMigrations.mode=automatic \
             --set network.trustedProxyCIDRs=none \
             --set image.digest="$digest" \
             --set deploymentContract.sourceCommit="$deployment_commit" \
@@ -281,6 +283,7 @@ jobs:
           # also plans, applies and verifies that universe.
           helm template relay charts/mnemoshare \
             --set customerId=ci-test \
+            --set formatMigrations.mode=automatic \
             --set network.trustedProxyCIDRs=none \
             --set image.digest="$digest" \
             --set deploymentContract.sourceCommit="$deployment_commit" \
@@ -773,3 +776,6 @@ jobs:
 
       - name: Validate generated secrets reuse the release Secret
         run: STABLE_SECRETS_CLUSTER=1 bash charts/mnemoshare/tests/stable-secrets.sh
+
+      - name: Validate a default install reaches deployed with hooks on
+        run: bash charts/mnemoshare/tests/install-smoke.sh

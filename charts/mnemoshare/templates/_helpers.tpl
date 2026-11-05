@@ -252,8 +252,8 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{ include "mnemoshare.migrationOperationContractLabels" . }}
-{{- with .Values.commonLabels }}
-{{ toYaml . }}
+{{- range $key, $value := .Values.commonLabels }}
+{{ $key }}: {{ toString $value | quote }}
 {{- end }}
 {{- end }}
 
@@ -479,9 +479,28 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Non-empty when cluster access works and no revision of this release ever reached
+deployed or superseded: a retried failed first install, which has no keys to keep.
+*/}}
+{{- define "mnemoshare.firstInstallRetry" -}}
+{{- $items := lookup "v1" "Secret" .Release.Namespace "" -}}
+{{- if $items -}}
+{{- $live := false -}}
+{{- range $items.items -}}
+{{- $l := .metadata.labels | default dict -}}
+{{- if and (eq (get $l "owner") "helm") (eq (get $l "name") $.Release.Name) (has (get $l "status") (list "deployed" "superseded")) -}}
+{{- $live = true -}}
+{{- end -}}
+{{- end -}}
+{{- if not $live -}}true{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Resolve a chart-generated secret value: explicit value, else the value already
 in the release Secret, else generate. lookup is empty without cluster access:
-install renders then generate, upgrade renders fail rather than rotate the key.
+install renders then generate, upgrade renders fail rather than rotate the key
+unless the release never deployed (retried failed first install).
 Argo CD renders as an install and cannot be detected here. Memoized per render
 because generators are not deterministic across includes.
 Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"ecdsa"), impact.
@@ -499,7 +518,7 @@ Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"ecdsa"),
 {{- $existing := lookup "v1" "Secret" $root.Release.Namespace (printf "%s-secrets" (include "mnemoshare.fullname" $root)) -}}
 {{- if and $existing $existing.data (index $existing.data .secretKey) -}}
 {{- $_ := set $memo .name (index $existing.data .secretKey | b64dec) -}}
-{{- else if $root.Release.IsUpgrade -}}
+{{- else if and $root.Release.IsUpgrade (not (include "mnemoshare.firstInstallRetry" $root)) -}}
 {{- if lookup "v1" "Secret" $root.Release.Namespace "" -}}
 {{- fail (printf "refusing to generate a new %s on upgrade: the previous value was not found in Secret %s-secrets and %s. Set encryption.key / jwt.ecPrivateKey or existingSecrets.encryption / existingSecrets.jwt." .secretKey (include "mnemoshare.fullname" $root) .impact) -}}
 {{- else -}}

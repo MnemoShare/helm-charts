@@ -4,6 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 BASE=(
   --set customerId=ci-test
+  --set formatMigrations.mode=automatic
   --set image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   --set cors.allowedOrigins=https://ci.example.com
   --set mongodb.external.enabled=true
