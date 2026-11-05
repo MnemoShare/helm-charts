@@ -2471,6 +2471,12 @@ keyguard:
 # NetworkPolicy.
 sandbox:
   enabled: false
+  # First application release that ships /usr/local/bin/sandbox-runner. The
+  # render fails when sandbox.enabled and the effective image tag (runner tag,
+  # image.tag, else appVersion) is a semver below this; the check is skipped
+  # when an image digest is set or the tag is not semver (demo-<sha>, dev-<sha>).
+  # Empty disables the check.
+  minAppVersion: "0.23.0"
   # false (recommended): pre-create <release namespace>-sandbox with
   #   kubectl create namespace <ns>-sandbox
   #   kubectl label namespace <ns>-sandbox pod-security.kubernetes.io/enforce=restricted
@@ -2518,8 +2524,9 @@ sandbox:
       enabled: true
       port: 8085
     egress:
-      # Kubernetes API server endpoints the runner may reach. Empty falls back
-      # to ports 443/6443 to ANY destination (listed in NOTES).
+      # Kubernetes API server endpoints the runner may reach. Required while
+      # networkPolicy.enabled: the render fails when empty, there is no
+      # any-destination fallback.
       kubernetesApiTargets: []
       # - cidr: 10.96.0.1/32
       #   port: 443

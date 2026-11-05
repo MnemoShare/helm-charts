@@ -365,10 +365,6 @@ spec:
       ports:
         - { protocol: TCP, port: {{ .port }} }
     {{- end }}
-    {{- if not $runner.egress.kubernetesApiTargets }}
-    {{- /* Kubernetes API endpoint unknown: 443/6443 only, any destination. */}}
-    {{- include "mnemoshare.np.rule" (dict "ports" (list 443 6443) "anyDest" true) | nindent 4 }}
-    {{- end }}
 ---
 # The engine host may call the runner Service; additive to the host's own
 # egress policy so the shared workload egress rules stay single-sourced.

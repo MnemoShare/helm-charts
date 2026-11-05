@@ -18,7 +18,8 @@ base=(
   --namespace tenant
 )
 digestA=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-unpinned=(--set sandbox.enabled=true --set sandbox.runner.tls.issuerRef.name=issuer)
+api=(--set "sandbox.runner.egress.kubernetesApiTargets[0].cidr=10.96.0.1/32" --set "sandbox.runner.egress.kubernetesApiTargets[0].port=443")
+unpinned=(--set sandbox.enabled=true --set sandbox.runner.tls.issuerRef.name=issuer --set image.tag=0.23.0 "${api[@]}")
 on=("${unpinned[@]}" --set sandbox.runner.image.digest=$digestA)
 worker=(--set workflowWorker.enabled=true --set redis.mode=external --set redis.external.host=redis.example.com)
 here=$(cd "$(dirname "$0")/../../.." && pwd)
@@ -101,22 +102,44 @@ out=$(render "${on[@]}" --set sandbox.createNamespace=true)
 grep -q "pod-security.kubernetes.io/enforce: restricted" <<<"$out" || fail "created namespace is not pod-security restricted"
 
 # TLS/plaintext gate and issuer requirement.
-if render --set sandbox.enabled=true >/dev/null 2>&1; then fail "TLS enabled with no issuer or secret rendered"; fi
-if render --set sandbox.enabled=true --set sandbox.runner.tls.enabled=false >/dev/null 2>&1; then fail "plaintext rendered without allowPlaintext"; fi
-render --set sandbox.enabled=true --set sandbox.runner.tls.enabled=false --set sandbox.runner.tls.allowPlaintext=true |
+if render --set sandbox.enabled=true --set image.tag=0.23.0 "${api[@]}" >/dev/null 2>&1; then fail "TLS enabled with no issuer or secret rendered"; fi
+if render --set sandbox.enabled=true --set image.tag=0.23.0 "${api[@]}" --set sandbox.runner.tls.enabled=false >/dev/null 2>&1; then fail "plaintext rendered without allowPlaintext"; fi
+render --set sandbox.enabled=true --set image.tag=0.23.0 "${api[@]}" --set sandbox.runner.tls.enabled=false --set sandbox.runner.tls.allowPlaintext=true |
   grep -q 'name: SANDBOX_RUNNER_ALLOW_PLAINTEXT' || fail "plaintext opt-in not passed to the runner"
 
-# The API-server fallback is called out in NOTES until targets are set.
+# The Kubernetes API egress fails closed: targets are required while networkPolicy is on.
+err=$(render --set sandbox.enabled=true --set sandbox.runner.tls.issuerRef.name=issuer --set image.tag=0.23.0 2>&1) && fail "render succeeded without sandbox.runner.egress.kubernetesApiTargets"
+grep -qF "sandbox.runner.egress.kubernetesApiTargets is required" <<<"$err" || fail "missing-targets failure is not explained: $err"
+render --set sandbox.enabled=true --set sandbox.runner.tls.issuerRef.name=issuer --set image.tag=0.23.0 --set networkPolicy.enabled=false >/dev/null || fail "targets required although networkPolicy is off"
+out=$(render "${on[@]}")
+grep -qF 'cidr: "10.96.0.1/32"' <<<"$out" || fail "API server target not rendered as runner egress"
+python3 -c '
+import sys, yaml
+for d in yaml.safe_load_all(sys.stdin):
+    if d and d["kind"] == "NetworkPolicy" and d["metadata"]["name"] == "mnemoshare-sandbox-runner-egress":
+        sys.exit(any("to" not in r for r in d["spec"]["egress"]))
+    ' <<<"$out" || fail "runner egress has a rule without a destination"
+
+# Minimum application version: below it the runner binary does not exist and would crash-loop.
+err=$(render --set sandbox.enabled=true --set sandbox.runner.tls.issuerRef.name=issuer "${api[@]}" 2>&1) && fail "render succeeded with appVersion below sandbox.minAppVersion"
+grep -qF "below sandbox.minAppVersion 0.23.0" <<<"$err" || fail "min-version failure is not explained: $err"
+for ok in "--set image.tag=0.23.0" "--set image.tag=v0.24.1" "--set image.tag=demo-abc123" "--set sandbox.runner.image.digest=$digestA"; do
+  # shellcheck disable=SC2086
+  render --set sandbox.enabled=true --set sandbox.runner.tls.issuerRef.name=issuer "${api[@]}" $ok >/dev/null || fail "render refused: $ok"
+done
+if render --set sandbox.enabled=true --set sandbox.runner.tls.issuerRef.name=issuer "${api[@]}" --set image.tag=0.22.9 >/dev/null 2>&1; then fail "0.22.9 rendered"; fi
+render --set sandbox.enabled=true --set sandbox.runner.tls.issuerRef.name=issuer "${api[@]}" --set sandbox.minAppVersion= >/dev/null || fail "empty minAppVersion must disable the check"
+
+# NOTES warn on broad sandbox egress.
 notes=$(mktemp -d); trap 'rm -rf "$notes"' EXIT
 cp -R "$chart" "$notes/chart"
 { echo '{{- define "notes-probe" -}}'; cat "$notes/chart/templates/NOTES.txt"; echo '{{- end -}}'; } >"$notes/chart/templates/_notes-probe.tpl"
 echo 'notes: {{ include "notes-probe" . | toJson }}' >"$notes/chart/templates/notes-probe.yaml"
-out=$(helm template t "$notes/chart" "${base[@]}" "${on[@]}" --show-only templates/notes-probe.yaml)
-grep -qF "Kubernetes API egress falls back" <<<"$out" || fail "NOTES missing the sandbox API fallback"
-api=(--set "sandbox.runner.egress.kubernetesApiTargets[0].cidr=10.96.0.1/32" --set "sandbox.runner.egress.kubernetesApiTargets[0].port=443")
-out=$(helm template t "$notes/chart" "${base[@]}" "${on[@]}" "${api[@]}" --show-only templates/notes-probe.yaml)
-! grep -qF "Kubernetes API egress falls back" <<<"$out" || fail "NOTES list the fallback although targets are set"
-render "${on[@]}" "${api[@]}" | grep -qF 'cidr: "10.96.0.1/32"' || fail "API server target not rendered as runner egress"
+probe() { helm template t "$notes/chart" "${base[@]}" "${on[@]}" --show-only templates/notes-probe.yaml "$@"; }
+out=$(probe)
+! grep -qF "egressAllowedCIDRs contains" <<<"$out" || fail "NOTES warn without broad egress CIDRs"
+out=$(probe --set "sandbox.policy.egressAllowedCIDRs={203.0.113.0/24,0.0.0.0/0,10.1.0.0/16,fd00::/8,172.20.0.0/16}")
+grep -qF "egressAllowedCIDRs contains 0.0.0.0/0, 10.1.0.0/16, fd00::/8, 172.20.0.0/16" <<<"$out" || fail "NOTES missing the broad egress warning: $out"
 
 # Runner policy: no default image until a digest is set (fail closed), then the
 # digest-pinned reference; command lists render in the runner's comma format.
@@ -153,6 +176,6 @@ for d in yaml.safe_load_all(sys.stdin):
     mounted = any(m["name"] == "sandbox-runner-ca" for c in spec["containers"] for m in c.get("volumeMounts", []))
     assert has == env == mounted, d["metadata"]["name"]
 ' <<<"$out" || fail "runner CA volume, mount and env are not on the same pods"
-plain=$(render --set sandbox.enabled=true --set sandbox.runner.tls.enabled=false --set sandbox.runner.tls.allowPlaintext=true)
+plain=$(render --set sandbox.enabled=true --set image.tag=0.23.0 "${api[@]}" --set sandbox.runner.tls.enabled=false --set sandbox.runner.tls.allowPlaintext=true)
 ! grep -q "SANDBOX_RUNNER_CA_FILE" <<<"$plain" || fail "CA env rendered for a plaintext runner"
 echo "sandbox-runner: ok"

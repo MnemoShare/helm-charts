@@ -452,7 +452,9 @@ kubectl label namespace <release-namespace>-sandbox pod-security.kubernetes.io/e
 
 helm install mnemoshare mnemoshare/mnemoshare ... \
   --set sandbox.enabled=true \
-  --set sandbox.runner.tls.issuerRef.name=<cert-manager issuer>
+  --set sandbox.runner.tls.issuerRef.name=<cert-manager issuer> \
+  --set sandbox.runner.egress.kubernetesApiTargets[0].cidr=<API server IP>/32 \
+  --set sandbox.runner.egress.kubernetesApiTargets[0].port=443
 ```
 
 - `sandbox.createNamespace=true` makes the release create the namespace (with the pod security labels) and
@@ -464,8 +466,8 @@ helm install mnemoshare mnemoshare/mnemoshare ... \
 - `replicas` defaults to 2 (a PodDisruptionBudget is added above 1); use 1 on single-node clusters.
 - With `networkPolicy.enabled=true` the runner may be called only by the pods hosting the engine (workers
   when `workflowWorker.enabled`, otherwise the API) and may reach only DNS and the Kubernetes API server.
-  Set `sandbox.runner.egress.kubernetesApiTargets` to the API server address; unset it falls back to ports
-  443/6443 to any destination, called out in the install NOTES.
+  `sandbox.runner.egress.kubernetesApiTargets` (API server `cidr` and `port`) is required while
+  `networkPolicy.enabled`: the render fails when it is empty, there is no any-destination fallback.
 - Input staging and output collection (`sandbox.runner.staging.enabled`) need Kubernetes 1.29+ in the cluster that runs the Jobs and a
   digest-pinned runner image (`sandbox.runner.image.digest`) while `sandbox.policy.requireImageDigest` is true; without a digest
   they are skipped and the install NOTES say so.
@@ -480,7 +482,11 @@ helm install mnemoshare mnemoshare/mnemoshare ... \
 - With TLS on, the engine pods verify the runner with `ca.crt` of the runner TLS secret
   (`SANDBOX_RUNNER_CA_FILE`, `SANDBOX_RUNNER_SERVER_NAME`); with `tls.secretName` the secret must carry
   `ca.crt`. No engine client certificate is provisioned.
-- Needs a runtime image release that contains `/usr/local/bin/sandbox-runner`.
+- Needs an application image that contains `/usr/local/bin/sandbox-runner`: `sandbox.minAppVersion` (default `0.23.0`) is the
+  first 0.x release that ships it. With `sandbox.enabled` the render fails when the effective image tag (runner tag, `image.tag`,
+  else `appVersion`) is a semver below it, rather than crash-looping an `--atomic` install. The check is skipped when an image digest
+  is set or the tag is not semver (for example `demo-<sha>`); set `sandbox.minAppVersion=""` to disable it.
+- `sandbox.policy.egressAllowedCIDRs` entries of `0.0.0.0/0`, `::/0` or private ranges raise a warning in the install NOTES.
 
 ## Certificate Authority Configuration
 

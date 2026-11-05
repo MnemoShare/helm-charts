@@ -108,6 +108,15 @@ has no default image and run_command cannot start (fail closed).
 {{- define "mnemoshare.sandbox.validate" -}}
 {{- if .Values.sandbox.enabled -}}
 {{- if not (include "mnemoshare.sandbox.namespace" .) -}}{{- fail "sandbox namespace is empty" -}}{{- end -}}
+{{- if and .Values.networkPolicy .Values.networkPolicy.enabled (not .Values.sandbox.runner.egress.kubernetesApiTargets) -}}
+{{- fail "sandbox.runner.egress.kubernetesApiTargets is required while networkPolicy.enabled: list the Kubernetes API server cidr and port; there is no any-destination fallback" -}}
+{{- end -}}
+{{- if not (or .Values.sandbox.runner.image.digest .Values.image.digest) -}}
+{{- $tag := .Values.sandbox.runner.image.tag | default .Values.image.tag | default .Chart.AppVersion | trimPrefix "v" -}}
+{{- if and .Values.sandbox.minAppVersion (regexMatch "^[0-9]+\\.[0-9]+\\.[0-9]+" $tag) (not (semverCompare (printf ">=%s-0" .Values.sandbox.minAppVersion) $tag)) -}}
+{{- fail (printf "sandbox.enabled needs an application image that ships /usr/local/bin/sandbox-runner: image tag %s is below sandbox.minAppVersion %s (set image.tag, or sandbox.runner.image.digest to skip this check)" $tag .Values.sandbox.minAppVersion) -}}
+{{- end -}}
+{{- end -}}
 {{- if and .Values.sandbox.runner.staging.enabled (or (eq (int .Values.sandbox.runner.staging.port) (int .Values.sandbox.runner.port)) (eq (int .Values.sandbox.runner.staging.port) (int .Values.sandbox.runner.healthPort))) -}}
 {{- fail "sandbox.runner.staging.port must differ from sandbox.runner.port and sandbox.runner.healthPort" -}}
 {{- end -}}
