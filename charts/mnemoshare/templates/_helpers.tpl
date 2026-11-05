@@ -155,7 +155,7 @@ Resolve a chart-generated secret value: explicit value, else the value already
 in the release Secret (lookup is empty under helm template / client dry-run, so
 those renders always generate), else generate. Memoized per render because
 generators are not deterministic across includes.
-Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"ecdsa").
+Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"ecdsa"), impact..
 */}}
 {{- define "mnemoshare.stableSecretValue" -}}
 {{- $root := .root -}}
@@ -171,7 +171,11 @@ Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"ecdsa").
 {{- if and $existing $existing.data (index $existing.data .secretKey) -}}
 {{- $_ := set $memo .name (index $existing.data .secretKey | b64dec) -}}
 {{- else if $root.Release.IsUpgrade -}}
-{{- fail (printf "refusing to generate a new %s on upgrade: the previous value was not found in Secret %s-secrets, and a new one would make existing data unreadable. Set encryption.key / jwt.ecPrivateKey or existingSecrets.encryption / existingSecrets.jwt." .secretKey (include "mnemoshare.fullname" $root)) -}}
+{{- if lookup "v1" "Namespace" "" $root.Release.Namespace -}}
+{{- fail (printf "refusing to generate a new %s on upgrade: the previous value was not found in Secret %s-secrets and %s. Set encryption.key / jwt.ecPrivateKey or existingSecrets.encryption / existingSecrets.jwt." .secretKey (include "mnemoshare.fullname" $root) .impact) -}}
+{{- else -}}
+{{- fail (printf "cannot resolve %s: this is an upgrade render without cluster access (helm template --is-upgrade, helm upgrade --dry-run=client, helm diff without server dry-run, Argo CD), so the existing Secret %s-secrets cannot be read and a new key would make this render differ from the live one (%s). Render with --dry-run=server, or set encryption.key / jwt.ecPrivateKey or existingSecrets.encryption / existingSecrets.jwt." .secretKey (include "mnemoshare.fullname" $root) .impact) -}}
+{{- end -}}
 {{- else if eq .generator "ecdsa" -}}
 {{- $_ := set $memo .name (genPrivateKey "ecdsa") -}}
 {{- else -}}
@@ -186,14 +190,14 @@ Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"ecdsa").
 JWT EC private key (ECDSA P-256) - provided, existing in the release Secret, or generated
 */}}
 {{- define "mnemoshare.jwtECKey" -}}
-{{- include "mnemoshare.stableSecretValue" (dict "root" . "name" "jwt" "explicit" .Values.jwt.ecPrivateKey "secretKey" "jwt-ec-private-key" "generator" "ecdsa") -}}
+{{- include "mnemoshare.stableSecretValue" (dict "root" . "name" "jwt" "explicit" .Values.jwt.ecPrivateKey "secretKey" "jwt-ec-private-key" "generator" "ecdsa" "impact" "existing sessions and tokens would be invalidated") -}}
 {{- end }}
 
 {{/*
 Encryption key (exactly 32 bytes) - provided, existing in the release Secret, or generated
 */}}
 {{- define "mnemoshare.encryptionKey" -}}
-{{- include "mnemoshare.stableSecretValue" (dict "root" . "name" "encryption" "explicit" .Values.encryption.key "secretKey" "encryption-key" "generator" "alnum32") -}}
+{{- include "mnemoshare.stableSecretValue" (dict "root" . "name" "encryption" "explicit" .Values.encryption.key "secretKey" "encryption-key" "generator" "alnum32" "impact" "existing files would become unreadable") -}}
 {{- end }}
 
 {{/*
