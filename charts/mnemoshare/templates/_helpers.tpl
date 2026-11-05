@@ -151,25 +151,47 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Generate JWT EC private key (ECDSA P-256) - use provided value or auto-generate
+Resolve a chart-generated secret value: explicit value, else the value already
+in the release Secret (lookup is empty under helm template / client dry-run, so
+those renders always generate), else generate. Memoized per render because
+generators are not deterministic across includes.
+Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"ecdsa").
 */}}
-{{- define "mnemoshare.jwtECKey" -}}
-{{- if .Values.jwt.ecPrivateKey }}
-{{- .Values.jwt.ecPrivateKey }}
-{{- else }}
-{{- genPrivateKey "ecdsa" }}
-{{- end }}
+{{- define "mnemoshare.stableSecretValue" -}}
+{{- $root := .root -}}
+{{- if .explicit -}}
+{{- .explicit -}}
+{{- else -}}
+{{- if not (hasKey $root.Values "_generatedSecrets") -}}
+{{- $_ := set $root.Values "_generatedSecrets" (dict) -}}
+{{- end -}}
+{{- $memo := index $root.Values "_generatedSecrets" -}}
+{{- if not (hasKey $memo .name) -}}
+{{- $existing := lookup "v1" "Secret" $root.Release.Namespace (printf "%s-secrets" (include "mnemoshare.fullname" $root)) -}}
+{{- if and $existing $existing.data (index $existing.data .secretKey) -}}
+{{- $_ := set $memo .name (index $existing.data .secretKey | b64dec) -}}
+{{- else if eq .generator "ecdsa" -}}
+{{- $_ := set $memo .name (genPrivateKey "ecdsa") -}}
+{{- else -}}
+{{- $_ := set $memo .name (randAlphaNum 32) -}}
+{{- end -}}
+{{- end -}}
+{{- index $memo .name -}}
+{{- end -}}
 {{- end }}
 
 {{/*
-Generate encryption key - use provided value or auto-generate (must be exactly 32 bytes)
+JWT EC private key (ECDSA P-256) - provided, existing in the release Secret, or generated
+*/}}
+{{- define "mnemoshare.jwtECKey" -}}
+{{- include "mnemoshare.stableSecretValue" (dict "root" . "name" "jwt" "explicit" .Values.jwt.ecPrivateKey "secretKey" "jwt-ec-private-key" "generator" "ecdsa") -}}
+{{- end }}
+
+{{/*
+Encryption key (exactly 32 bytes) - provided, existing in the release Secret, or generated
 */}}
 {{- define "mnemoshare.encryptionKey" -}}
-{{- if .Values.encryption.key }}
-{{- .Values.encryption.key }}
-{{- else }}
-{{- randAlphaNum 32 }}
-{{- end }}
+{{- include "mnemoshare.stableSecretValue" (dict "root" . "name" "encryption" "explicit" .Values.encryption.key "secretKey" "encryption-key" "generator" "alnum32") -}}
 {{- end }}
 
 {{/*
