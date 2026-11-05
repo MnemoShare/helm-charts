@@ -253,14 +253,10 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{ include "mnemoshare.migrationOperationContractLabels" . }}
 {{- range $key, $value := .Values.commonLabels }}
-{{- if kindIs "string" $value }}
-{{ $key }}: {{ $value | quote }}
-{{- else if kindIs "bool" $value }}
+{{- if or (kindIs "string" $value) (kindIs "bool" $value) (and (has (kindOf $value) (list "int" "int64")) (ge (int64 $value) 0)) }}
 {{ $key }}: {{ toString $value | quote }}
-{{- else if and (has (kindOf $value) (list "float64" "int" "int64")) (eq (float64 $value) (floor (float64 $value))) (lt (float64 $value) 1e15) (gt (float64 $value) -1e15) }}
-{{ $key }}: {{ printf "%d" (int64 $value) | quote }}
 {{- else }}
-{{- fail (printf "commonLabels.%s must be a string, boolean or whole number (label values are strings); quote it or use --set-string" $key) }}
+{{- fail (printf "commonLabels.%s must be a string or boolean; non-negative integers only via --set (a values file parses every number as a float). Label values must start with an alphanumeric: quote it in the file or use --set-string" $key) }}
 {{- end }}
 {{- end }}
 {{- end }}
@@ -489,12 +485,14 @@ Create the name of the service account to use
 {{/*
 Non-empty only when this release has Helm records in its namespace (Secret or
 ConfigMap driver) and none ever reached deployed or superseded: a retried failed
-first install, which has no keys to keep. No record found (sql driver, foreign
-storage namespace, no cluster access) stays empty so callers refuse.
+first install (a revision-1 record exists), which has no keys to keep. No record
+found (sql driver, foreign storage namespace, no cluster access) stays empty so
+callers refuse; a stray failed record without revision 1 cannot re-enable generation.
 */}}
 {{- define "mnemoshare.firstInstallRetry" -}}
 {{- $found := false -}}
 {{- $live := false -}}
+{{- $first := false -}}
 {{- range $kind := list "Secret" "ConfigMap" -}}
 {{- $items := lookup "v1" $kind $.Release.Namespace "" -}}
 {{- if $items -}}
@@ -502,6 +500,7 @@ storage namespace, no cluster access) stays empty so callers refuse.
 {{- $l := .metadata.labels | default dict -}}
 {{- if and (eq (get $l "owner") "helm") (eq (get $l "name") $.Release.Name) (or (ne $kind "Secret") (eq (.type | default "") "helm.sh/release.v1")) -}}
 {{- $found = true -}}
+{{- if eq (get $l "version") "1" -}}{{- $first = true -}}{{- end -}}
 {{- if has (get $l "status") (list "deployed" "superseded") -}}
 {{- $live = true -}}
 {{- end -}}
@@ -509,7 +508,7 @@ storage namespace, no cluster access) stays empty so callers refuse.
 {{- end -}}
 {{- end -}}
 {{- end -}}
-{{- if and $found (not $live) -}}true{{- end -}}
+{{- if and $found $first (not $live) -}}true{{- end -}}
 {{- end }}
 
 {{/*
