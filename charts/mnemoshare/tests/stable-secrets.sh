@@ -62,9 +62,10 @@ for bad in 0042 1.0 0755 1e3 1.5; do
 done
 rm -f "$lf"
 out=$(labels --set commonLabels.n=-5) && fail "negative commonLabels integer was accepted"
-grep -q '^    cc: "0042"$' <<<"$(labels --set commonLabels.cc=0042)" || fail "--set commonLabels.cc=0042 not kept as a string"
-grep -q '^    n: "5"$' <<<"$(labels --set commonLabels.n=5)" || fail "--set commonLabels.n=5 not rendered as \"5\""
-grep -q '^    b: "true"$' <<<"$(labels --set commonLabels.b=true)" || fail "boolean commonLabels not rendered as \"true\""
+grep -q '^    "cc": "0042"$' <<<"$(labels --set commonLabels.cc=0042)" || fail "--set commonLabels.cc=0042 not kept as a string"
+grep -q '^    "n": "5"$' <<<"$(labels --set commonLabels.n=5)" || fail "--set commonLabels.n=5 not rendered as \"5\""
+grep -q '^    "b": "true"$' <<<"$(labels --set commonLabels.b=true)" || fail "boolean commonLabels not rendered as \"true\""
+grep -q '^    "on": "a"$' <<<"$(labels --set-string commonLabels.on=a)" || fail "YAML 1.1 boolean-like commonLabels key not quoted"
 
 if [ "${STABLE_SECRETS_CLUSTER:-}" = 1 ]; then
   ctx=$(kubectl config current-context)

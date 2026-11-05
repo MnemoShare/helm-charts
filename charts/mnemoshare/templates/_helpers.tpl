@@ -254,7 +254,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{ include "mnemoshare.migrationOperationContractLabels" . }}
 {{- range $key, $value := .Values.commonLabels }}
 {{- if or (kindIs "string" $value) (kindIs "bool" $value) (and (has (kindOf $value) (list "int" "int64")) (ge (int64 $value) 0)) }}
-{{ $key }}: {{ toString $value | quote }}
+{{ $key | quote }}: {{ toString $value | quote }}
 {{- else }}
 {{- fail (printf "commonLabels.%s must be a string or boolean; non-negative integers only via --set (a values file parses every number as a float). Label values must start with an alphanumeric: quote it in the file or use --set-string" $key) }}
 {{- end }}
