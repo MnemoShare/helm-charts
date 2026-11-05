@@ -434,38 +434,27 @@ jobs:
           fi
           echo "✓ Scenario F — stepCA-external guard fires without caProvider.url"
 
-      - name: Validate sftpGateway encryption.key guard fails fast
-        if: github.event_name == 'pull_request'
+      - name: Validate generated secrets are stable (offline)
+        run: bash charts/mnemoshare/tests/stable-secrets.sh
+
+  stable-secrets-lookup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.13.1
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+
+      - name: Add chart dependency repos
         run: |
-          # Pin the PR #12 review concern 1 fix: enabling sftpGateway
-          # without an explicit encryption.key (and without the
-          # existingSecret escape hatches) MUST fail at template time,
-          # not silently produce a deployment that 401s every gateway
-          # call. If this `helm template` succeeds we lost the guard.
-          set +e
-          OUT=$(helm template mnemoshare charts/mnemoshare \
-            --set customerId="ci-test" \
-            --set mongodb.external.enabled=true \
-            --set mongodb.external.uri="mongodb://test:test@localhost:27017/test" \
-            --set s3.bucket="test-bucket" \
-            --set s3.accessKey="test-key" \
-            --set s3.secretKey="test-secret" \
-            --set-string jwt.ecPrivateKey="test-ec-key-auto-generated-if-empty" \
-            --set license.key="test-license-key" \
-            --set appUrl="https://test.example.com" \
-            --set ingress.enabled=false \
-            --set sftpGateway.enabled=true \
-            --set sftpGateway.hostKey.existingSecret="dummy-hostkey-secret" \
-            2>&1)
-          STATUS=$?
-          set -e
-          if [ $STATUS -eq 0 ]; then
-            echo "✗ Expected helm template to fail (no encryption.key set), but it succeeded"
-            exit 1
-          fi
-          if ! echo "$OUT" | grep -q "encryption.key"; then
-            echo "✗ Expected the failure message to mention encryption.key, got:"
-            echo "$OUT"
-            exit 1
-          fi
-          echo "✓ sftpGateway.enabled without encryption.key fails fast as expected"
+          helm repo add minio https://charts.min.io/
+          helm dependency build charts/mnemoshare
+
+      - name: Validate generated secrets reuse the release Secret
+        run: STABLE_SECRETS_CLUSTER=1 bash charts/mnemoshare/tests/stable-secrets.sh
