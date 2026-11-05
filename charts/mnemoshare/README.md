@@ -268,8 +268,8 @@ upgrade to this chart before uninstalling.
 | `s3.bucket` | S3 bucket name | `mnemoshare-files` |
 | `s3.accessKey` | S3 access key | `AKIA...` |
 | `s3.secretKey` | S3 secret key | `xxx` |
-| `jwt.ecPrivateKey` | PEM-encoded ECDSA P-256 private key for ES256 JWT signing (auto-generated if empty) | `""` |
-| `encryption.key` | File encryption key (32 bytes) | `your-key` |
+| `jwt.ecPrivateKey` | PEM-encoded ECDSA P-256 private key for ES256 JWT signing (generated on first install if empty, then reused from the release Secret on upgrade) | `""` |
+| `encryption.key` | File encryption key (32 bytes); if empty, generated on first install and reused from the release Secret on upgrade (not under `helm template`) | `your-key` |
 | `license.key` | MnemoShare license key | `your-license` |
 | `appUrl` | Application URL | `https://example.com` |
 

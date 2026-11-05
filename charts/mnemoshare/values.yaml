@@ -285,7 +285,7 @@ s3:
 
 # JWT authentication (ES256 / ECDSA P-256)
 jwt:
-  ecPrivateKey: ""  # PEM-encoded EC P-256 private key for ES256 JWT signing (auto-generated if empty)
+  ecPrivateKey: ""  # PEM-encoded EC P-256 private key for ES256 JWT signing (generated on first install if empty, then reused on upgrade)
 
 # Encryption
 encryption:
