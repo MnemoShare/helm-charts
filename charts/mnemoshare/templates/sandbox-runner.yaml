@@ -361,9 +361,9 @@ spec:
           port: 53
     {{- range $runner.egress.kubernetesApiTargets }}
     - to:
-        - ipBlock: { cidr: {{ .cidr | quote }} }
+        - ipBlock: { cidr: {{ required "sandbox.runner.egress.kubernetesApiTargets[].cidr is required" .cidr | quote }} }
       ports:
-        - { protocol: TCP, port: {{ .port }} }
+        - { protocol: TCP, port: {{ required "sandbox.runner.egress.kubernetesApiTargets[].port is required: an entry without a port would open every TCP port" .port }} }
     {{- end }}
 ---
 # The engine host may call the runner Service; additive to the host's own

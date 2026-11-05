@@ -71,7 +71,7 @@ SANDBOX RUNNER
   Sandbox namespace: {{ include "mnemoshare.sandbox.namespace" . }}
 {{- $broad := list }}
 {{- range .Values.sandbox.policy.egressAllowedCIDRs }}
-{{- if or (hasSuffix "/0" .) (regexMatch "^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|169\\.254\\.|[fF][cCdD][0-9a-fA-F]{2}:)" .) }}{{ $broad = append $broad . }}{{ end }}
+{{- if or (hasSuffix "/0" .) (regexMatch "^(10\\.|100\\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|169\\.254\\.|[fF][cCdD][0-9a-fA-F]{2}:)" .) }}{{ $broad = append $broad . }}{{ end }}
 {{- end }}
 {{- if $broad }}
   WARNING: sandbox.policy.egressAllowedCIDRs contains {{ join ", " $broad }}, which lets sandboxed code reach the internet or private networks.
