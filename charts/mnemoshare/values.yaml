@@ -285,11 +285,11 @@ s3:
 
 # JWT authentication (ES256 / ECDSA P-256)
 jwt:
-  ecPrivateKey: ""  # PEM-encoded EC P-256 private key for ES256 JWT signing (generated on first install if empty, then reused on upgrade; GitOps renderers such as Argo CD/Flux and `helm template` cannot read the existing Secret, so set it explicitly or use existingSecrets.jwt)
+  ecPrivateKey: ""  # PEM-encoded EC P-256 private key for ES256 JWT signing (generated on first install if empty, then reused on upgrade; renders without cluster access (Argo CD, `helm template`, client-side `helm upgrade --dry-run`, helm-diff/helmfile diff without server dry-run) cannot read the existing Secret, so set it explicitly or use existingSecrets.jwt)
 
 # Encryption
 encryption:
-  key: ""  # 32-byte encryption key; if empty it is generated on first install and reused on upgrade. Argo CD/Flux/`helm template` cannot read the existing Secret: set it explicitly or use existingSecrets.encryption there
+  key: ""  # 32-byte encryption key; if empty it is generated on first install and reused on upgrade. renders without cluster access (Argo CD, `helm template`, client-side `helm upgrade --dry-run`, helm-diff/helmfile diff without server dry-run) cannot read the existing Secret: set it explicitly or use existingSecrets.encryption there
   # oldKey: ""  # Optional: Previous encryption key for master key rotation
   # To rotate the master encryption key:
   # 1. Set 'oldKey' to your current encryption key

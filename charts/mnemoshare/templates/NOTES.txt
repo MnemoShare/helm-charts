@@ -11,8 +11,10 @@ GENERATED KEYS
   Secret {{ include "mnemoshare.fullname" . }}-secrets. That Secret is kept on `helm uninstall`
   (helm.sh/resource-policy: keep); back it up, since losing the encryption key
   makes every stored file unreadable. Upgrades reuse it and fail if it is missing.
-  Argo CD, Flux and `helm template` cannot read it: set encryption.key and
-  jwt.ecPrivateKey (or existingSecrets.*) when rendering that way.
+  Renders without cluster access (Argo CD, `helm template`, `helm upgrade
+  --dry-run` client-side, helm-diff/helmfile diff without server dry-run)
+  cannot read it: set encryption.key and jwt.ecPrivateKey (or
+  existingSecrets.*) there, or render with --dry-run=server.
 {{- end }}
 {{- if or .Values.mcp.enabled .Values.sftpGateway.enabled }}
 
