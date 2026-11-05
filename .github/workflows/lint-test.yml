@@ -773,3 +773,6 @@ jobs:
 
       - name: Validate generated secrets reuse the release Secret
         run: STABLE_SECRETS_CLUSTER=1 bash charts/mnemoshare/tests/stable-secrets.sh
+
+      - name: Install smoke (migrations disabled), failed-first-install retry, dry-runs
+        run: bash charts/mnemoshare/tests/install-smoke.sh

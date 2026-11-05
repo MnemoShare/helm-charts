@@ -52,6 +52,21 @@ err=$(render --is-upgrade 2>&1) && fail "offline upgrade render without keys mus
 grep -q "without cluster access" <<<"$err" || fail "offline upgrade message missing: $err"
 render --is-upgrade "${explicit[@]}" >/dev/null || fail "offline upgrade render with explicit keys must work"
 
+# commonLabels: strings, booleans and --set integers only; values-file numbers are floats.
+labels() { helm template t "$chart" "${base[@]}" "$@" 2>&1; }
+lf=$(mktemp)
+for bad in 0042 1.0 0755 1e3 1.5; do
+  printf 'commonLabels:\n  z: %s\n' "$bad" >"$lf"
+  out=$(labels -f "$lf") && fail "commonLabels value $bad from a values file was accepted"
+  grep -q "commonLabels.z must be a string or boolean" <<<"$out" || fail "unexpected commonLabels failure for $bad: $out"
+done
+rm -f "$lf"
+out=$(labels --set commonLabels.n=-5) && fail "negative commonLabels integer was accepted"
+grep -q '^    "cc": "0042"$' <<<"$(labels --set commonLabels.cc=0042)" || fail "--set commonLabels.cc=0042 not kept as a string"
+grep -q '^    "n": "5"$' <<<"$(labels --set commonLabels.n=5)" || fail "--set commonLabels.n=5 not rendered as \"5\""
+grep -q '^    "b": "true"$' <<<"$(labels --set commonLabels.b=true)" || fail "boolean commonLabels not rendered as \"true\""
+grep -q '^    "on": "a"$' <<<"$(labels --set-string commonLabels.on=a)" || fail "YAML 1.1 boolean-like commonLabels key not quoted"
+
 if [ "${STABLE_SECRETS_CLUSTER:-}" = 1 ]; then
   ctx=$(kubectl config current-context)
   case "$ctx" in

@@ -252,8 +252,12 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{ include "mnemoshare.migrationOperationContractLabels" . }}
-{{- with .Values.commonLabels }}
-{{ toYaml . }}
+{{- range $key, $value := .Values.commonLabels }}
+{{- if or (kindIs "string" $value) (kindIs "bool" $value) (and (has (kindOf $value) (list "int" "int64")) (ge (int64 $value) 0)) }}
+{{ $key | quote }}: {{ toString $value | quote }}
+{{- else }}
+{{- fail (printf "commonLabels.%s must be a string or boolean; non-negative integers only via --set (a values file parses every number as a float). Label values must start with an alphanumeric: quote it in the file or use --set-string" $key) }}
+{{- end }}
 {{- end }}
 {{- end }}
 
@@ -479,9 +483,39 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Non-empty only when this release has Helm records in its namespace (Secret or
+ConfigMap driver) and none ever reached deployed or superseded: a retried failed
+first install (a revision-1 record exists), which has no keys to keep. No record
+found (sql driver, foreign storage namespace, no cluster access) stays empty so
+callers refuse; a stray failed record without revision 1 cannot re-enable generation.
+*/}}
+{{- define "mnemoshare.firstInstallRetry" -}}
+{{- $found := false -}}
+{{- $live := false -}}
+{{- $first := false -}}
+{{- range $kind := list "Secret" "ConfigMap" -}}
+{{- $items := lookup "v1" $kind $.Release.Namespace "" -}}
+{{- if $items -}}
+{{- range $items.items -}}
+{{- $l := .metadata.labels | default dict -}}
+{{- if and (eq (get $l "owner") "helm") (eq (get $l "name") $.Release.Name) (or (ne $kind "Secret") (eq (.type | default "") "helm.sh/release.v1")) -}}
+{{- $found = true -}}
+{{- if eq (get $l "version") "1" -}}{{- $first = true -}}{{- end -}}
+{{- if has (get $l "status") (list "deployed" "superseded") -}}
+{{- $live = true -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and $found $first (not $live) -}}true{{- end -}}
+{{- end }}
+
+{{/*
 Resolve a chart-generated secret value: explicit value, else the value already
 in the release Secret, else generate. lookup is empty without cluster access:
-install renders then generate, upgrade renders fail rather than rotate the key.
+install renders then generate, upgrade renders fail rather than rotate the key
+unless the release never deployed (retried failed first install).
 Argo CD renders as an install and cannot be detected here. Memoized per render
 because generators are not deterministic across includes.
 Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"ecdsa"), impact.
@@ -499,7 +533,7 @@ Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"ecdsa"),
 {{- $existing := lookup "v1" "Secret" $root.Release.Namespace (printf "%s-secrets" (include "mnemoshare.fullname" $root)) -}}
 {{- if and $existing $existing.data (index $existing.data .secretKey) -}}
 {{- $_ := set $memo .name (index $existing.data .secretKey | b64dec) -}}
-{{- else if $root.Release.IsUpgrade -}}
+{{- else if and $root.Release.IsUpgrade (not (include "mnemoshare.firstInstallRetry" $root)) -}}
 {{- if lookup "v1" "Secret" $root.Release.Namespace "" -}}
 {{- fail (printf "refusing to generate a new %s on upgrade: the previous value was not found in Secret %s-secrets and %s. Set encryption.key / jwt.ecPrivateKey or existingSecrets.encryption / existingSecrets.jwt." .secretKey (include "mnemoshare.fullname" $root) .impact) -}}
 {{- else -}}
