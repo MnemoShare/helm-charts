@@ -62,3 +62,35 @@ NETWORK POLICIES
 
 WARNING: networkPolicy.enabled=false - no pod-level network isolation is applied.
 {{- end }}
+
+{{- if .Values.sandbox.enabled }}
+
+SANDBOX RUNNER
+--------------
+  Runner:            {{ include "mnemoshare.sandbox.url" . }}
+  Sandbox namespace: {{ include "mnemoshare.sandbox.namespace" . }}
+{{- $broad := list }}
+{{- range .Values.sandbox.policy.egressAllowedCIDRs }}
+{{- if or (hasSuffix "/0" .) (regexMatch "^(10\\.|100\\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|169\\.254\\.|[fF][cCdD][0-9a-fA-F]{2}:)" .) }}{{ $broad = append $broad . }}{{ end }}
+{{- end }}
+{{- if $broad }}
+  WARNING: sandbox.policy.egressAllowedCIDRs contains {{ join ", " $broad }}, which lets sandboxed code reach the internet or private networks.
+{{- end }}
+{{- if not .Values.sandbox.createNamespace }}
+  It must already exist with pod security enforced:
+    kubectl create namespace {{ include "mnemoshare.sandbox.namespace" . }}
+    kubectl label namespace {{ include "mnemoshare.sandbox.namespace" . }} pod-security.kubernetes.io/enforce=restricted
+{{- end }}
+  Verify the runner's access is confined to the sandbox namespace:
+    kubectl auth can-i create jobs -n {{ include "mnemoshare.sandbox.namespace" . }} --as=system:serviceaccount:{{ .Release.Namespace }}:{{ include "mnemoshare.sandbox.runnerName" . }}   # yes
+    kubectl auth can-i create jobs -n {{ .Release.Namespace }} --as=system:serviceaccount:{{ .Release.Namespace }}:{{ include "mnemoshare.sandbox.runnerName" . }}   # no
+{{- if not (include "mnemoshare.sandbox.defaultImage" .) }}
+  WARNING: no default script runtime image (sandbox.policy.defaultImage.digest is empty). The runner has no default image, so run_command is refused until a digest is set; run_script works only with an explicit image from sandbox.policy.allowedRegistries.
+{{- end }}
+{{- if and (not .Values.sandbox.policy.allowedRegistries) (include "mnemoshare.sandbox.defaultImage" .) }}
+  run_script images other than the default are refused: set sandbox.policy.allowedRegistries to allow author images.
+{{- end }}
+{{- if and .Values.sandbox.runner.staging.enabled (ne (include "mnemoshare.sandbox.stagingOn" .) "true") }}
+  Input staging and output collection are OFF: the runner image is not pinned by digest (set sandbox.runner.image.digest).
+{{- end }}
+{{- end }}

@@ -437,6 +437,57 @@ KMS-consuming pod the chart deploys; nothing further is needed to cover
 the worker once it's been registered as a WorkloadIdentity in idp-lite
 and an IAM role for its SPIFFE id is in place.
 
+### Sandbox runner
+
+Off by default (`sandbox.enabled=false`). When on, workflow scripts and commands run as short-lived,
+hardened Jobs in a separate namespace `<release namespace>-sandbox` (`sandbox.namespaceSuffix`), created
+and supervised by one extra workload, the `sandbox-runner`. The runner is the only pod with Kubernetes API
+access, through a Role that exists only in the sandbox namespace (Jobs, NetworkPolicies, pods get/list,
+pods/log get; no `pods/exec`, no secrets). No Role or ClusterRole is created in the release namespace.
+
+```bash
+# Recommended: pre-create the namespace so it survives `helm uninstall`
+kubectl create namespace <release-namespace>-sandbox
+kubectl label namespace <release-namespace>-sandbox pod-security.kubernetes.io/enforce=restricted
+
+helm install mnemoshare mnemoshare/mnemoshare ... \
+  --set sandbox.enabled=true \
+  --set sandbox.runner.tls.issuerRef.name=<cert-manager issuer> \
+  --set sandbox.runner.egress.kubernetesApiTargets[0].cidr=<API server IP>/32 \
+  --set sandbox.runner.egress.kubernetesApiTargets[0].port=443
+```
+
+- `sandbox.createNamespace=true` makes the release create the namespace (with the pod security labels) and
+  delete it, with every sandbox Job, on uninstall.
+- The runner serves TLS from a cert-manager Certificate (`sandbox.runner.tls.issuerRef`, defaulting to
+  `keyguard.cert.*`) or an existing Secret (`tls.secretName`). `tls.enabled=false` also requires
+  `tls.allowPlaintext=true` and is for development only. Requests are authenticated with a shared secret
+  (`sandbox.runner.secretName`, key `secret`; generated and kept across upgrades when empty).
+- `replicas` defaults to 2 (a PodDisruptionBudget is added above 1); use 1 on single-node clusters.
+- With `networkPolicy.enabled=true` the runner may be called only by the pods hosting the engine (workers
+  when `workflowWorker.enabled`, otherwise the API) and may reach only DNS and the Kubernetes API server.
+  `sandbox.runner.egress.kubernetesApiTargets` (API server `cidr` and `port`) is required while
+  `networkPolicy.enabled`: the render fails when it is empty, there is no any-destination fallback.
+- Input staging and output collection (`sandbox.runner.staging.enabled`) need Kubernetes 1.29+ in the cluster that runs the Jobs and a
+  digest-pinned runner image (`sandbox.runner.image.digest`) while `sandbox.policy.requireImageDigest` is true; without a digest
+  they are skipped and the install NOTES say so.
+- `sandbox.policy.egressAllowedCIDRs` is empty by default: sandboxed code has no network egress.
+- `run_command` and `run_script` run in the script runtime image `sandbox.policy.defaultImage`
+  (`repository` plus `digest`). The digest is empty until a release publishes the image; while it is empty
+  the runner has no default image, `run_command` is refused and the install NOTES warn. `run_script` can
+  still run an author image, but only from `sandbox.policy.allowedRegistries` (empty means only the
+  default image runs), pinned by digest while `requireImageDigest` is true.
+- `sandbox.policy.commandAllow` / `commandDeny` are executable lists the runner applies to every command
+  (full path or base name, deny wins). Both empty by default: anything may run inside the sandbox.
+- With TLS on, the engine pods verify the runner with `ca.crt` of the runner TLS secret
+  (`SANDBOX_RUNNER_CA_FILE`, `SANDBOX_RUNNER_SERVER_NAME`); with `tls.secretName` the secret must carry
+  `ca.crt`. No engine client certificate is provisioned.
+- Needs an application image that contains `/usr/local/bin/sandbox-runner`: `sandbox.minAppVersion` (default `0.23.0`) is the
+  first 0.x release that ships it. With `sandbox.enabled` the render fails when the effective image tag (runner tag, `image.tag`,
+  else `appVersion`) is a semver below it, rather than crash-looping an `--atomic` install. The check is skipped when an image digest
+  is set or the tag is not semver (for example `demo-<sha>`); set `sandbox.minAppVersion=""` to disable it.
+- `sandbox.policy.egressAllowedCIDRs` entries of `0.0.0.0/0`, `::/0` or private ranges raise a warning in the install NOTES.
+
 ## Certificate Authority Configuration
 
 MnemoShare supports hardware mTLS authentication (Enterprise+ tier) using certificate authorities. Choose from the built-in Step-CA or integrate with external CA providers.
