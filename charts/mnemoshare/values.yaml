@@ -289,7 +289,7 @@ jwt:
 
 # Encryption
 encryption:
-  key: ""  # 32-byte encryption key; if empty it is generated on first install and reused on upgrade. renders without cluster access (Argo CD, `helm template`, client-side `helm upgrade --dry-run`, helm-diff/helmfile diff without server dry-run) cannot read the existing Secret: set it explicitly or use existingSecrets.encryption there
+  key: ""  # 32-byte encryption key; if empty it is generated on first install and reused on upgrade. Renders without cluster access (Argo CD, `helm template`, client-side `helm upgrade --dry-run`, helm-diff/helmfile diff without server dry-run) cannot read the existing Secret: set it explicitly or use existingSecrets.encryption there
   # oldKey: ""  # Optional: Previous encryption key for master key rotation
   # To rotate the master encryption key:
   # 1. Set 'oldKey' to your current encryption key

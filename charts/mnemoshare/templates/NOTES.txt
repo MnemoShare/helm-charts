@@ -14,7 +14,8 @@ GENERATED KEYS
   Renders without cluster access (Argo CD, `helm template`, `helm upgrade
   --dry-run` client-side, helm-diff/helmfile diff without server dry-run)
   cannot read it: set encryption.key and jwt.ecPrivateKey (or
-  existingSecrets.*) there, or render with --dry-run=server.
+  existingSecrets.*) there, or render with --dry-run=server. Argo CD renders
+  as a fresh install, so without explicit keys it replaces them on every sync.
 {{- end }}
 {{- if or .Values.mcp.enabled .Values.sftpGateway.enabled }}
 
