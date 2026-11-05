@@ -768,7 +768,6 @@ jobs:
 
       - name: Add chart dependency repos
         run: |
-          helm repo add bitnami https://charts.bitnami.com/bitnami
           helm repo add minio https://charts.min.io/
           helm dependency build charts/mnemoshare
 
