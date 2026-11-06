@@ -36,7 +36,11 @@ sysctls = gw_sc.get("sysctls", [])
 names = [x["name"] for x in sysctls]
 assert names.count(LOW["name"]) == 1, f"gateway sysctls {sysctls} must carry the low-port sysctl once"
 if want == "opLow":
-    assert {"name": LOW["name"], "value": "1024"} in sysctls, "operator low-port value not kept"
+    assert LOW in sysctls, "operator value above the listener port must become 0 on the gateway"
+    other = [d for d in deps if d["metadata"]["name"] in ("t-mnemoshare", "t-mnemoshare-workflow-worker")]
+    assert other and all({"name": LOW["name"], "value": "1024"} in (d["spec"]["template"]["spec"].get("securityContext") or {}).get("sysctls", []) for d in other), "other pods must keep the operator value"
+elif want == "keep20":
+    assert {"name": LOW["name"], "value": "20"} in sysctls, "value at or below the listener port must be kept"
 else:
     assert LOW in sysctls, sysctls
 if want != "nullpsc":
@@ -59,6 +63,11 @@ check "$(docs --set emailGateway.listenPorts=25:starttls \
 check "$(docs --set podSecurityContext=null --set emailGateway.listenPorts=25:starttls)" nullpsc || fail "null podSecurityContext"
 check "$(docs --set 'podSecurityContext.sysctls[0].name=net.ipv4.ip_unprivileged_port_start' \
   --set-string 'podSecurityContext.sysctls[0].value=1024')" opLow || fail "operator low-port sysctl"
+check "$(docs --set 'podSecurityContext.sysctls[0].name=net.ipv4.ip_unprivileged_port_start' \
+  --set-string 'podSecurityContext.sysctls[0].value=20')" keep20 || fail "operator value 20 kept"
+set +e; out=$(helm template t "$chart" "${base[@]}" --set 'podSecurityContext.sysctls[0].name=net.ipv4.ip_unprivileged_port_start' \
+  --set-string 'podSecurityContext.sysctls[0].value=abc' 2>&1); st=$?; set -e
+[ $st -ne 0 ] && echo "$out" | grep -q "podSecurityContext.sysctls" || fail "non-integer sysctl should fail"
 check "$(docs --set emailGateway.listenPorts=25)" plain || fail "bare port"
 check "$(docs --set-string "emailGateway.listenPorts=25\\,587")" plain || fail "bare ports"
 check "$(docs --set-string "emailGateway.listenPorts=25:starttls\\,")" plain || fail "trailing comma"
