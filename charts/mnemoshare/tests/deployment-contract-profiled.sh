@@ -178,11 +178,11 @@ expect_failure 'durable spool' --set emailGateway.mode=inbound-relay --set email
 expect_failure 'durable path /var/spool/mnemo-relay' --set emailGateway.mode=inbound-relay --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.spoolDir=/tmp/spool
 expect_failure 'replicas exactly 1' --set emailGateway.mode=inbound-relay --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.replicas=2
 expect_failure 'mutually exclusive' --set emailGateway.mode=inbound-relay --set emailGateway.relay.spoolSharedKey=spool --set emailGateway.relay.hosts=mx.example --set emailGateway.relayHosts[0]=legacy.example
-expect_failure 'must include port 25' --set emailGateway.mode=gateway --set emailGateway.listenPorts=2525:plain
-expect_failure 'duplicate port 25' --set emailGateway.mode=gateway --set-string 'emailGateway.listenPorts=25:plain\,25:starttls'
-expect_failure 'not canonically spelled as 25' --set emailGateway.mode=gateway --set-string 'emailGateway.listenPorts=025:plain\,25:starttls'
-expect_failure 'invalid listener' --set emailGateway.mode=gateway --set emailGateway.listenPorts=25:bogus
-expect_failure 'collides with deployment-contract v4 probe port 8080' --set emailGateway.mode=gateway --set-string 'emailGateway.listenPorts=25:plain\,8080:plain'
+expect_failure 'must include port 25' --set emailGateway.mode=gateway --set emailGateway.tls.existingSecret=gw-tls --set emailGateway.listenPorts=2525:plain
+expect_failure 'duplicate port 25' --set emailGateway.mode=gateway --set emailGateway.tls.existingSecret=gw-tls --set-string 'emailGateway.listenPorts=25:plain\,25:starttls'
+expect_failure 'not canonically spelled as 25' --set emailGateway.mode=gateway --set emailGateway.tls.existingSecret=gw-tls --set-string 'emailGateway.listenPorts=025:plain\,25:starttls'
+expect_failure 'invalid listener' --set emailGateway.mode=gateway --set emailGateway.tls.existingSecret=gw-tls --set emailGateway.listenPorts=25:bogus
+expect_failure 'collides with deployment-contract v4 probe port 8080' --set emailGateway.mode=gateway --set emailGateway.tls.existingSecret=gw-tls --set-string 'emailGateway.listenPorts=25:plain\,8080:plain'
 expect_failure 'may not override' --set emailGateway.extraEnv[0].name=HEALTH_PORT --set emailGateway.extraEnv[0].value=9999
 expect_failure 'sourceCommit must equal' --set deploymentContract.sourceCommit=deadbeef
 expect_failure 'must equal the application image digest selected for this operation' --set deploymentContract.imageDigest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
