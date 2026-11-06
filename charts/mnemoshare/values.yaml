@@ -1633,7 +1633,15 @@ emailGateway:
   # Number of gateway replicas
   replicas: 1
 
-  # SMTP listen configuration (format: "port:mode" — "25:starttls" or "25:plain")
+  # SMTP listen configuration (format: "port:mode" — "25:starttls" or "25:plain").
+  # Used only when a TLS secret is configured (emailGateway.tls.existingSecret or
+  # mtls.tls.existingSecret), and then it must include port 25 because the Service
+  # targets the fixed smtp containerPort 25. Without a TLS secret the gateway listens
+  # on 25:plain and this value is ignored. The chart always sets the
+  # net.ipv4.ip_unprivileged_port_start safe sysctl on this pod so port 25 binds as non-root.
+  # Differs from the operator's release/0.x embedded chart (SaaS tenants), where the containerPort
+  # follows the first listenPorts entry, the no-TLS default is 2525:plain, and ports
+  # below 1024 are refused.
   listenPorts: "25:starttls"
 
   # Gateway hostname (used in SMTP EHLO/HELO)
@@ -1799,6 +1807,14 @@ emailGateway:
     # Annotations for cloud load balancer config
     # e.g., service.beta.kubernetes.io/aws-load-balancer-type: nlb
     annotations: {}
+    # The gateway's source-IP allowlist needs the real client IP. Under the Kubernetes default
+    # (Cluster, left empty here) kube-proxy rewrites the source to a node IP. Either set Local
+    # (LoadBalancer/NodePort only; Cluster or Local), or use a PROXY-protocol-capable load balancer
+    # with emailGateway.proxyProtocol and PROXY_PROTOCOL_TRUSTED_CIDRS. A DigitalOcean
+    # REGIONAL_NETWORK load balancer sends no PROXY header and needs Local.
+    # externalTrafficPolicy: Local
+    # Restrict which client CIDRs the cloud load balancer admits (LoadBalancer only).
+    # loadBalancerSourceRanges: []
 
   # Resource requests/limits
   resources:

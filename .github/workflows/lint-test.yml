@@ -206,6 +206,12 @@ jobs:
       - name: Validate sandbox runner render, RBAC confinement and strict fallback
         run: bash charts/mnemoshare/tests/sandbox-runner.sh
 
+      - name: Validate email gateway low-port sysctl
+        run: bash charts/mnemoshare/tests/email-gateway-lowport.sh
+
+      - name: Validate email gateway Service traffic policy
+        run: bash charts/mnemoshare/tests/email-gateway-traffic-policy.sh
+
       - name: Validate migration contract updater
         run: bash charts/mnemoshare/tests/update-migration-result-contract-test.sh
 
@@ -669,7 +675,7 @@ jobs:
           OUT=$(helm template mnemoshare charts/mnemoshare "${BASE[@]}" \
             --set commonLabels.tenant-id=acme \
             --set commonLabels.tier=enterprise)
-          if ! echo "$OUT" | grep -q "tenant-id: acme"; then
+          if ! echo "$OUT" | grep -qE '"?tenant-id"?: "?acme"?'; then
             echo "✗ Scenario C: commonLabels not emitted on metadata.labels"
             exit 1
           fi
