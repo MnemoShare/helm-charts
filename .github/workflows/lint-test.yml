@@ -441,6 +441,10 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bash charts/mnemoshare/tests/email-gateway-lowport.sh
 
+      - name: Validate email gateway Service traffic policy
+        if: github.event_name == 'pull_request'
+        run: bash charts/mnemoshare/tests/email-gateway-traffic-policy.sh
+
       - name: Validate in-cluster ClamAV and Redis ingress components
         if: github.event_name == 'pull_request'
         run: bash charts/mnemoshare/tests/clamav-networkpolicy.sh

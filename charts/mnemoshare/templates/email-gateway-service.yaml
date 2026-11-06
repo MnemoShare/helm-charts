@@ -12,6 +12,18 @@ metadata:
   {{- end }}
 spec:
   type: {{ .Values.emailGateway.service.type }}
+  {{- with .Values.emailGateway.service.externalTrafficPolicy }}
+  {{- if not (has . (list "Cluster" "Local")) }}
+  {{- fail (printf "emailGateway.service.externalTrafficPolicy must be Cluster or Local, got %q" .) }}
+  {{- end }}
+  {{- if has $.Values.emailGateway.service.type (list "LoadBalancer" "NodePort") }}
+  externalTrafficPolicy: {{ . }}
+  {{- end }}
+  {{- end }}
+  {{- with .Values.emailGateway.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
   - name: smtp
     port: {{ .Values.emailGateway.service.port }}
