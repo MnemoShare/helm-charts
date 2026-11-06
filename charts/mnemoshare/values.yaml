@@ -2627,7 +2627,7 @@ quickstart:
   enabled: false
   # The render fails unless the api image tag is a release >= minAppVersion.
   # allowUnreleasedImage permits any tag (local or development builds, CI).
-  minAppVersion: "0.23.0"
+  minAppVersion: "0.22.3"
   allowUnreleasedImage: false
   # SuperAdmin created on first start with an empty database; the one-time
   # password is written to the api log.

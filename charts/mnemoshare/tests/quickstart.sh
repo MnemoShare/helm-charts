@@ -52,8 +52,9 @@ has "$out" 'c-icap-client' "ClamAV exec probe missing"
 [ "$(env_value "$out" CUSTOMER_ID)" = quickstart ] || fail "CUSTOMER_ID is not quickstart"
 
 # Image-version guard.
-err=$(helm template qs "$chart" -f "$values" 2>&1) && fail "an app image below quickstart.minAppVersion must be refused"
+err=$(helm template qs "$chart" -f "$values" --set image.tag=0.22.2 2>&1) && fail "an app image below quickstart.minAppVersion must be refused"
 grep -q "quickstart.minAppVersion\|needs app >=" <<<"$err" || fail "version guard message: $err"
+helm template qs "$chart" -f "$values" >/dev/null || fail "the chart appVersion must satisfy quickstart.minAppVersion"
 helm template qs "$chart" -f "$values" --set image.tag=99.0.0 >/dev/null || fail "a release at or above minAppVersion must render"
 err=$(helm template qs "$chart" -f "$values" --set image.tag=quickstart-local 2>&1) && fail "a non-semver tag needs allowUnreleasedImage"
 grep -q "not a release version" <<<"$err" || fail "non-semver message: $err"
@@ -119,8 +120,10 @@ if [ "${QUICKSTART_CLUSTER:-}" = 1 ]; then
   rel=qs
   trap 'helm --kube-context "$ctx" uninstall "$rel" -n "$ns" >/dev/null 2>&1 || true; kubectl --context "$ctx" delete namespace "$ns" --wait=false >/dev/null 2>&1 || true' EXIT
   kubectl --context "$ctx" create namespace "$ns" >/dev/null
-  extra=(--set quickstart.allowUnreleasedImage=true)
+  extra=()
+  # Local builds need QUICKSTART_APP_IMAGE and the version gate lifted.
   if [ -n "${QUICKSTART_APP_IMAGE:-}" ]; then
+    extra+=(--set quickstart.allowUnreleasedImage=true)
     extra+=(--set "image.repository=${QUICKSTART_APP_IMAGE%:*}" --set "image.tag=${QUICKSTART_APP_IMAGE##*:}")
   fi
   [ "${QUICKSTART_NO_CLAMAV:-}" = 1 ] && extra+=(--set clamav.enabled=false)

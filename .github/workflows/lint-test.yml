@@ -476,7 +476,6 @@ jobs:
 
       - name: Install the Quickstart profile, check bucket, first-admin log and key reuse on upgrade
         run: |
-          # Uses the published appVersion image (below quickstart.minAppVersion) via
-          # allowUnreleasedImage until a release carrying the Quickstart fixes exists.
+          # Uses the published appVersion image; no allowUnreleasedImage.
           QUICKSTART_CLUSTER=1 QUICKSTART_ALLOW_DEFAULT_KUBECONFIG=1 \
             bash charts/mnemoshare/tests/quickstart.sh
