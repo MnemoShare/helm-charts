@@ -39,6 +39,8 @@ refuses to boot without its bucket and a post-install hook would only run after
     value: {{ .Values.s3.region | quote }}
   - name: HOME
     value: /tmp
+  - name: AWS_MAX_ATTEMPTS
+    value: "1"
   - name: AWS_ACCESS_KEY_ID
     valueFrom:
       secretKeyRef:
