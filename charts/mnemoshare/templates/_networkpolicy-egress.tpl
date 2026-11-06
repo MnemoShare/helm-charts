@@ -105,7 +105,8 @@ no `to` (any destination, restricted to ports). Renders nothing without ports.
 - to:
     - podSelector:
         matchLabels:
-          app.kubernetes.io/name: clamav
+          {{- include "mnemoshare.selectorLabels" . | nindent 10 }}
+          app.kubernetes.io/component: clamav
   ports:
     - protocol: TCP
       port: 1344
