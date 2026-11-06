@@ -1637,9 +1637,9 @@ emailGateway:
   # Used only when a TLS secret is configured (emailGateway.tls.existingSecret or
   # mtls.tls.existingSecret), and then it must include port 25 because the Service
   # targets the fixed smtp containerPort 25. Without a TLS secret the gateway listens
-  # on 25:plain and this value is ignored. Ports below 1024 bind through the
-  # net.ipv4.ip_unprivileged_port_start safe sysctl the chart sets on this pod.
-  # Differs from the operator's embedded chart (SaaS tenants), where the containerPort
+  # on 25:plain and this value is ignored. The chart always sets the
+  # net.ipv4.ip_unprivileged_port_start safe sysctl on this pod so port 25 binds as non-root.
+  # Differs from the operator's release/0.x embedded chart (SaaS tenants), where the containerPort
   # follows the first listenPorts entry, the no-TLS default is 2525:plain, and ports
   # below 1024 are refused.
   listenPorts: "25:starttls"

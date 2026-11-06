@@ -77,6 +77,16 @@ check "$(docs "${tls[@]}" --set-string "emailGateway.listenPorts=25:starttls\\,"
 check "$(docs --set emailGateway.listenPorts=2525:starttls)" plain || fail "non-TLS custom listenPorts"
 check "$(docs --set emailGateway.listenPorts=bogus)" plain || fail "non-TLS ignored listenPorts"
 
+listen() {
+  python3 -c 'import sys,json
+for d in json.loads(sys.argv[1]):
+    if d["kind"]=="Deployment" and d["metadata"]["name"].endswith("-email-gateway"):
+        print([e["value"] for e in d["spec"]["template"]["spec"]["containers"][0]["env"] if e["name"]=="LISTEN_PORTS"][0])' "$1"
+}
+[ "$(listen "$(docs --set emailGateway.listenPorts=bogus)")" = "25:plain" ] || fail "no-TLS bogus must render LISTEN_PORTS=25:plain"
+[ "$(listen "$(docs --set-string 'emailGateway.listenPorts=25:plain\,8080:plain')")" = "25:plain" ] || fail "no-TLS extra ports must render LISTEN_PORTS=25:plain"
+[ "$(listen "$(docs "${tls[@]}" --set-string 'emailGateway.listenPorts=25\,587')")" = "25,587" ] || fail "TLS bare ports must render LISTEN_PORTS=25,587"
+
 for ports in 2525:starttls 587:starttls bogus 25:nope 70000:plain 0:plain 025:plain "25:plain\\,25:starttls" "25:plain\\,0587:tls"; do
   set +e; out=$(helm template t "$chart" "${base[@]}" "${tls[@]}" --set-string "emailGateway.listenPorts=$ports" 2>&1); st=$?; set -e
   [ $st -ne 0 ] && echo "$out" | grep -q "emailGateway.listenPorts" || fail "TLS listenPorts=$ports should fail with a listenPorts message"
