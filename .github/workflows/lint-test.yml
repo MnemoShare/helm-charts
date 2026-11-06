@@ -449,6 +449,9 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bash charts/mnemoshare/tests/clamav-networkpolicy.sh
 
+      - name: Validate the Quickstart profile render
+        run: bash charts/mnemoshare/tests/quickstart.sh
+
   stable-secrets-lookup:
     runs-on: ubuntu-latest
     steps:
@@ -470,3 +473,23 @@ jobs:
 
       - name: Validate generated secrets reuse the release Secret
         run: STABLE_SECRETS_CLUSTER=1 bash charts/mnemoshare/tests/stable-secrets.sh
+
+      - name: Install the Quickstart profile, check bucket, first-admin log and key reuse on upgrade
+        run: |
+          # Published appVersion image, no allowUnreleasedImage. Tika (about 1 GB) and ClamAV
+          # (signature download) are left out of the runner install; their manifests are
+          # covered by the render tests. Images are pulled once and loaded into kind so the
+          # install does not depend on in-cluster pull speed.
+          app="mnemoshare/mnemoshare:$(awk '/^appVersion:/ {gsub(/"/,"",$2); print $2}' charts/mnemoshare/Chart.yaml)"
+          # Preloading is best-effort: multi-arch indexes reference attestation and
+          # other-platform blobs the runner never pulled, which ctr import rejects. A
+          # failed preload just leaves the image to be pulled in-cluster.
+          node="$(kind get clusters | head -1)-control-plane"
+          for img in "$app" versity/versitygw:v1.10.0 mcr.microsoft.com/presidio-analyzer:2.2.362 amazon/aws-cli:2.39.6; do
+            docker pull -q --platform linux/amd64 "$img"
+            docker save --platform linux/amd64 "$img" \
+              | docker exec -i "$node" ctr --namespace=k8s.io images import --platform linux/amd64 --snapshotter=overlayfs - \
+              || echo "preload skipped for $img; it will be pulled in-cluster"
+          done
+          QUICKSTART_CLUSTER=1 QUICKSTART_ALLOW_DEFAULT_KUBECONFIG=1 QUICKSTART_NO_TIKA=1 QUICKSTART_NO_CLAMAV=1 \
+            bash charts/mnemoshare/tests/quickstart.sh

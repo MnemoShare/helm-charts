@@ -18,11 +18,13 @@ expressible there; use a CNI-specific policy (CiliumNetworkPolicy `toFQDNs`, Cal
 | PostgreSQL / MySQL / MSSQL / Oracle / Db2 | 5432 / 3306 / 1433 / 1521 / 50000 | same | `database.driver`, `networkPolicy.database.port` | `internal/config/config.go` `DB_DRIVER`; `internal/repository/{postgres,mysql,mssql,oracle,db2}` |
 | Redis / Sentinel | 6379 / `redis.external.sentinelPort` (26379) | in-cluster pod, or `networkPolicy.redis.cidrs`, else any destination on those ports | `redis.mode` | `internal/envvars/envvars.go` `REDIS_URL`; `internal/dispatch/asynq/backend.go` |
 | S3 / GCS / Spaces | 443 (+9000 for self-hosted MinIO on a public address) | public, or `networkPolicy.s3.cidrs` (private VPC endpoint) | `networkPolicy.s3.*` | `internal/config/config.go` `S3_ENDPOINT` |
+| Quickstart Versity S3 | 7070 | pod `component=s3` | `quickstart.enabled` | `S3_ENDPOINT` (chart) |
 | In-cluster MinIO | 9000 | pod `name=minio` | `minio.enabled` | chart `S3_ENDPOINT` |
 | License server | 443 public; 8090 and 8443 (targetPort) in-cluster | public / ingress namespace / `licenseServer.internalNamespace` | `networkPolicy.licenseServer.*` | `internal/config/config.go` `LICENSE_SERVER_URL` |
 | KeyGuard / idp-lite federation | 8443 | `keyguard.federationNamespace` | `keyguard.enabled` | `templates/_keyguard.tpl` |
 | Step-CA | 9000 | in-release pod or `networkPolicy.stepCA.namespace` | `stepCA.mode` | `internal/config/config.go` `CA_SMALLSTEP_URL` |
 | ClamAV ICAP | 1344 | in-release pod or `networkPolicy.icap.*` | `icapMode` | `internal/icap/client.go` |
+| Quickstart Tika / Presidio | 9998 / 3000 | pods `component=tika` / `component=presidio` | `quickstart.enabled`, `quickstart.tika.enabled` | `TIKA_URL`, `PRESIDIO_URL` (chart) |
 | Rich-media / Tika / Presidio | `networkPolicy.{richMedia,tika,presidio}.port` (8080 / 9998 / 3000) | namespace-scoped when `.namespace` set | `richMedia.url`, `dlp.tikaUrl`, `dlp.presidioUrl` | `internal/config/config.go` `RICH_MEDIA_URL`, `TIKA_URL`, `PRESIDIO_URL`. Thumbnails are generated in-process (`internal/background/metadata_processor.go`): no extra destination |
 | SendGrid / SES / OAuth-SSO IdPs / Google Workspace / Microsoft Graph | 443 | public | `sendgrid`, `platformEmail`, `networkPolicy.oauth.enabled`; ICES always 443 | `internal/mailsettings/client.go` (Gmail), Graph URLs in `internal/repository/*mailbox_registry*` |
 | SMTP relays | `networkPolicy.smtp.ports` (25, 465, 587, 2525) | public + `smtp.cidrs` | `networkPolicy.smtp.*` | `internal/config/config.go` SMTP settings |
@@ -41,6 +43,7 @@ expressible there; use a CNI-specific policy (CiliumNetworkPolicy `toFQDNs`, Cal
 | mcp | DNS, API |
 | sftp-gateway | DNS, API |
 | step-ca (in-cluster) | DNS; ingress from release pods on 9000 |
+| s3, presidio, tika (Quickstart) | no egress (default-deny); ingress from the api pod only (7070 / 3000 / 9998) |
 | clamav | DNS, 80/443 public (signature updates) |
 | redis (in-cluster) | DNS |
 

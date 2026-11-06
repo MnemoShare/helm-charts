@@ -1,0 +1,134 @@
+{{- if .Values.quickstart.enabled }}
+{{- include "mnemoshare.quickstart.validate" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-s3
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: s3
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: s3
+  template:
+    metadata:
+      labels:
+        {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: s3
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.quickstart.s3.podSecurityContext | nindent 8 }}
+      containers:
+      - name: versitygw
+        image: "{{ .Values.quickstart.s3.image.repository }}:{{ .Values.quickstart.s3.image.tag }}"
+        imagePullPolicy: {{ .Values.quickstart.s3.image.pullPolicy }}
+        args: ["--port", ":7070", "posix", "/data"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        env:
+        - name: ROOT_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "mnemoshare.s3SecretName" . }}
+              key: s3-access-key
+        - name: ROOT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "mnemoshare.s3SecretName" . }}
+              key: s3-secret-key
+        ports:
+        - name: s3
+          containerPort: 7070
+          protocol: TCP
+        readinessProbe:
+          tcpSocket:
+            port: s3
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 6
+        livenessProbe:
+          tcpSocket:
+            port: s3
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.quickstart.s3.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: {{ include "mnemoshare.fullname" . }}-s3
+      - name: tmp
+        emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-s3
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: s3
+spec:
+  type: ClusterIP
+  ports:
+    - port: 7070
+      targetPort: s3
+      protocol: TCP
+      name: s3
+  selector:
+    {{- include "mnemoshare.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: s3
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-s3
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: s3
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.quickstart.s3.persistence.storageClass }}
+  {{- if (eq "-" .Values.quickstart.s3.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.quickstart.s3.persistence.storageClass | quote }}
+  {{- end }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.quickstart.s3.persistence.size }}
+{{- end }}

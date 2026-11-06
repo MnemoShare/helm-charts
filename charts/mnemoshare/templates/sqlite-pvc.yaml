@@ -1,0 +1,25 @@
+{{- include "mnemoshare.sqlite.validate" . }}
+{{- if include "mnemoshare.sqlitePersistent" . }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-sqlite
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.database.sqlite.persistence.storageClass }}
+  {{- if (eq "-" .Values.database.sqlite.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.database.sqlite.persistence.storageClass | quote }}
+  {{- end }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.database.sqlite.persistence.size }}
+{{- end }}

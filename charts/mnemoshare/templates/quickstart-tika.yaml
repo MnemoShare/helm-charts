@@ -1,0 +1,101 @@
+{{- if and .Values.quickstart.enabled .Values.quickstart.tika.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-tika
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tika
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: tika
+  template:
+    metadata:
+      labels:
+        {{- include "mnemoshare.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: tika
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: tika
+        image: "{{ .Values.quickstart.tika.image.repository }}:{{ .Values.quickstart.tika.image.tag }}"
+        imagePullPolicy: {{ .Values.quickstart.tika.image.pullPolicy }}
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        ports:
+        - name: http
+          containerPort: 9998
+          protocol: TCP
+        startupProbe:
+          httpGet:
+            path: /version
+            port: http
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 60
+        readinessProbe:
+          httpGet:
+            path: /version
+            port: http
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /version
+            port: http
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 5
+        resources:
+          {{- toYaml .Values.quickstart.tika.resources | nindent 10 }}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-tika
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tika
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9998
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "mnemoshare.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: tika
+{{- end }}
