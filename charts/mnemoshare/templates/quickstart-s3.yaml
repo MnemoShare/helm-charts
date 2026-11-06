@@ -1,10 +1,5 @@
 {{- if .Values.quickstart.enabled }}
-{{- if or (ne (.Values.database.driver | default "mongodb") "sqlite") (not .Values.database.sqlite.persistence.enabled) }}
-{{- fail "quickstart.enabled requires database.driver=sqlite and database.sqlite.persistence.enabled=true (use -f values-quickstart.yaml)" }}
-{{- end }}
-{{- if or .Values.workflowWorker.enabled .Values.ices.enabled .Values.autoscaling.enabled (gt (int .Values.replicaCount) 1) }}
-{{- fail "quickstart.enabled is a single-replica SQLite install: workflowWorker, ices and autoscaling must be off and replicaCount must be 1" }}
-{{- end }}
+{{- include "mnemoshare.quickstart.validate" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -40,6 +35,7 @@ spec:
         args: ["--port", ":7070", "posix", "/data"]
         securityContext:
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
               - ALL
@@ -78,10 +74,14 @@ spec:
         volumeMounts:
         - name: data
           mountPath: /data
+        - name: tmp
+          mountPath: /tmp
       volumes:
       - name: data
         persistentVolumeClaim:
           claimName: {{ include "mnemoshare.fullname" . }}-s3
+      - name: tmp
+        emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

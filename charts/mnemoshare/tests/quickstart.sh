@@ -2,7 +2,8 @@
 # Quickstart profile (values-quickstart.yaml): offline render assertions always run.
 # The install check needs a disposable cluster and runs only with QUICKSTART_CLUSTER=1;
 # it refuses any context not named kind-* unless QUICKSTART_CONTEXT is that exact name,
-# and every helm and kubectl call is pinned to that context. Set QUICKSTART_APP_IMAGE to
+# and every helm and kubectl call is pinned to that context. The default ~/.kube/config is
+# refused unless QUICKSTART_ALLOW_DEFAULT_KUBECONFIG=1 (CI's disposable kind job). Set QUICKSTART_APP_IMAGE to
 # repository:tag to override the app image (e.g. a locally built arm64 image loaded into
 # kind) and QUICKSTART_NO_CLAMAV=1 where the ClamAV image cannot run (it is amd64 only).
 set -euo pipefail
@@ -11,11 +12,11 @@ chart=${1:-charts/mnemoshare}
 values="$chart/values-quickstart.yaml"
 
 fail() { echo "quickstart: $*" >&2; exit 1; }
-render() { helm template qs "$chart" -f "$values" "$@"; }
+render() { helm template qs "$chart" -f "$values" --set quickstart.allowUnreleasedImage=true "$@"; }
 # env_value <rendered> <ENV_NAME>: value of an env entry of the api Deployment container
 env_value() {
   awk -v want="$2" '
-    /^kind: / { kind=$2; insec = 0 }
+    /^kind: / { kind=$2 }
     kind=="Deployment" && /^  name: qs-mnemoshare$/ { api=1 }
     /^---/ { api=0 }
     api && $1=="-" && $2=="name:" && $3==want { getline; sub(/^ *value: */, ""); gsub(/"/, ""); print; exit }
@@ -24,7 +25,7 @@ env_value() {
 has() { grep -Eq "$2" <<<"$1" || fail "$3"; }
 lacks() { ! grep -Eq "$2" <<<"$1" || fail "$3"; }
 
-helm lint "$chart" -f "$values" >/dev/null || fail "helm lint failed"
+helm lint "$chart" -f "$values" --set quickstart.allowUnreleasedImage=true >/dev/null || fail "helm lint failed"
 
 out=$(render)
 has "$out" '^kind: Deployment' "no Deployments rendered"
@@ -50,6 +51,14 @@ has "$out" 'c-icap-client' "ClamAV exec probe missing"
 [ "$(env_value "$out" FILTERED_PROCESS)" = '*' ] || fail "FILTERED_PROCESS is not *"
 [ "$(env_value "$out" CUSTOMER_ID)" = quickstart ] || fail "CUSTOMER_ID is not quickstart"
 
+# Image-version guard.
+err=$(helm template qs "$chart" -f "$values" 2>&1) && fail "an app image below quickstart.minAppVersion must be refused"
+grep -q "quickstart.minAppVersion\|needs app >=" <<<"$err" || fail "version guard message: $err"
+helm template qs "$chart" -f "$values" --set image.tag=99.0.0 >/dev/null || fail "a release at or above minAppVersion must render"
+err=$(helm template qs "$chart" -f "$values" --set image.tag=quickstart-local 2>&1) && fail "a non-semver tag needs allowUnreleasedImage"
+grep -q "not a release version" <<<"$err" || fail "non-semver message: $err"
+helm template qs "$chart" -f "$values" --set image.tag=quickstart-local --set quickstart.allowUnreleasedImage=true >/dev/null || fail "allowUnreleasedImage must permit a local tag"
+
 # Disabling a scanner blanks its URL and removes its workload.
 out=$(render --set clamav.enabled=false)
 [ -z "$(env_value "$out" DEFAULT_ICAP_URL)" ] || fail "ICAP URL set with ClamAV disabled"
@@ -74,7 +83,20 @@ grep -q "without cluster access" <<<"$err" || fail "offline upgrade message miss
 # Guards.
 err=$(render --set database.driver=postgres 2>&1) && fail "quickstart must refuse a non-sqlite database"
 grep -q "quickstart.enabled requires" <<<"$err" || fail "driver guard message: $err"
-err=$(render --set replicaCount=2 2>&1) && fail "quickstart must refuse more than one replica"
+err=$(render --set minio.enabled=true 2>&1) && fail "quickstart must refuse minio.enabled"
+grep -q "minio.enabled=false" <<<"$err" || fail "minio guard message: $err"
+err=$(render --set s3.endpoint=https://s3.example.com 2>&1) && fail "quickstart must refuse an ignored s3.endpoint"
+# Any SQLite install with persistence is single-writer.
+for a in "--set replicaCount=2" "--set autoscaling.enabled=true" "--set workflowWorker.enabled=true --set redis.mode=external --set redis.external.host=r" "--set ices.enabled=true"; do
+  # shellcheck disable=SC2086
+  err=$(render $a 2>&1) && fail "single-writer guard did not fire for: $a"
+  grep -q "single-writer\|not compatible with database.driver=sqlite" <<<"$err" || fail "single-writer message for '$a': $err"
+done
+err=$(helm template d "$chart" --set customerId=ci --set database.driver=sqlite --set database.sqlite.persistence.enabled=true \
+  --set replicaCount=2 --set network.trustedProxyCIDRs=none --set appUrl=https://t --set-string jwt.ecPrivateKey=e --set encryption.key=test-encryption-key-exactly-32by 2>&1) \
+  && fail "plain sqlite+persistence with 2 replicas must be refused"
+grep -q "single-writer" <<<"$err" || fail "plain sqlite guard message: $err"
+err=$(render --set database.sqlite.path=/tmp/x.db 2>&1) && fail "sqlite path under /tmp must be refused"
 
 # Default values render no quickstart workload.
 out=$(helm template d "$chart" --set customerId=ci --set mongodb.external.uri=mongodb://t:t@l:27017/t \
@@ -84,6 +106,10 @@ out=$(helm template d "$chart" --set customerId=ci --set mongodb.external.uri=mo
 lacks "$out" 'versitygw|presidio|apache/tika|create-bucket|-sqlite' "default render contains quickstart resources"
 
 if [ "${QUICKSTART_CLUSTER:-}" = 1 ]; then
+  kc=${KUBECONFIG:-$HOME/.kube/config}
+  case ":$kc:" in
+    *":$HOME/.kube/config:"*) [ "${QUICKSTART_ALLOW_DEFAULT_KUBECONFIG:-}" = 1 ] || fail "refusing to use the default kubeconfig $HOME/.kube/config: point KUBECONFIG at a dedicated kind kubeconfig (CI sets QUICKSTART_ALLOW_DEFAULT_KUBECONFIG=1)" ;;
+  esac
   ctx=$(kubectl config current-context)
   case "$ctx" in
     kind-*) ;;
@@ -93,7 +119,7 @@ if [ "${QUICKSTART_CLUSTER:-}" = 1 ]; then
   rel=qs
   trap 'helm --kube-context "$ctx" uninstall "$rel" -n "$ns" >/dev/null 2>&1 || true; kubectl --context "$ctx" delete namespace "$ns" --wait=false >/dev/null 2>&1 || true' EXIT
   kubectl --context "$ctx" create namespace "$ns" >/dev/null
-  extra=()
+  extra=(--set quickstart.allowUnreleasedImage=true)
   if [ -n "${QUICKSTART_APP_IMAGE:-}" ]; then
     extra+=(--set "image.repository=${QUICKSTART_APP_IMAGE%:*}" --set "image.tag=${QUICKSTART_APP_IMAGE##*:}")
   fi
@@ -102,10 +128,12 @@ if [ "${QUICKSTART_CLUSTER:-}" = 1 ]; then
   field() { k get secret "$rel-mnemoshare-secrets" -o "jsonpath={.data.$1}"; }
   secrets() { for f in encryption-key s3-access-key s3-secret-key jwt-ec-private-key; do field "$f"; echo; done; }
 
-  helm --kube-context "$ctx" install "$rel" "$chart" -n "$ns" -f "$values" ${extra[@]+"${extra[@]}"} --wait --timeout 10m >/dev/null
+  helm --kube-context "$ctx" install "$rel" "$chart" -n "$ns" -f "$values" ${extra[@]+"${extra[@]}"} --wait --timeout 15m >/dev/null
   k get pods
   before=$(secrets)
   [ -n "$(field encryption-key)" ] || fail "no encryption key generated"
+  rc=$(k get pod -l app.kubernetes.io/component=api -o jsonpath='{.items[0].status.initContainerStatuses[0].state.terminated.exitCode}')
+  [ "$rc" = 0 ] || fail "create-bucket init container did not complete (exit '$rc')"
   pf_port=$((20000 + $$ % 10000))
   k port-forward "svc/$rel-mnemoshare" "$pf_port:80" >/dev/null 2>&1 &
   pf=$!
@@ -120,7 +148,7 @@ if [ "${QUICKSTART_CLUSTER:-}" = 1 ]; then
   logs=$(k logs "deploy/$rel-mnemoshare" -c mnemoshare)
   grep -q one_time_password <<<"$logs" || fail "no one_time_password in the api log"
 
-  helm --kube-context "$ctx" upgrade "$rel" "$chart" -n "$ns" -f "$values" ${extra[@]+"${extra[@]}"} --set resources.limits.memory=1280Mi --wait --timeout 10m >/dev/null
+  helm --kube-context "$ctx" upgrade "$rel" "$chart" -n "$ns" -f "$values" ${extra[@]+"${extra[@]}"} --set resources.limits.memory=1280Mi --wait --timeout 15m >/dev/null
   [ "$(secrets)" = "$before" ] || fail "generated secrets changed on upgrade"
 fi
 echo "quickstart: ok"

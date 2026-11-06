@@ -25,7 +25,10 @@ SHELL_TOOLS = {"sh", "bash", "ash", "dash", "zsh", "busybox", "wget", "curl", "n
 # images not built from our runtime image.
 SHELL_ALLOWLIST = {("-step-ca", "init-ca"), ("-minio", "minio"), ("-minio-post-job", "minio-make-user"),
                    ("-minio-post-job", "minio-make-bucket"), ("-minio-post-job", "minio-make-policy"),
-                   ("-minio-post-job", "minio-make-svcacct"), ("", "create-bucket")}
+                   ("-minio-post-job", "minio-make-svcacct")}
+# (component label, container name): the Quickstart bucket-create init container runs the
+# third-party amazon/aws-cli image and exists only on the api Deployment.
+SHELL_ALLOWLIST_COMPONENT = {("api", "create-bucket")}
 errors = []
 SANDBOX_COMPONENT = "sandbox-runner"
 SANDBOX_ALLOWED = {
@@ -76,6 +79,9 @@ for d in docs:
     tpl = d["spec"].get("jobTemplate", {}).get("spec", {}).get("template") or d["spec"]["template"]
     for c in (tpl["spec"].get("containers") or []) + (tpl["spec"].get("initContainers") or []):
         if any(d["metadata"]["name"].endswith(w) and c["name"] == n for w, n in SHELL_ALLOWLIST):
+            continue
+        comp = (tpl["metadata"].get("labels") or {}).get("app.kubernetes.io/component")
+        if d["kind"] == "Deployment" and (comp, c["name"]) in SHELL_ALLOWLIST_COMPONENT:
             continue
         for where, a in shell_hits(c):
             errors.append(f"{d['kind']}/{d['metadata']['name']} container {c['name']} {where}: invokes {a}")

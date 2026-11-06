@@ -129,12 +129,30 @@ a single 4 GB node is enough. Disable ClamAV with `--set clamav.enabled=false`; 
 URL is then blank in the app rather than pointing at a missing service.
 
 The encryption key (192 bits), JWT key and S3 credentials are generated on first install and
-reused on every upgrade; Secret `<release>-secrets`, the SQLite PVC `<release>-sqlite` and
-the object PVC `<release>-s3` are kept on `helm uninstall`. Back up all three together: without
-the Secret the stored files cannot be decrypted. The profile runs one replica with
+reused on every upgrade; Secret `<fullname>-secrets`, the SQLite PVC `<fullname>-sqlite` and
+the object PVC `<fullname>-s3` are kept on `helm uninstall`. (`<fullname>` is the release name,
+or `<release>-mnemoshare` when the release name does not contain `mnemoshare`.) Back up all three
+together: without the Secret the stored files cannot be decrypted. The profile runs one replica with
 `Recreate` rollouts (SQLite has a single writer); it is not an HA configuration. After
 install, `helm status` prints how to read the first admin's one-time password and enter the
 license key.
+
+The profile refuses to render unless the app image is a release at or above
+`quickstart.minAppVersion` (earlier releases lack the Quickstart fixes). For a local or
+development image set `quickstart.allowUnreleasedImage=true`.
+
+Backups. Scale the api to zero first so the SQLite file and the objects agree
+(`kubectl scale deploy/<fullname> -n <ns> --replicas=0`), then copy both volumes and the Secret:
+
+```bash
+# Secret (holds the encryption key): store it apart from the data backups
+kubectl get secret <fullname>-secrets -n <ns> -o yaml > secrets-backup.yaml
+# Volumes: CSI snapshots of PVCs <fullname>-sqlite and <fullname>-s3, or a tar through a helper pod
+kubectl run pvc-backup -n <ns> --restart=Never --image=alpine:3.23 --overrides='{"spec":{"containers":[{"name":"b","image":"alpine:3.23","command":["sleep","3600"],"volumeMounts":[{"name":"d","mountPath":"/d"}]}],"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"<fullname>-s3"}}]}}'
+kubectl exec -n <ns> pvc-backup -- tar czf - -C /d . > s3-data.tgz   # repeat for <fullname>-sqlite
+kubectl delete pod pvc-backup -n <ns>
+kubectl scale deploy/<fullname> -n <ns> --replicas=1
+```
 
 ## Configuration
 

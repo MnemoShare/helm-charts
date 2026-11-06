@@ -2614,13 +2614,21 @@ sandbox:
 # Quickstart profile (single-node evaluation / small teams)
 # ============================================================================
 # Install with -f values-quickstart.yaml. Renders one namespace containing the
-# api on SQLite (PVC), a Versity S3 gateway with a bucket-create hook Job,
-# Presidio, and (via clamav.enabled / quickstart.tika.enabled) ClamAV and Tika.
+# api on SQLite (PVC), a Versity S3 gateway (the api pod's create-bucket init
+# container makes the bucket before the api starts), Presidio, and (via
+# clamav.enabled / quickstart.tika.enabled) ClamAV and Tika.
 # No Redis, no external database. Encryption key, JWT key and S3 credentials are
-# generated once and kept across upgrades (Secret <release>-mnemoshare-secrets
-# is never deleted by helm uninstall). Not for HA: one replica, Recreate rollouts.
+# generated once and kept across upgrades (Secret <fullname>-secrets is never
+# deleted by helm uninstall). Not for HA: one replica, Recreate rollouts.
+# versitygw, presidio-analyzer and tika run with a read-only root filesystem and an emptyDir
+# /tmp (verified on kind); presidio also sets GUNICORN_CMD_ARGS=--no-control-socket because
+# gunicorn creates its control socket in the read-only working directory.
 quickstart:
   enabled: false
+  # The render fails unless the api image tag is a release >= minAppVersion.
+  # allowUnreleasedImage permits any tag (local or development builds, CI).
+  minAppVersion: "0.23.0"
+  allowUnreleasedImage: false
   # SuperAdmin created on first start with an empty database; the one-time
   # password is written to the api log.
   adminEmail: admin@quickstart.local
