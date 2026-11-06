@@ -675,7 +675,7 @@ jobs:
           OUT=$(helm template mnemoshare charts/mnemoshare "${BASE[@]}" \
             --set commonLabels.tenant-id=acme \
             --set commonLabels.tier=enterprise)
-          if ! echo "$OUT" | grep -q "tenant-id: acme"; then
+          if ! echo "$OUT" | grep -qE '"?tenant-id"?: "?acme"?'; then
             echo "✗ Scenario C: commonLabels not emitted on metadata.labels"
             exit 1
           fi
