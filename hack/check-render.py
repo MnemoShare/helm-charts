@@ -25,7 +25,7 @@ SHELL_TOOLS = {"sh", "bash", "ash", "dash", "zsh", "busybox", "wget", "curl", "n
 # images not built from our runtime image.
 SHELL_ALLOWLIST = {("-step-ca", "init-ca"), ("-minio", "minio"), ("-minio-post-job", "minio-make-user"),
                    ("-minio-post-job", "minio-make-bucket"), ("-minio-post-job", "minio-make-policy"),
-                   ("-minio-post-job", "minio-make-svcacct")}
+                   ("-minio-post-job", "minio-make-svcacct"), ("", "create-bucket")}
 errors = []
 SANDBOX_COMPONENT = "sandbox-runner"
 SANDBOX_ALLOWED = {

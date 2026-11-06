@@ -108,6 +108,34 @@ helm install mnemoshare mnemoshare/mnemoshare \
   --values my-values.yaml
 ```
 
+## Quickstart Profile (single node, SQLite)
+
+`values-quickstart.yaml` installs a complete single-node MnemoShare in one namespace for
+evaluation and small teams: the API on SQLite (PVC), a Versity S3 gateway with a
+bucket created before the API starts, Presidio (PHI/PII), ClamAV (virus scanning) and Tika
+(OCR and long-tail document formats). No Redis and no external database or object store.
+Scanning is on by default.
+
+```bash
+helm install mnemoshare mnemoshare/mnemoshare -n mnemoshare --create-namespace \
+  -f values-quickstart.yaml --wait --timeout 15m
+kubectl port-forward svc/mnemoshare 8080:80 -n mnemoshare
+```
+
+Capacity: 8 GB of RAM in total, for example two 4 GB nodes or one 8 GB node. Measured
+idle use: ClamAV about 1 GiB (about double while it reloads signatures), Presidio about 1 GiB,
+Tika about 0.6 GiB, API and S3 under 0.15 GiB each. Without Tika (`--set quickstart.tika.enabled=false`)
+a single 4 GB node is enough. Disable ClamAV with `--set clamav.enabled=false`; the scanner
+URL is then blank in the app rather than pointing at a missing service.
+
+The encryption key (192 bits), JWT key and S3 credentials are generated on first install and
+reused on every upgrade; Secret `<release>-secrets`, the SQLite PVC `<release>-sqlite` and
+the object PVC `<release>-s3` are kept on `helm uninstall`. Back up all three together: without
+the Secret the stored files cannot be decrypted. The profile runs one replica with
+`Recreate` rollouts (SQLite has a single writer); it is not an HA configuration. After
+install, `helm status` prints how to read the first admin's one-time password and enter the
+license key.
+
 ## Configuration
 
 ### Required Values

@@ -156,7 +156,8 @@ in the release Secret, else generate. lookup is empty without cluster access:
 install renders then generate, upgrade renders fail rather than rotate the key.
 Argo CD renders as an install and cannot be detected here. Memoized per render
 because generators are not deterministic across includes.
-Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"ecdsa"), impact.
+Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"base64key32"|"ecdsa"), impact.
+base64key32 is 32 base64 characters from 24 random bytes (192 bits); alnum32 carries about 190.
 */}}
 {{- define "mnemoshare.stableSecretValue" -}}
 {{- $root := .root -}}
@@ -179,6 +180,8 @@ Args: root, name (memo key), explicit, secretKey, generator ("alnum32"|"ecdsa"),
 {{- end -}}
 {{- else if eq .generator "ecdsa" -}}
 {{- $_ := set $memo .name (genPrivateKey "ecdsa") -}}
+{{- else if eq .generator "base64key32" -}}
+{{- $_ := set $memo .name (randBytes 24) -}}
 {{- else -}}
 {{- $_ := set $memo .name (randAlphaNum 32) -}}
 {{- end -}}
@@ -198,7 +201,53 @@ JWT EC private key (ECDSA P-256) - provided, existing in the release Secret, or 
 Encryption key (exactly 32 bytes) - provided, existing in the release Secret, or generated
 */}}
 {{- define "mnemoshare.encryptionKey" -}}
-{{- include "mnemoshare.stableSecretValue" (dict "root" . "name" "encryption" "explicit" .Values.encryption.key "secretKey" "encryption-key" "generator" "alnum32" "impact" "existing files would become unreadable") -}}
+{{- include "mnemoshare.stableSecretValue" (dict "root" . "name" "encryption" "explicit" .Values.encryption.key "secretKey" "encryption-key" "generator" (ternary "base64key32" "alnum32" (.Values.quickstart.enabled | default false)) "impact" "existing files would become unreadable") -}}
+{{- end }}
+
+{{/*
+Quickstart profile (quickstart.enabled): single-namespace SQLite install with
+bundled Versity S3, Presidio and Tika. These helpers are the only place the
+in-namespace service wiring is derived; with quickstart.enabled=false they
+return the plain values.
+*/}}
+{{- define "mnemoshare.s3SecretName" -}}
+{{- if .Values.existingSecrets.s3 }}{{ .Values.existingSecrets.s3 }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end -}}
+{{- end }}
+
+{{- define "mnemoshare.s3AccessKey" -}}
+{{- if .Values.quickstart.enabled -}}
+{{- include "mnemoshare.stableSecretValue" (dict "root" . "name" "s3access" "explicit" .Values.s3.accessKey "secretKey" "s3-access-key" "generator" "alnum32" "impact" "the bundled S3 store would reject its own credentials") -}}
+{{- else -}}
+{{- .Values.s3.accessKey -}}
+{{- end -}}
+{{- end }}
+
+{{- define "mnemoshare.s3SecretKey" -}}
+{{- if .Values.quickstart.enabled -}}
+{{- include "mnemoshare.stableSecretValue" (dict "root" . "name" "s3secret" "explicit" .Values.s3.secretKey "secretKey" "s3-secret-key" "generator" "base64key32" "impact" "the bundled S3 store would reject its own credentials") -}}
+{{- else -}}
+{{- .Values.s3.secretKey -}}
+{{- end -}}
+{{- end }}
+
+{{- define "mnemoshare.tikaUrl" -}}
+{{- if .Values.dlp.tikaUrl -}}
+{{- .Values.dlp.tikaUrl -}}
+{{- else if and .Values.quickstart.enabled .Values.quickstart.tika.enabled -}}
+http://{{ include "mnemoshare.fullname" . }}-tika:9998
+{{- end -}}
+{{- end }}
+
+{{- define "mnemoshare.presidioUrl" -}}
+{{- if .Values.dlp.presidioUrl -}}
+{{- .Values.dlp.presidioUrl -}}
+{{- else if .Values.quickstart.enabled -}}
+http://{{ include "mnemoshare.fullname" . }}-presidio:3000
+{{- end -}}
+{{- end }}
+
+{{- define "mnemoshare.sqlitePersistent" -}}
+{{- if and (eq (.Values.database.driver | default "mongodb") "sqlite") .Values.database.sqlite.persistence.enabled -}}true{{- end -}}
 {{- end }}
 
 {{/*
@@ -259,16 +308,22 @@ Values consumed (all optional — only emitted when set):
   value: {{ .apiKey | quote }}
 {{- end }}
 {{- end }}
+{{- $tikaUrl := include "mnemoshare.tikaUrl" $ }}
+{{- $presidioUrl := include "mnemoshare.presidioUrl" $ }}
 {{- with .Values.dlp -}}
-{{- if .tikaUrl }}
+{{- if $tikaUrl }}
 - name: TIKA_URL
-  value: {{ .tikaUrl | quote }}
+  value: {{ $tikaUrl | quote }}
 {{- end }}
-{{- if .presidioUrl }}
+{{- if $presidioUrl }}
 - name: PRESIDIO_ENABLED
   value: "true"
 - name: PRESIDIO_URL
-  value: {{ .presidioUrl | quote }}
+  value: {{ $presidioUrl | quote }}
+{{- if $.Values.quickstart.enabled }}
+- name: PRESIDIO_MIN_CONFIDENCE
+  value: {{ $.Values.quickstart.presidio.minConfidence | quote }}
+{{- end }}
 {{- if .presidioApiKey }}
 - name: PRESIDIO_API_KEY
   value: {{ .presidioApiKey | quote }}

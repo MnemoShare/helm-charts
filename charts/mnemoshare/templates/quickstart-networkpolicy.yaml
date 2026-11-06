@@ -1,0 +1,55 @@
+{{- if and .Values.quickstart.enabled .Values.networkPolicy .Values.networkPolicy.enabled }}
+{{- $fn := include "mnemoshare.fullname" . }}
+{{- range $c := list (dict "name" "s3" "port" 7070 "from" (list "api")) (dict "name" "presidio" "port" 3000 "from" (list "api")) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fn }}-{{ $c.name }}
+  labels:
+    {{- include "mnemoshare.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $c.name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- range $from := $c.from }}
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" $ | nindent 14 }}
+              app.kubernetes.io/component: {{ $from }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $c.port }}
+{{- end }}
+{{- if .Values.quickstart.tika.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fn }}-tika
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: tika
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: 9998
+{{- end }}
+{{- end }}

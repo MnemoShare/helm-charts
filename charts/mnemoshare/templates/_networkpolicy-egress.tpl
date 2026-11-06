@@ -83,7 +83,17 @@ no `to` (any destination, restricted to ports). Renders nothing without ports.
 {{/* Object storage: in-cluster MinIO, else S3-compatible endpoint. */}}
 {{- define "mnemoshare.np.storage" -}}
 {{- $np := .Values.networkPolicy -}}
-{{- if .Values.minio.enabled }}
+{{- if .Values.quickstart.enabled }}
+# Quickstart Versity S3
+- to:
+    - podSelector:
+        matchLabels:
+          {{- include "mnemoshare.selectorLabels" . | nindent 10 }}
+          app.kubernetes.io/component: s3
+  ports:
+    - protocol: TCP
+      port: 7070
+{{- else if .Values.minio.enabled }}
 # In-cluster MinIO
 - to:
     - podSelector:
@@ -167,7 +177,17 @@ no `to` (any destination, restricted to ports). Renders nothing without ports.
     - protocol: TCP
       port: {{ .Values.networkPolicy.richMedia.port | default 8080 }}
 {{- end }}
-{{- if .Values.dlp.tikaUrl }}
+{{- if and .Values.quickstart.enabled (not .Values.dlp.tikaUrl) .Values.quickstart.tika.enabled }}
+# Quickstart Apache Tika
+- to:
+    - podSelector:
+        matchLabels:
+          {{- include "mnemoshare.selectorLabels" . | nindent 10 }}
+          app.kubernetes.io/component: tika
+  ports:
+    - protocol: TCP
+      port: 9998
+{{- else if .Values.dlp.tikaUrl }}
 # Apache Tika
 - to:
     {{- if and .Values.networkPolicy.tika .Values.networkPolicy.tika.namespace }}
@@ -181,7 +201,17 @@ no `to` (any destination, restricted to ports). Renders nothing without ports.
     - protocol: TCP
       port: {{ .Values.networkPolicy.tika.port | default 9998 }}
 {{- end }}
-{{- if .Values.dlp.presidioUrl }}
+{{- if and .Values.quickstart.enabled (not .Values.dlp.presidioUrl) }}
+# Quickstart Presidio
+- to:
+    - podSelector:
+        matchLabels:
+          {{- include "mnemoshare.selectorLabels" . | nindent 10 }}
+          app.kubernetes.io/component: presidio
+  ports:
+    - protocol: TCP
+      port: 3000
+{{- else if .Values.dlp.presidioUrl }}
 # Presidio
 - to:
     {{- if and .Values.networkPolicy.presidio .Values.networkPolicy.presidio.namespace }}

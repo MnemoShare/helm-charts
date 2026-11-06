@@ -449,6 +449,9 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bash charts/mnemoshare/tests/clamav-networkpolicy.sh
 
+      - name: Validate the Quickstart profile render
+        run: bash charts/mnemoshare/tests/quickstart.sh
+
   stable-secrets-lookup:
     runs-on: ubuntu-latest
     steps:

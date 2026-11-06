@@ -1,0 +1,66 @@
+# MnemoShare Quickstart: one namespace, SQLite, Versity S3, Presidio, ClamAV, Tika.
+#
+#   helm install mnemoshare mnemoshare/mnemoshare -n mnemoshare --create-namespace \
+#     -f values-quickstart.yaml --wait --timeout 15m
+#
+# Minimum capacity: 8 GB of RAM in total, e.g. two 4 GB nodes or one 8 GB node
+# (measured idle: ClamAV ~1 GiB, Presidio ~1 GiB, Tika ~0.6 GiB, api and S3 ~0.15 GiB;
+# ClamAV roughly doubles while reloading signatures). Without Tika, a single 4 GB node
+# is enough; set quickstart.tika.enabled=false.
+
+customerId: quickstart
+replicaCount: 1
+appUrl: http://localhost:8080
+
+quickstart:
+  enabled: true
+  adminEmail: admin@quickstart.local
+  tika:
+    enabled: true
+
+database:
+  driver: sqlite
+  sqlite:
+    path: /var/lib/mnemoshare/mnemoshare.db
+    persistence:
+      enabled: true
+      size: 5Gi
+
+mongodb:
+  external:
+    enabled: false
+
+s3:
+  region: us-east-1
+  bucket: mnemoshare
+  useSSL: false
+
+# Scanning is on. Disable with --set clamav.enabled=false (or quickstart.tika.enabled=false);
+# the app's scanner URL is then blank rather than pointing at a missing service.
+clamav:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 2Gi
+  probes:
+    exec: true
+  resources:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+
+# Reached with kubectl port-forward. To expose it, set ingress.enabled=true, the host/TLS
+# fields, appUrl, and network.trustedProxyCIDRs to the range your ingress connects from.
+ingress:
+  enabled: false
+network:
+  trustedProxyCIDRs: none
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 1Gi

@@ -44,3 +44,4 @@ run db2 --set database.driver=db2
 run sqlite --set database.driver=sqlite
 run in-cluster-ca-clamav-redis --set stepCA.mode=inCluster --set redis.mode=inCluster --set redis.password=x --set clamav.enabled=true
 run clamav-redis-minio-gateways "${ALL[@]}" --set clamav.enabled=true --set redis.mode=inCluster --set redis.password=x --set minio.enabled=true --set workflowWorker.enabled=true
+helm template mnemoshare charts/mnemoshare -f charts/mnemoshare/values-quickstart.yaml --set-string jwt.ecPrivateKey=test-ec-key --set encryption.key=test-encryption-key-exactly-32by --set s3.accessKey=test-key --set s3.secretKey=test-secret | python3 hack/check-render.py | sed "s/^/[quickstart] /"

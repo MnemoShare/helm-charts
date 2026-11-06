@@ -108,3 +108,34 @@ SANDBOX RUNNER
   Input staging and output collection are OFF: the runner image is not pinned by digest (set sandbox.runner.image.digest).
 {{- end }}
 {{- end }}
+
+{{- if .Values.quickstart.enabled }}
+
+QUICKSTART
+----------
+  First login: on the first start with an empty database the api creates the SuperAdmin
+  {{ .Values.quickstart.adminEmail }} with a generated one-time password, logged once:
+    kubectl logs deploy/{{ include "mnemoshare.fullname" . }} -c {{ .Chart.Name }} -n {{ .Release.Namespace }} | grep one_time_password
+  To choose the password instead, set DEFAULT_ADMIN_PASSWORD through extraEnv before the
+  first start. It must be changed at first login. If it was lost before use, delete the
+  release, its PVCs and Secret, and install again (this wipes the database).
+
+  License: until a valid key is present only SuperAdmins can sign in and only the License
+  page answers. Enter the key at /license in the web UI, or put it in a Secret with the key
+  `license-key` and set existingSecrets.license to its name. The api needs outbound HTTPS to
+  license.mnemoshare.com.
+
+  Reach it: kubectl port-forward svc/{{ include "mnemoshare.fullname" . }} 8080:80 -n {{ .Release.Namespace }}
+  then open http://localhost:8080. For a public URL set ingress.enabled, ingress.hosts/tls,
+  appUrl and network.trustedProxyCIDRs.
+
+  Scanners: ClamAV is {{ if eq (include "mnemoshare.icapMode" .) "inCluster" }}ON{{ else }}OFF (no malware scanning){{ end }}, Tika is {{ if .Values.quickstart.tika.enabled }}ON{{ else }}OFF{{ end }}. Presidio is always on.
+  Turn one off with `helm upgrade --reuse-values --set clamav.enabled=false` or
+  `--set quickstart.tika.enabled=false`; the app's scanner URL is then blank, so uploads do
+  not fail against a service that is not there. ClamAV needs a few minutes to load
+  signatures on first start.
+
+  State to back up together: Secret {{ include "mnemoshare.fullname" . }}-secrets (encryption key), and the PVCs
+  {{ include "mnemoshare.fullname" . }}-sqlite (database) and {{ include "mnemoshare.fullname" . }}-s3 (encrypted objects). All three are kept on
+  `helm uninstall`.
+{{- end }}

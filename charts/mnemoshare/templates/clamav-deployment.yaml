@@ -53,6 +53,26 @@ spec:
         {{- end }}
         resources:
           {{- toYaml .Values.clamav.resources | nindent 12 }}
+        {{- if .Values.clamav.probes.exec }}
+        startupProbe:
+          exec:
+            command: ["/opt/c-icap/bin/c-icap-client", "-i", "127.0.0.1", "-p", "1344", "-s", "avscan"]
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: {{ .Values.clamav.probes.startupFailureThreshold }}
+        livenessProbe:
+          exec:
+            command: ["/opt/c-icap/bin/c-icap-client", "-i", "127.0.0.1", "-p", "1344", "-s", "avscan"]
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 5
+        readinessProbe:
+          exec:
+            command: ["/opt/c-icap/bin/c-icap-client", "-i", "127.0.0.1", "-p", "1344", "-s", "avscan"]
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3
+        {{- else }}
         livenessProbe:
           tcpSocket:
             port: icap
@@ -67,6 +87,7 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
+        {{- end }}
       {{- if .Values.clamav.persistence.enabled }}
       volumes:
       - name: clamav-data

@@ -37,6 +37,10 @@ spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
+  {{- if include "mnemoshare.sqlitePersistent" . }}
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
@@ -59,6 +63,10 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.quickstart.enabled }}
+      initContainers:
+        {{- include "mnemoshare.quickstart.bucketInitContainer" . | nindent 8 }}
+      {{- end }}
       containers:
       - name: {{ .Chart.Name }}
         securityContext:
@@ -157,6 +165,13 @@ spec:
         - name: SQLITE_PATH
           value: {{ .Values.database.sqlite.path | default "/var/lib/mnemoshare/mnemoshare.db" | quote }}
         {{- end }}
+        {{- if .Values.quickstart.enabled }}
+        - name: DEFAULT_ADMIN_EMAIL
+          value: {{ .Values.quickstart.adminEmail | quote }}
+        # The in-process workflows engine calls back into this pod's own API.
+        - name: API_BASE_URL
+          value: "http://localhost:{{ .Values.service.targetPort }}"
+        {{- end }}
         # S3 Storage
         {{- if .Values.minio.enabled }}
         # MinIO is enabled - use internal MinIO service endpoint (no protocol prefix)
@@ -181,7 +196,7 @@ spec:
         {{- else }}
         # External S3-compatible storage
         - name: S3_ENDPOINT
-          value: {{ .Values.s3.endpoint | quote }}
+          value: {{ if .Values.quickstart.enabled }}"{{ include "mnemoshare.fullname" . }}-s3:7070"{{ else }}{{ .Values.s3.endpoint | quote }}{{ end }}
         - name: S3_REGION
           value: {{ .Values.s3.region | quote }}
         - name: S3_BUCKET
@@ -531,6 +546,10 @@ spec:
         # Writable temp directory (required for readOnlyRootFilesystem)
         - name: tmp
           mountPath: /tmp
+        {{- if include "mnemoshare.sqlitePersistent" . }}
+        - name: sqlite-data
+          mountPath: {{ dir (.Values.database.sqlite.path | default "/var/lib/mnemoshare/mnemoshare.db") }}
+        {{- end }}
         {{- if .Values.diskBuffer.enabled }}
         - name: disk-buffer
           mountPath: /mnt/disk-buffer
@@ -562,6 +581,11 @@ spec:
       - name: tmp
         emptyDir:
           sizeLimit: 1Gi
+      {{- if include "mnemoshare.sqlitePersistent" . }}
+      - name: sqlite-data
+        persistentVolumeClaim:
+          claimName: {{ include "mnemoshare.fullname" . }}-sqlite
+      {{- end }}
       {{- if .Values.diskBuffer.enabled }}
       - name: disk-buffer
         {{- if eq .Values.diskBuffer.volume.type "emptyDir" }}
