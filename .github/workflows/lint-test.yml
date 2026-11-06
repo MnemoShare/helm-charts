@@ -476,6 +476,14 @@ jobs:
 
       - name: Install the Quickstart profile, check bucket, first-admin log and key reuse on upgrade
         run: |
-          # Uses the published appVersion image; no allowUnreleasedImage.
-          QUICKSTART_CLUSTER=1 QUICKSTART_ALLOW_DEFAULT_KUBECONFIG=1 \
+          # Published appVersion image, no allowUnreleasedImage. Tika (about 1 GB) and ClamAV
+          # (signature download) are left out of the runner install; their manifests are
+          # covered by the render tests. Images are pulled once and loaded into kind so the
+          # install does not depend on in-cluster pull speed.
+          app="mnemoshare/mnemoshare:$(awk '/^appVersion:/ {gsub(/"/,"",$2); print $2}' charts/mnemoshare/Chart.yaml)"
+          for img in "$app" versity/versitygw:v1.10.0 mcr.microsoft.com/presidio-analyzer:2.2.362 amazon/aws-cli:2.39.6; do
+            docker pull -q "$img"
+            kind load docker-image "$img" --name "$(kind get clusters | head -1)"
+          done
+          QUICKSTART_CLUSTER=1 QUICKSTART_ALLOW_DEFAULT_KUBECONFIG=1 QUICKSTART_NO_TIKA=1 QUICKSTART_NO_CLAMAV=1 \
             bash charts/mnemoshare/tests/quickstart.sh

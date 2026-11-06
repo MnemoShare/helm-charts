@@ -5,7 +5,8 @@
 # and every helm and kubectl call is pinned to that context. The default ~/.kube/config is
 # refused unless QUICKSTART_ALLOW_DEFAULT_KUBECONFIG=1 (CI's disposable kind job). Set QUICKSTART_APP_IMAGE to
 # repository:tag to override the app image (e.g. a locally built arm64 image loaded into
-# kind) and QUICKSTART_NO_CLAMAV=1 where the ClamAV image cannot run (it is amd64 only).
+# kind), QUICKSTART_NO_CLAMAV=1 where the ClamAV image cannot run (it is amd64 only) and
+# QUICKSTART_NO_TIKA=1 to skip the large Tika image.
 set -euo pipefail
 
 chart=${1:-charts/mnemoshare}
@@ -127,11 +128,27 @@ if [ "${QUICKSTART_CLUSTER:-}" = 1 ]; then
     extra+=(--set "image.repository=${QUICKSTART_APP_IMAGE%:*}" --set "image.tag=${QUICKSTART_APP_IMAGE##*:}")
   fi
   [ "${QUICKSTART_NO_CLAMAV:-}" = 1 ] && extra+=(--set clamav.enabled=false)
+  [ "${QUICKSTART_NO_TIKA:-}" = 1 ] && extra+=(--set quickstart.tika.enabled=false)
   k() { kubectl --context "$ctx" -n "$ns" "$@"; }
   field() { k get secret "$rel-mnemoshare-secrets" -o "jsonpath={.data.$1}"; }
   secrets() { for f in encryption-key s3-access-key s3-secret-key jwt-ec-private-key; do field "$f"; echo; done; }
 
-  helm --kube-context "$ctx" install "$rel" "$chart" -n "$ns" -f "$values" ${extra[@]+"${extra[@]}"} --wait --timeout 15m >/dev/null
+  diag() {
+    echo "quickstart: ---- diagnostics ----" >&2
+    k get pods -o wide >&2 || true
+    k get events --sort-by=.lastTimestamp 2>&1 | tail -40 >&2 || true
+    for pod in $(k get pods -o jsonpath='{range .items[?(@.status.phase!="Succeeded")]}{.metadata.name}{"\n"}{end}'); do
+      ready=$(k get pod "$pod" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
+      [ "$ready" = True ] && continue
+      echo "---- describe $pod" >&2
+      k describe pod "$pod" 2>&1 | tail -60 >&2 || true
+      for c in $(k get pod "$pod" -o jsonpath='{.spec.initContainers[*].name} {.spec.containers[*].name}'); do
+        echo "---- logs $pod/$c" >&2
+        k logs "$pod" -c "$c" --tail=30 >&2 2>&1 || true
+      done
+    done
+  }
+  helm --kube-context "$ctx" install "$rel" "$chart" -n "$ns" -f "$values" ${extra[@]+"${extra[@]}"} --wait --timeout "${QUICKSTART_TIMEOUT:-15m}" >/dev/null || { diag; fail "helm install failed"; }
   k get pods
   before=$(secrets)
   [ -n "$(field encryption-key)" ] || fail "no encryption key generated"
@@ -151,7 +168,7 @@ if [ "${QUICKSTART_CLUSTER:-}" = 1 ]; then
   logs=$(k logs "deploy/$rel-mnemoshare" -c mnemoshare)
   grep -q one_time_password <<<"$logs" || fail "no one_time_password in the api log"
 
-  helm --kube-context "$ctx" upgrade "$rel" "$chart" -n "$ns" -f "$values" ${extra[@]+"${extra[@]}"} --set resources.limits.memory=1280Mi --wait --timeout 15m >/dev/null
+  helm --kube-context "$ctx" upgrade "$rel" "$chart" -n "$ns" -f "$values" ${extra[@]+"${extra[@]}"} --set resources.limits.memory=1280Mi --wait --timeout "${QUICKSTART_TIMEOUT:-15m}" >/dev/null || { diag; fail "helm upgrade failed"; }
   [ "$(secrets)" = "$before" ] || fail "generated secrets changed on upgrade"
 fi
 echo "quickstart: ok"
