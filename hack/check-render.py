@@ -10,6 +10,7 @@
 5. Every app pod (component api, workflow-worker, ices, mcp, email-gateway,
    inbound-gateway, sftp-gateway) sets automountServiceAccountToken: false, and
    no Role/RoleBinding other than the sandbox runner's is rendered.
+7. NetworkPolicy podSelectors (and same-namespace peer podSelectors) match a rendered pod.
 6. No container (init or main) invokes sh/bash/busybox/wget/curl/nc/pgrep in
    command/args, probe exec or lifecycle hooks (shell-free runtime, MNS-1549).
    Third-party images that ship their own shell are allowlisted below.
@@ -20,8 +21,11 @@ import yaml
 APP_COMPONENTS = {"api", "workflow-worker", "ices", "mcp", "email-gateway",
                   "inbound-gateway", "sftp-gateway"}
 SHELL_TOOLS = {"sh", "bash", "ash", "dash", "zsh", "busybox", "wget", "curl", "nc", "ncat", "pgrep"}
-# (workload name suffix, container name): smallstep/step-ca image, not built from our runtime image.
-SHELL_ALLOWLIST = {("-step-ca", "init-ca")}
+# (workload name suffix, container name): smallstep/step-ca and the MinIO subchart, third-party
+# images not built from our runtime image.
+SHELL_ALLOWLIST = {("-step-ca", "init-ca"), ("-minio", "minio"), ("-minio-post-job", "minio-make-user"),
+                   ("-minio-post-job", "minio-make-bucket"), ("-minio-post-job", "minio-make-policy"),
+                   ("-minio-post-job", "minio-make-svcacct")}
 errors = []
 SANDBOX_COMPONENT = "sandbox-runner"
 SANDBOX_ALLOWED = {
@@ -75,6 +79,45 @@ for d in docs:
             continue
         for where, a in shell_hits(c):
             errors.append(f"{d['kind']}/{d['metadata']['name']} container {c['name']} {where}: invokes {a}")
+
+# 7. Every NetworkPolicy podSelector, and every peer podSelector without a namespaceSelector, must
+#    match at least one rendered pod template in the release namespace; a selector that matches
+#    nothing silently turns a rule into a no-op (or a default-deny into an outage).
+def selector_matches(sel, labels):
+    for k, v in (sel.get("matchLabels") or {}).items():
+        if labels.get(k) != v:
+            return False
+    for e in sel.get("matchExpressions") or []:
+        op, key, vals = e["operator"], e["key"], e.get("values") or []
+        if op == "In" and labels.get(key) not in vals:
+            return False
+        if op == "NotIn" and key in labels and labels[key] in vals:
+            return False
+        if op == "Exists" and key not in labels:
+            return False
+        if op == "DoesNotExist" and key in labels:
+            return False
+    return True
+
+pod_labels = []
+for d in docs:
+    if d.get("kind") in ("Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob"):
+        t = d["spec"].get("jobTemplate", {}).get("spec", {}).get("template") or d["spec"]["template"]
+        if not d.get("metadata", {}).get("namespace"):
+            pod_labels.append(t["metadata"].get("labels") or {})
+for d in docs:
+    if d.get("kind") != "NetworkPolicy" or d["metadata"].get("namespace"):
+        continue
+    name = d["metadata"]["name"]
+    sels = [("spec.podSelector", d["spec"].get("podSelector") or {})]
+    for direction, peers_key in (("ingress", "from"), ("egress", "to")):
+        for i, rule in enumerate(d["spec"].get(direction) or []):
+            for j, peer in enumerate(rule.get(peers_key) or []):
+                if "podSelector" in peer and "namespaceSelector" not in peer:
+                    sels.append((f"{direction}[{i}].{peers_key}[{j}].podSelector", peer["podSelector"] or {}))
+    for where, sel in sels:
+        if not any(selector_matches(sel, l) for l in pod_labels):
+            errors.append(f"NetworkPolicy/{name} {where} {sel} matches no rendered pod")
 
 sas = {d["metadata"]["name"] for d in docs if d.get("kind") == "ServiceAccount"}
 for d in docs:

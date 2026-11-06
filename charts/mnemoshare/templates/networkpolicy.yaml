@@ -247,15 +247,28 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: redis
+      {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
   policyTypes:
     - Ingress
     - Egress
   ingress:
+    # Only the components whose egress rules include mnemoshare.np.redis.
     - from:
         - podSelector:
             matchLabels:
               {{- include "mnemoshare.selectorLabels" . | nindent 14 }}
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                  - api
+                  {{- if and .Values.workflowWorker .Values.workflowWorker.enabled }}
+                  - workflow-worker
+                  {{- end }}
+                  {{- if .Values.ices.enabled }}
+                  - ices
+                  {{- end }}
       ports:
         - protocol: TCP
           port: 6379

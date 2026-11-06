@@ -88,7 +88,8 @@ no `to` (any destination, restricted to ports). Renders nothing without ports.
 - to:
     - podSelector:
         matchLabels:
-          app.kubernetes.io/name: minio
+          app: minio
+          release: {{ .Release.Name }}
   ports:
     - protocol: TCP
       port: 9000
@@ -136,7 +137,8 @@ no `to` (any destination, restricted to ports). Renders nothing without ports.
 - to:
     - podSelector:
         matchLabels:
-          app.kubernetes.io/name: redis
+          {{- include "mnemoshare.selectorLabels" . | nindent 10 }}
+          app.kubernetes.io/component: redis
   ports:
     - protocol: TCP
       port: 6379
