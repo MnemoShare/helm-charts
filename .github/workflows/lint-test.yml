@@ -437,6 +437,10 @@ jobs:
       - name: Validate generated secrets are stable (offline)
         run: bash charts/mnemoshare/tests/stable-secrets.sh
 
+      - name: Validate in-cluster ClamAV and Redis ingress components
+        if: github.event_name == 'pull_request'
+        run: bash charts/mnemoshare/tests/clamav-networkpolicy.sh
+
   stable-secrets-lookup:
     runs-on: ubuntu-latest
     steps:

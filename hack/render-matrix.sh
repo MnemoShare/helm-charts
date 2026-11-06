@@ -43,3 +43,4 @@ run postgres --set database.driver=postgres --set-string postgres.dsn=postgres:/
 run db2 --set database.driver=db2
 run sqlite --set database.driver=sqlite
 run in-cluster-ca-clamav-redis --set stepCA.mode=inCluster --set redis.mode=inCluster --set redis.password=x --set clamav.enabled=true
+run clamav-redis-minio-gateways "${ALL[@]}" --set clamav.enabled=true --set redis.mode=inCluster --set redis.password=x --set minio.enabled=true --set workflowWorker.enabled=true
