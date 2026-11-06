@@ -707,6 +707,10 @@ The inbound gateway NetworkPolicy no longer opens 10025 and 10070 to every pod. 
 
 With `emailGateway.mode` set to `relay` or `inbound-relay`, the gateway now refuses to start without an allowlist of submitting sources, and the chart fails to render without `emailGateway.relay.allowedSourceCIDRs`. That value takes IPs or CIDRs, as a list or a comma-separated string. Anything not listed gets 550 at connect. Catch-alls and prefixes wider than /8 (IPv4) or /32 (IPv6) are refused. Through a ClusterIP Service the relay sees pod IPs, so list the submitting pods' CIDR; through a LoadBalancer or NodePort it sees node IPs unless `externalTrafficPolicy` is `Local`. `gateway` mode (the default) is unaffected.
 
+### Upgrade note: email gateway low ports (chart 1.32.4)
+
+The email gateway pod now sets the safe sysctl `net.ipv4.ip_unprivileged_port_start=0` when any `emailGateway.listenPorts` entry is below 1024, so the non-root, capability-dropped container can bind port 25 (before, it logged `listen tcp :25: bind: permission denied`). Operator-provided `podSecurityContext.sysctls` are kept, and other pods are unchanged. The chart now also fails to render if `emailGateway.listenPorts` is malformed or does not include port 25, because the Service targets the fixed `smtp` container port 25. Your cluster must allow that safe sysctl (it is allowed by default on Kubernetes 1.22+ with a kernel of 4.11+).
+
 ## Uninstalling
 
 ```bash

@@ -4,6 +4,23 @@
 {{- if and (not $tlsSecret) .Values.mtls.tls.existingSecret }}
 {{- $tlsSecret = .Values.mtls.tls.existingSecret }}
 {{- end }}
+{{- $seenListenPorts := dict }}
+{{- $hasSMTPPort := false }}
+{{- $hasLowPort := false }}
+{{- range $listener := splitList "," .Values.emailGateway.listenPorts }}
+{{- $listener = trim $listener }}
+{{- if not (regexMatch "^[0-9]+:(plain|starttls|tls)$" $listener) }}{{- fail (printf "emailGateway.listenPorts contains invalid listener %q" $listener) }}{{- end }}
+{{- $portText := regexFind "^[0-9]+" $listener }}
+{{- $port := atoi $portText }}
+{{- if or (lt $port 1) (gt $port 65535) }}{{- fail (printf "emailGateway.listenPorts contains invalid port %s" $portText) }}{{- end }}
+{{- $canonicalPort := printf "%d" $port }}
+{{- if ne $portText $canonicalPort }}{{- fail (printf "emailGateway.listenPorts port %s is not canonically spelled as %s" $portText $canonicalPort) }}{{- end }}
+{{- if hasKey $seenListenPorts $canonicalPort }}{{- fail (printf "emailGateway.listenPorts contains duplicate port %s" $canonicalPort) }}{{- end }}
+{{- if lt $port 1024 }}{{- $hasLowPort = true }}{{- end }}
+{{- $_ := set $seenListenPorts $canonicalPort true }}
+{{- if eq $port 25 }}{{- $hasSMTPPort = true }}{{- end }}
+{{- end }}
+{{- if not $hasSMTPPort }}{{- fail "emailGateway.listenPorts must include port 25 while the Service targets the fixed smtp port" }}{{- end }}
 {{- $relayMode := or (eq .Values.emailGateway.mode "relay") (eq .Values.emailGateway.mode "inbound-relay") }}
 {{- $relayClaim := .Values.emailGateway.relay.persistence.existingClaim | default (printf "%s-relay-spool" (include "mnemoshare.fullname" .)) }}
 apiVersion: apps/v1
@@ -32,7 +49,17 @@ spec:
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
       automountServiceAccountToken: false
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- $podSC := deepCopy .Values.podSecurityContext }}
+        {{- if $hasLowPort }}
+        {{- /* The SMTP listener sits below 1024 while the container runs as a
+             non-root user with every capability dropped; this safe sysctl is
+             what lets it bind. NET_BIND_SERVICE does not help a non-root
+             process without file capabilities on the binary. Appended to any
+             operator-provided sysctls rather than shadowing them. */}}
+        {{- $lowPort := dict "name" "net.ipv4.ip_unprivileged_port_start" "value" "0" }}
+        {{- $_ := set $podSC "sysctls" (append ($podSC.sysctls | default list) $lowPort) }}
+        {{- end }}
+        {{- toYaml $podSC | nindent 8 }}
       containers:
       - name: email-gateway
         securityContext:

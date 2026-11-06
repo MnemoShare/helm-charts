@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# The email gateway must be able to bind port 25 as a non-root, capability-dropped
+# container, and the sysctl that allows it must stay confined to the gateway pod.
+set -euo pipefail
+
+chart=${1:-charts/mnemoshare}
+base=(
+  --set customerId=ci-test
+  --set mongodb.external.uri=mongodb://t:t@l:27017/t
+  --set s3.bucket=b --set s3.accessKey=k --set s3.secretKey=s
+  --set-string jwt.ecPrivateKey=ec --set encryption.key=test-encryption-key-exactly-32by
+  --set license.key=lk --set appUrl=https://t.example.com
+  --set network.trustedProxyCIDRs=10.0.0.0/8
+  --set emailGateway.enabled=true --set workflowWorker.enabled=true
+  --set redis.mode=inCluster --set redis.password=x
+)
+fail() { echo "email-gateway-lowport: $*" >&2; exit 1; }
+docs() { helm template t "$chart" "${base[@]}" "$@" | python3 -c 'import sys,yaml,json; print(json.dumps([d for d in yaml.safe_load_all(sys.stdin) if d]))'; }
+
+check() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+docs = json.loads(sys.argv[1]); want = sys.argv[2]
+LOW = {"name": "net.ipv4.ip_unprivileged_port_start", "value": "0"}
+deps = [d for d in docs if d["kind"] in ("Deployment", "StatefulSet")]
+gw = [d for d in deps if d["metadata"]["name"].endswith("-email-gateway")]
+assert len(gw) == 1, "expected one email-gateway Deployment"
+for d in deps:
+    sysctls = d["spec"]["template"]["spec"].get("securityContext", {}).get("sysctls", [])
+    if d is gw[0]:
+        continue
+    assert LOW not in sysctls, f"{d['metadata']['name']} must not get the low-port sysctl"
+gw_sc = gw[0]["spec"]["template"]["spec"]["securityContext"]
+sysctls = gw_sc.get("sysctls", [])
+assert sysctls.count(LOW) == 1, f"gateway sysctls {sysctls} must carry the low-port sysctl once"
+assert gw_sc["fsGroup"] == 1000, "gateway lost fsGroup"
+if want == "extra":
+    assert {"name": "net.core.somaxconn", "value": "1024"} in sysctls, "operator sysctl dropped"
+ports = {p["name"]: p["containerPort"] for p in gw[0]["spec"]["template"]["spec"]["containers"][0]["ports"]}
+assert ports["smtp"] == 25, ports
+svc = next(d for d in docs if d["kind"] == "Service" and d["metadata"]["name"].endswith("-email-gateway"))
+assert svc["spec"]["ports"][0]["targetPort"] == "smtp" and svc["spec"]["ports"][0]["port"] == 25
+PY
+}
+
+check "$(docs --set emailGateway.listenPorts=25:starttls)" plain || fail "25:starttls"
+check "$(docs --set-string "emailGateway.listenPorts=25:starttls\\,587:starttls")" plain || fail "25 and 587"
+check "$(docs --set emailGateway.listenPorts=25:starttls \
+  --set 'podSecurityContext.sysctls[0].name=net.core.somaxconn' \
+  --set-string 'podSecurityContext.sysctls[0].value=1024')" extra || fail "operator sysctl"
+
+for ports in 2525:starttls 587:starttls bogus 25:nope 70000:plain; do
+  set +e; out=$(helm template t "$chart" "${base[@]}" --set "emailGateway.listenPorts=$ports" 2>&1); st=$?; set -e
+  [ $st -ne 0 ] && echo "$out" | grep -q "emailGateway.listenPorts" || fail "listenPorts=$ports should fail with a listenPorts message"
+done
+echo "email-gateway-lowport: ok"
