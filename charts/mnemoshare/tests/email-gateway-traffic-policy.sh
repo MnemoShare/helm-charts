@@ -34,4 +34,6 @@ field() { python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin).get
 
 set +e; out=$(helm template t "$chart" "${base[@]}" --set emailGateway.service.externalTrafficPolicy=local 2>&1); st=$?; set -e
 [ $st -ne 0 ] && echo "$out" | grep -q "emailGateway.service.externalTrafficPolicy" || fail "invalid value must fail naming the key"
+set +e; out=$(helm template t "$chart" "${base[@]}" --set emailGateway.service.type=ClusterIP --set 'emailGateway.service.loadBalancerSourceRanges[0]=203.0.113.0/24' 2>&1); st=$?; set -e
+[ $st -ne 0 ] && echo "$out" | grep -q "emailGateway.service.loadBalancerSourceRanges" || fail "source ranges on ClusterIP must fail naming the key"
 echo "email-gateway-traffic-policy: ok"
