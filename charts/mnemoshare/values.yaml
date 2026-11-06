@@ -1534,7 +1534,11 @@ emailGateway:
   # Number of gateway replicas
   replicas: 1
 
-  # SMTP listen configuration (format: "port:mode" — "25:starttls" or "25:plain")
+  # SMTP listen configuration (format: "port:mode" — "25:starttls" or "25:plain").
+  # Used only when a TLS secret is configured (emailGateway.tls.existingSecret or
+  # mtls.tls.existingSecret), and then it must include port 25 because the Service
+  # targets that port. Without a TLS secret the gateway listens on 25:plain and this
+  # value is ignored.
   listenPorts: "25:starttls"
 
   # Gateway hostname (used in SMTP EHLO/HELO)
