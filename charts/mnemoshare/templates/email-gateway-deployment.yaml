@@ -7,9 +7,12 @@
 {{- $seenListenPorts := dict }}
 {{- $hasSMTPPort := false }}
 {{- $hasLowPort := false }}
+{{- if $tlsSecret }}
+{{- /* Without a TLS secret LISTEN_PORTS is fixed to 25:plain and listenPorts is ignored, so it is only validated here. */}}
 {{- range $listener := splitList "," .Values.emailGateway.listenPorts }}
 {{- $listener = trim $listener }}
-{{- if not (regexMatch "^[0-9]+:(plain|starttls|tls)$" $listener) }}{{- fail (printf "emailGateway.listenPorts contains invalid listener %q" $listener) }}{{- end }}
+{{- if $listener }}
+{{- if not (regexMatch "^[0-9]+(:(plain|starttls|tls))?$" $listener) }}{{- fail (printf "emailGateway.listenPorts contains invalid listener %q" $listener) }}{{- end }}
 {{- $portText := regexFind "^[0-9]+" $listener }}
 {{- $port := atoi $portText }}
 {{- if or (lt $port 1) (gt $port 65535) }}{{- fail (printf "emailGateway.listenPorts contains invalid port %s" $portText) }}{{- end }}
@@ -20,7 +23,11 @@
 {{- $_ := set $seenListenPorts $canonicalPort true }}
 {{- if eq $port 25 }}{{- $hasSMTPPort = true }}{{- end }}
 {{- end }}
+{{- end }}
 {{- if not $hasSMTPPort }}{{- fail "emailGateway.listenPorts must include port 25 while the Service targets the fixed smtp port" }}{{- end }}
+{{- else }}
+{{- $hasLowPort = true }}
+{{- end }}
 {{- $relayMode := or (eq .Values.emailGateway.mode "relay") (eq .Values.emailGateway.mode "inbound-relay") }}
 {{- $relayClaim := .Values.emailGateway.relay.persistence.existingClaim | default (printf "%s-relay-spool" (include "mnemoshare.fullname" .)) }}
 apiVersion: apps/v1
@@ -49,13 +56,15 @@ spec:
       serviceAccountName: {{ include "mnemoshare.serviceAccountName" . }}
       automountServiceAccountToken: false
       securityContext:
-        {{- $podSC := deepCopy .Values.podSecurityContext }}
-        {{- if $hasLowPort }}
+        {{- $podSC := deepCopy (.Values.podSecurityContext | default dict) }}
+        {{- $haveLowPortSysctl := false }}
+        {{- range $podSC.sysctls }}{{- if eq .name "net.ipv4.ip_unprivileged_port_start" }}{{- $haveLowPortSysctl = true }}{{- end }}{{- end }}
+        {{- if and $hasLowPort (not $haveLowPortSysctl) }}
         {{- /* The SMTP listener sits below 1024 while the container runs as a
              non-root user with every capability dropped; this safe sysctl is
              what lets it bind. NET_BIND_SERVICE does not help a non-root
              process without file capabilities on the binary. Appended to any
-             operator-provided sysctls rather than shadowing them. */}}
+             operator-provided sysctls rather than shadowing them; an operator's own low-port entry is kept as is. */}}
         {{- $lowPort := dict "name" "net.ipv4.ip_unprivileged_port_start" "value" "0" }}
         {{- $_ := set $podSC "sysctls" (append ($podSC.sysctls | default list) $lowPort) }}
         {{- end }}

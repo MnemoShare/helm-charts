@@ -26,14 +26,21 @@ deps = [d for d in docs if d["kind"] in ("Deployment", "StatefulSet")]
 gw = [d for d in deps if d["metadata"]["name"].endswith("-email-gateway")]
 assert len(gw) == 1, "expected one email-gateway Deployment"
 for d in deps:
-    sysctls = d["spec"]["template"]["spec"].get("securityContext", {}).get("sysctls", [])
+    sysctls = d["spec"]["template"]["spec"].get("securityContext") or {}
+    sysctls = sysctls.get("sysctls", [])
     if d is gw[0]:
         continue
     assert LOW not in sysctls, f"{d['metadata']['name']} must not get the low-port sysctl"
 gw_sc = gw[0]["spec"]["template"]["spec"]["securityContext"]
 sysctls = gw_sc.get("sysctls", [])
-assert sysctls.count(LOW) == 1, f"gateway sysctls {sysctls} must carry the low-port sysctl once"
-assert gw_sc["fsGroup"] == 1000, "gateway lost fsGroup"
+names = [x["name"] for x in sysctls]
+assert names.count(LOW["name"]) == 1, f"gateway sysctls {sysctls} must carry the low-port sysctl once"
+if want == "opLow":
+    assert {"name": LOW["name"], "value": "1024"} in sysctls, "operator low-port value not kept"
+else:
+    assert LOW in sysctls, sysctls
+if want != "nullpsc":
+    assert gw_sc["fsGroup"] == 1000, "gateway lost fsGroup"
 if want == "extra":
     assert {"name": "net.core.somaxconn", "value": "1024"} in sysctls, "operator sysctl dropped"
 ports = {p["name"]: p["containerPort"] for p in gw[0]["spec"]["template"]["spec"]["containers"][0]["ports"]}
@@ -49,8 +56,20 @@ check "$(docs --set emailGateway.listenPorts=25:starttls \
   --set 'podSecurityContext.sysctls[0].name=net.core.somaxconn' \
   --set-string 'podSecurityContext.sysctls[0].value=1024')" extra || fail "operator sysctl"
 
-for ports in 2525:starttls 587:starttls bogus 25:nope 70000:plain; do
-  set +e; out=$(helm template t "$chart" "${base[@]}" --set "emailGateway.listenPorts=$ports" 2>&1); st=$?; set -e
-  [ $st -ne 0 ] && echo "$out" | grep -q "emailGateway.listenPorts" || fail "listenPorts=$ports should fail with a listenPorts message"
+check "$(docs --set podSecurityContext=null --set emailGateway.listenPorts=25:starttls)" nullpsc || fail "null podSecurityContext"
+check "$(docs --set 'podSecurityContext.sysctls[0].name=net.ipv4.ip_unprivileged_port_start' \
+  --set-string 'podSecurityContext.sysctls[0].value=1024')" opLow || fail "operator low-port sysctl"
+check "$(docs --set emailGateway.listenPorts=25)" plain || fail "bare port"
+check "$(docs --set-string "emailGateway.listenPorts=25\\,587")" plain || fail "bare ports"
+check "$(docs --set-string "emailGateway.listenPorts=25:starttls\\,")" plain || fail "trailing comma"
+tls=(--set emailGateway.tls.existingSecret=gw-tls)
+check "$(docs "${tls[@]}" --set-string "emailGateway.listenPorts=25:starttls\\,")" plain || fail "TLS trailing comma"
+# Without a TLS secret listenPorts is ignored, so even an invalid value renders.
+check "$(docs --set emailGateway.listenPorts=2525:starttls)" plain || fail "non-TLS custom listenPorts"
+check "$(docs --set emailGateway.listenPorts=bogus)" plain || fail "non-TLS ignored listenPorts"
+
+for ports in 2525:starttls 587:starttls bogus 25:nope 70000:plain 0:plain 025:plain "25:plain\\,25:starttls" "25:plain\\,0587:tls"; do
+  set +e; out=$(helm template t "$chart" "${base[@]}" "${tls[@]}" --set-string "emailGateway.listenPorts=$ports" 2>&1); st=$?; set -e
+  [ $st -ne 0 ] && echo "$out" | grep -q "emailGateway.listenPorts" || fail "TLS listenPorts=$ports should fail with a listenPorts message"
 done
 echo "email-gateway-lowport: ok"
