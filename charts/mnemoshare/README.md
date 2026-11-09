@@ -189,6 +189,12 @@ kubectl scale deploy/<fullname> -n <ns> --replicas=1
 | `sesAdmin.region` | SESv2 admin region (domain-authenticated sending) | `""` |
 | `sesAdmin.roleArn` | IAM role for SESv2 admin calls | `""` |
 | `sesEvents.webhookToken` | Token enabling the SES events webhook | `""` |
+| `emailGateway.spool.enabled` | Gateway mode: encrypted outbound deferral spool on a ReadWriteOnce PVC (`GATEWAY_SPOOL_DIR`); forces one replica and the `Recreate` strategy | `true` |
+| `emailGateway.spool.dir` | Spool mount path; must be the default (as on 2.x) | `/var/spool/mnemo-gateway` |
+| `emailGateway.spool.persistence.enabled` | Create the claim; `false` needs `existingClaim` (as on 2.x) | `true` |
+| `emailGateway.spool.persistence.size` | Spool PVC size. 500 queued messages (`OUTBOUND_DEFER_MAX_QUEUED`) of 25 MB would exceed it; when the spool is full, further deferrals become rejections with a sender notice. Raise it for large attachments | `5Gi` |
+| `emailGateway.spool.persistence.storageClass` | Spool PVC StorageClass (empty = cluster default) | `""` |
+| `emailGateway.spool.persistence.existingClaim` | Use an existing PVC instead of creating one | `""` |
 | `emailGateway.misdirected.checkTimeoutMs` | `MISDIRECTED_CHECK_TIMEOUT_MS`: wait for the API's misdirected-email verdict before sending unchecked (positive integer, ms) | unset (app default `3000`) |
 | `emailGateway.misdirected.maxHeldBytes` | `MISDIRECTED_MAX_HELD_BYTES`: cap on raw message bytes held in gateway memory; past it mail is sent, not held. Must be at most half of `emailGateway.resources.limits.memory` | unset (app default `67108864`) |
 | `emailGateway.misdirected.syncIntervalSec` | `MISDIRECTED_SYNC_INTERVAL_SEC`: how often held messages are reconciled with the API (positive integer, seconds) | unset (app default `30`) |
@@ -744,6 +750,21 @@ Probes and init containers no longer use `/bin/sh`, `pgrep` or `wget`. They call
 app PR #4081, MNS-1549). Older images fail the probes (worker/ICES restart loops) and
 the MCP init container. Worker and ICES now expose a `health` container port (8082,
 `/healthz` and `/readyz`). Deploy the new app image first.
+
+### Upgrade note: email gateway deferral spool (chart 1.34.0)
+
+In `gateway` mode the outbound gateway now keeps an encrypted deferral spool: a ReadWriteOnce PVC (`emailGateway.spool.persistence.*`, default 5Gi, or `existingClaim`) mounted at `/var/spool/mnemo-gateway` and exported as `GATEWAY_SPOOL_DIR`. The gateway answers `250` before it scans, so without the spool a transient Quick Share, Tika, Presidio or ICAP failure bounces the message to its sender; with it the message is retried (bounded by `OUTBOUND_DEFER_MAX_AGE_SEC`) and replay is at-least-once. Entries are sealed with AES-256-GCM under `ENCRYPTION_KEY`, which must not be the public default key (the gateway refuses to enable the spool with it). The root filesystem stays read-only; the mount is the only writable path. Unreadable entries move to `quarantine/` and expire after `OUTBOUND_SPOOL_QUARANTINE_RETENTION_DAYS`.
+
+Before you upgrade:
+
+- The PVC needs a StorageClass (the cluster default, or `emailGateway.spool.persistence.storageClass`). An encrypted class is recommended. With none, set `emailGateway.spool.enabled=false` to keep the previous behaviour (reject at the first failure; unscanned mail is never relayed either way).
+- While the spool is enabled the Deployment uses the `Recreate` strategy and the chart fails to render unless `emailGateway.replicas` is exactly 1. A deploy briefly drops the SMTP listener; sending MTAs queue and retry, so mail is delayed, not lost. A value of `replicas: 2` or `0` in your values must be changed, or the spool disabled.
+- The PVC carries `helm.sh/resource-policy: keep`, so `helm uninstall` leaves it. Delete it yourself when you retire the install.
+- Do not disable the spool or roll back to an application version without deferral while it holds entries; they are not replayed. Re-enable it and let it drain first, or accept that what is left is rejected.
+- The pod needs `podSecurityContext.fsGroup` (default 1000) to write the volume; the chart fails to render without it while the spool is on, and sets `fsGroupChangePolicy: OnRootMismatch` unless you set one.
+- `helm upgrade --reuse-values` from a release without `emailGateway.spool` renders the defaults above (spool on).
+- The key names match 2.x (`spool.dir`, `spool.persistence.*`), which has no `spool.enabled` and always spools; `spool.enabled` is a 0.x opt-out and does nothing on 2.x. `dir` and `persistence.enabled=false` without `existingClaim` are rejected as on 2.x.
+- `relay` and `inbound-relay` modes are unchanged (relay keeps its own spool PVC).
 
 ### Upgrade note: inbound gateway ingress (chart 1.31.2)
 

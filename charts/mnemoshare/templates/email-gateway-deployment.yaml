@@ -31,6 +31,9 @@
 {{- $hasLowPort = true }}
 {{- end }}
 {{- $relayMode := or (eq .Values.emailGateway.mode "relay") (eq .Values.emailGateway.mode "inbound-relay") }}
+{{- $spool := include "mnemoshare.gatewaySpool" . | fromJson }}
+{{- $spoolOn := $spool.on }}
+{{- $spoolClaim := $spool.claim }}
 {{- $relayClaim := .Values.emailGateway.relay.persistence.existingClaim | default (printf "%s-relay-spool" (include "mnemoshare.fullname" .)) }}
 apiVersion: apps/v1
 kind: Deployment
@@ -41,6 +44,10 @@ metadata:
     app.kubernetes.io/component: email-gateway
 spec:
   replicas: {{ .Values.emailGateway.replicas }}
+  {{- if $spoolOn }}
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
@@ -59,6 +66,7 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- $podSC := deepCopy (.Values.podSecurityContext | default dict) }}
+        {{- if and $spoolOn (not (hasKey $podSC "fsGroupChangePolicy")) }}{{- $_ := set $podSC "fsGroupChangePolicy" "OnRootMismatch" }}{{- end }}
         {{- if $hasLowPort }}
         {{- /* The SMTP listener sits below 1024 while the container runs as a
              non-root user with every capability dropped; this safe sysctl is
@@ -289,6 +297,10 @@ spec:
           value: {{ .Values.emailGateway.relay.adminKey | quote }}
         {{- end }}
         {{- end }}
+        {{- if $spoolOn }}
+        - name: GATEWAY_SPOOL_DIR
+          value: {{ $spool.dir | quote }}
+        {{- end }}
         # Health port
         - name: HEALTH_PORT
           value: "8081"
@@ -327,7 +339,7 @@ spec:
           failureThreshold: 3
         resources:
           {{- toYaml .Values.emailGateway.resources | nindent 12 }}
-        {{- if or $tlsSecret $relayMode }}
+        {{- if or $tlsSecret $relayMode $spoolOn }}
         volumeMounts:
         {{- if $tlsSecret }}
         - name: tls-certs
@@ -338,8 +350,12 @@ spec:
         - name: relay-spool
           mountPath: {{ .Values.emailGateway.relay.spoolDir }}
         {{- end }}
+        {{- if $spoolOn }}
+        - name: gateway-spool
+          mountPath: {{ $spool.dir }}
         {{- end }}
-      {{- if or $tlsSecret $relayMode }}
+        {{- end }}
+      {{- if or $tlsSecret $relayMode $spoolOn }}
       volumes:
       {{- if $tlsSecret }}
       - name: tls-certs
@@ -350,6 +366,11 @@ spec:
       - name: relay-spool
         persistentVolumeClaim:
           claimName: {{ $relayClaim }}
+      {{- end }}
+      {{- if $spoolOn }}
+      - name: gateway-spool
+        persistentVolumeClaim:
+          claimName: {{ $spoolClaim }}
       {{- end }}
       {{- end }}
       {{- with .Values.emailGateway.nodeSelector }}

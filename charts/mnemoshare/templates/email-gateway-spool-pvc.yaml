@@ -1,0 +1,23 @@
+{{- $spool := include "mnemoshare.gatewaySpool" . | fromJson }}
+{{- if and .Values.emailGateway.enabled $spool.on $spool.persistenceEnabled (not $spool.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $spool.claim }}
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: email-gateway
+spec:
+  accessModes:
+    {{- range $spool.accessModes }}
+    - {{ . }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ $spool.size }}
+  {{- if $spool.storageClass }}
+  storageClassName: {{ $spool.storageClass | quote }}
+  {{- end }}
+{{- end }}
