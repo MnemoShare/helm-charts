@@ -66,6 +66,7 @@ PY
 check "$(docs)" on || fail "default gateway mode"
 check "$(docs --set emailGateway.spool.persistence.size=20Gi --set emailGateway.spool.persistence.storageClass=fast)" on sized || fail "size and storageClass"
 check "$(docs --set emailGateway.spool.persistence.existingClaim=my-claim)" on existing || fail "existingClaim"
+check "$(docs --set emailGateway.spool.persistence.existingClaim=my-claim --set emailGateway.spool.persistence.size=)" on existing || fail "existingClaim needs no size"
 check "$(docs --set emailGateway.spool=null)" on || fail "missing spool key must render the defaults (--reuse-values)"
 check "$(docs --set emailGateway.spool.persistence.enabled=false --set emailGateway.spool.persistence.existingClaim=my-claim)" on existing || fail "persistence.enabled=false with existingClaim"
 check "$(docs --set emailGateway.spool.enabled=false)" off || fail "opt-out"
