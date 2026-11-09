@@ -190,7 +190,8 @@ kubectl scale deploy/<fullname> -n <ns> --replicas=1
 | `sesAdmin.roleArn` | IAM role for SESv2 admin calls | `""` |
 | `sesEvents.webhookToken` | Token enabling the SES events webhook | `""` |
 | `emailGateway.spool.enabled` | Gateway mode: encrypted outbound deferral spool on a ReadWriteOnce PVC (`GATEWAY_SPOOL_DIR`); forces one replica and the `Recreate` strategy | `true` |
-| `emailGateway.spool.dir` | Spool mount path | `/var/spool/mnemo-gateway` |
+| `emailGateway.spool.dir` | Spool mount path; must be the default (as on 2.x) | `/var/spool/mnemo-gateway` |
+| `emailGateway.spool.persistence.enabled` | Create the claim; `false` needs `existingClaim` (as on 2.x) | `true` |
 | `emailGateway.spool.persistence.size` | Spool PVC size | `5Gi` |
 | `emailGateway.spool.persistence.storageClass` | Spool PVC StorageClass (empty = cluster default) | `""` |
 | `emailGateway.spool.persistence.existingClaim` | Use an existing PVC instead of creating one | `""` |
@@ -760,6 +761,9 @@ Before you upgrade:
 - While the spool is enabled the Deployment uses the `Recreate` strategy and the chart fails to render unless `emailGateway.replicas` is exactly 1. A deploy briefly drops the SMTP listener; sending MTAs queue and retry, so mail is delayed, not lost. A value of `replicas: 2` or `0` in your values must be changed, or the spool disabled.
 - The PVC carries `helm.sh/resource-policy: keep`, so `helm uninstall` leaves it. Delete it yourself when you retire the install.
 - Do not disable the spool or roll back to an application version without deferral while it holds entries; they are not replayed. Re-enable it and let it drain first, or accept that what is left is rejected.
+- The pod needs `podSecurityContext.fsGroup` (default 1000) to write the volume; the chart fails to render without it while the spool is on, and sets `fsGroupChangePolicy: OnRootMismatch` unless you set one.
+- `helm upgrade --reuse-values` from a release without `emailGateway.spool` renders the defaults above (spool on).
+- The key names match 2.x (`spool.dir`, `spool.persistence.*`), which has no `spool.enabled` and always spools; `spool.enabled` is a 0.x opt-out and does nothing on 2.x. `dir` and `persistence.enabled=false` without `existingClaim` are rejected as on 2.x.
 - `relay` and `inbound-relay` modes are unchanged (relay keeps its own spool PVC).
 
 ### Upgrade note: inbound gateway ingress (chart 1.31.2)

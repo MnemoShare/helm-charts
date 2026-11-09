@@ -34,6 +34,9 @@ assert c["securityContext"]["readOnlyRootFilesystem"] is True, "root filesystem 
 if want == "on":
     assert spec["strategy"]["type"] == "Recreate", spec.get("strategy")
     assert spec["replicas"] == 1
+    psc = pod["securityContext"]
+    assert psc["fsGroup"] == 1000, psc
+    assert psc["fsGroupChangePolicy"] == "OnRootMismatch", psc
     assert env["GATEWAY_SPOOL_DIR"] == "/var/spool/mnemo-gateway", env.get("GATEWAY_SPOOL_DIR")
     assert mounts["gateway-spool"] == "/var/spool/mnemo-gateway", mounts
     assert "ENCRYPTION_KEY" in env
@@ -63,6 +66,8 @@ PY
 check "$(docs)" on || fail "default gateway mode"
 check "$(docs --set emailGateway.spool.persistence.size=20Gi --set emailGateway.spool.persistence.storageClass=fast)" on sized || fail "size and storageClass"
 check "$(docs --set emailGateway.spool.persistence.existingClaim=my-claim)" on existing || fail "existingClaim"
+check "$(docs --set emailGateway.spool=null)" on || fail "missing spool key must render the defaults (--reuse-values)"
+check "$(docs --set emailGateway.spool.persistence.enabled=false --set emailGateway.spool.persistence.existingClaim=my-claim)" on existing || fail "persistence.enabled=false with existingClaim"
 check "$(docs --set emailGateway.spool.enabled=false)" off || fail "opt-out"
 check "$(docs --set emailGateway.spool.enabled=false --set emailGateway.replicas=2)" off two || fail "opt-out with 2 replicas"
 
@@ -73,6 +78,13 @@ if helm template t "$chart" "${base[@]}" --set emailGateway.replicas=0 >/dev/nul
   fail "replicas=0 with the spool on must fail to render"
 fi
 
+for bad in "emailGateway.spool.persistence.enabled=false" "emailGateway.spool.dir=/var/spool/other" "podSecurityContext.fsGroup=null"; do
+  if helm template t "$chart" "${base[@]}" --set "$bad" >/dev/null 2>&1; then
+    fail "$bad with the spool on must fail to render"
+  fi
+done
+check "$(docs --set emailGateway.spool.enabled=false --set podSecurityContext.fsGroup=null)" off || fail "opt-out needs no fsGroup"
+
 relay=(--set emailGateway.mode=relay --set emailGateway.relay.allowedSourceCIDRs=10.0.0.0/8)
 python3 - "$(docs "${relay[@]}")" <<'PY' || fail "relay mode must not get the gateway spool"
 import json, sys
@@ -82,5 +94,16 @@ env = {e["name"] for e in gw["spec"]["template"]["spec"]["containers"][0]["env"]
 assert "GATEWAY_SPOOL_DIR" not in env
 assert not [d for d in docs if d["kind"] == "PersistentVolumeClaim" and d["metadata"]["name"].endswith("-gateway-spool")]
 PY
+
+for m in relay inbound-relay; do
+  python3 - "$(docs --set emailGateway.mode=$m --set emailGateway.relay.allowedSourceCIDRs=10.0.0.0/8)" <<'PY' || fail "$m mode must not get the gateway spool"
+import json, sys
+docs = json.loads(sys.argv[1])
+gw = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"].endswith("-email-gateway"))
+assert "strategy" not in gw["spec"], gw["spec"].get("strategy")
+assert "fsGroupChangePolicy" not in gw["spec"]["template"]["spec"]["securityContext"]
+assert not [d for d in docs if d["kind"] == "PersistentVolumeClaim" and d["metadata"]["name"].endswith("-gateway-spool")]
+PY
+done
 
 echo "email-gateway-spool: ok"
