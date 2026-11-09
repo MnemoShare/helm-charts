@@ -1708,6 +1708,27 @@ emailGateway:
     # Existing secret with key: relay-admin-key
     existingAdminKeySecret: ""
 
+  # Outbound deferral spool (gateway mode only). The gateway answers 250 before it
+  # scans, so a transient scanner failure is retried from an encrypted file spool
+  # (sealed under ENCRYPTION_KEY, which must not be the default key) instead of
+  # bounced to the sender. Needs a StorageClass. While enabled the gateway runs one
+  # replica with the Recreate strategy (rendering fails otherwise), so a deploy
+  # briefly drops the SMTP listener; sending MTAs queue and retry. The PVC is kept
+  # on helm uninstall. Drain the spool before disabling it or downgrading below an
+  # app version with deferral: left-over entries are not replayed.
+  # false = reject at the first transient failure, no volume. Mail is never relayed unscanned.
+  spool:
+    enabled: true
+    # Exported as GATEWAY_SPOOL_DIR; the PVC mount is the only writable path.
+    dir: "/var/spool/mnemo-gateway"
+    persistence:
+      size: "5Gi"
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+      # Use an existing PVC instead of creating one
+      existingClaim: ""
+
   # Kubernetes Service (SMTP is L4 TCP — needs LoadBalancer/NLB, not Ingress)
   service:
     type: LoadBalancer

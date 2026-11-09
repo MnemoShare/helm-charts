@@ -1,0 +1,22 @@
+{{- if and .Values.emailGateway.enabled (eq .Values.emailGateway.mode "gateway") .Values.emailGateway.spool.enabled (not .Values.emailGateway.spool.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mnemoshare.fullname" . }}-gateway-spool
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "mnemoshare.labels" . | nindent 4 }}
+    app.kubernetes.io/component: email-gateway
+spec:
+  accessModes:
+    {{- range .Values.emailGateway.spool.persistence.accessModes }}
+    - {{ . }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.emailGateway.spool.persistence.size }}
+  {{- if .Values.emailGateway.spool.persistence.storageClass }}
+  storageClassName: {{ .Values.emailGateway.spool.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}

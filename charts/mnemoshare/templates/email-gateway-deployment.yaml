@@ -31,6 +31,14 @@
 {{- $hasLowPort = true }}
 {{- end }}
 {{- $relayMode := or (eq .Values.emailGateway.mode "relay") (eq .Values.emailGateway.mode "inbound-relay") }}
+{{- $spoolOn := and (eq .Values.emailGateway.mode "gateway") .Values.emailGateway.spool.enabled }}
+{{- $spoolClaim := "" }}
+{{- if $spoolOn }}
+{{- if ne (.Values.emailGateway.replicas | int) 1 }}{{- fail "emailGateway.replicas must be exactly 1 while emailGateway.spool.enabled is true: the deferral spool is a ReadWriteOnce volume owned by one pod. Set emailGateway.spool.enabled=false to run more replicas." }}{{- end }}
+{{- if not (hasPrefix "/" .Values.emailGateway.spool.dir) }}{{- fail "emailGateway.spool.dir must be an absolute path" }}{{- end }}
+{{- if and (not .Values.emailGateway.spool.persistence.size) (not .Values.emailGateway.spool.persistence.existingClaim) }}{{- fail "emailGateway.spool.persistence.size or emailGateway.spool.persistence.existingClaim is required while emailGateway.spool.enabled is true" }}{{- end }}
+{{- $spoolClaim = .Values.emailGateway.spool.persistence.existingClaim | default (printf "%s-gateway-spool" (include "mnemoshare.fullname" .)) }}
+{{- end }}
 {{- $relayClaim := .Values.emailGateway.relay.persistence.existingClaim | default (printf "%s-relay-spool" (include "mnemoshare.fullname" .)) }}
 apiVersion: apps/v1
 kind: Deployment
@@ -41,6 +49,10 @@ metadata:
     app.kubernetes.io/component: email-gateway
 spec:
   replicas: {{ .Values.emailGateway.replicas }}
+  {{- if $spoolOn }}
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
@@ -289,6 +301,10 @@ spec:
           value: {{ .Values.emailGateway.relay.adminKey | quote }}
         {{- end }}
         {{- end }}
+        {{- if $spoolOn }}
+        - name: GATEWAY_SPOOL_DIR
+          value: {{ .Values.emailGateway.spool.dir | quote }}
+        {{- end }}
         # Health port
         - name: HEALTH_PORT
           value: "8081"
@@ -327,7 +343,7 @@ spec:
           failureThreshold: 3
         resources:
           {{- toYaml .Values.emailGateway.resources | nindent 12 }}
-        {{- if or $tlsSecret $relayMode }}
+        {{- if or $tlsSecret $relayMode $spoolOn }}
         volumeMounts:
         {{- if $tlsSecret }}
         - name: tls-certs
@@ -338,8 +354,12 @@ spec:
         - name: relay-spool
           mountPath: {{ .Values.emailGateway.relay.spoolDir }}
         {{- end }}
+        {{- if $spoolOn }}
+        - name: gateway-spool
+          mountPath: {{ .Values.emailGateway.spool.dir }}
         {{- end }}
-      {{- if or $tlsSecret $relayMode }}
+        {{- end }}
+      {{- if or $tlsSecret $relayMode $spoolOn }}
       volumes:
       {{- if $tlsSecret }}
       - name: tls-certs
@@ -350,6 +370,11 @@ spec:
       - name: relay-spool
         persistentVolumeClaim:
           claimName: {{ $relayClaim }}
+      {{- end }}
+      {{- if $spoolOn }}
+      - name: gateway-spool
+        persistentVolumeClaim:
+          claimName: {{ $spoolClaim }}
       {{- end }}
       {{- end }}
       {{- with .Values.emailGateway.nodeSelector }}
