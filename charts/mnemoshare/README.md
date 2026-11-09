@@ -192,7 +192,7 @@ kubectl scale deploy/<fullname> -n <ns> --replicas=1
 | `emailGateway.spool.enabled` | Gateway mode: encrypted outbound deferral spool on a ReadWriteOnce PVC (`GATEWAY_SPOOL_DIR`); forces one replica and the `Recreate` strategy | `true` |
 | `emailGateway.spool.dir` | Spool mount path; must be the default (as on 2.x) | `/var/spool/mnemo-gateway` |
 | `emailGateway.spool.persistence.enabled` | Create the claim; `false` needs `existingClaim` (as on 2.x) | `true` |
-| `emailGateway.spool.persistence.size` | Spool PVC size | `5Gi` |
+| `emailGateway.spool.persistence.size` | Spool PVC size. 500 queued messages (`OUTBOUND_DEFER_MAX_QUEUED`) of 25 MB would exceed it; when the spool is full, further deferrals become rejections with a sender notice. Raise it for large attachments | `5Gi` |
 | `emailGateway.spool.persistence.storageClass` | Spool PVC StorageClass (empty = cluster default) | `""` |
 | `emailGateway.spool.persistence.existingClaim` | Use an existing PVC instead of creating one | `""` |
 | `emailGateway.misdirected.checkTimeoutMs` | `MISDIRECTED_CHECK_TIMEOUT_MS`: wait for the API's misdirected-email verdict before sending unchecked (positive integer, ms) | unset (app default `3000`) |

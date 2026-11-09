@@ -1726,6 +1726,9 @@ emailGateway:
     # spool.enabled=false to run without a spool. spool.enabled is 0.x only.
     persistence:
       enabled: true
+      # Holds up to emailGateway.maxMessageSize x OUTBOUND_DEFER_MAX_QUEUED (500) messages in the
+      # worst case, more than 5Gi at the 25 MB default. Once full, further deferrals become
+      # rejections with a sender notice (never relayed unscanned). Raise it for large attachments.
       size: "5Gi"
       storageClass: ""
       accessModes:

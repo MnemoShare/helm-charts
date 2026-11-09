@@ -78,7 +78,7 @@ if helm template t "$chart" "${base[@]}" --set emailGateway.replicas=0 >/dev/nul
   fail "replicas=0 with the spool on must fail to render"
 fi
 
-for bad in "emailGateway.spool.persistence.enabled=false" "emailGateway.spool.dir=/var/spool/other" "podSecurityContext.fsGroup=null"; do
+for bad in "emailGateway.spool.persistence.enabled=false" "emailGateway.spool.dir=/var/spool/other" "emailGateway.spool.persistence.size=" "podSecurityContext.fsGroup=null"; do
   if helm template t "$chart" "${base[@]}" --set "$bad" >/dev/null 2>&1; then
     fail "$bad with the spool on must fail to render"
   fi
