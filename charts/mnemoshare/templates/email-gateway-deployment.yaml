@@ -31,9 +31,12 @@
 {{- $hasLowPort = true }}
 {{- end }}
 {{- $relayMode := or (eq .Values.emailGateway.mode "relay") (eq .Values.emailGateway.mode "inbound-relay") }}
-{{- $spool := include "mnemoshare.gatewaySpool" . | fromJson }}
-{{- $spoolOn := $spool.on }}
-{{- $spoolClaim := $spool.claim }}
+{{- $gatewayMode := eq .Values.emailGateway.mode "gateway" }}
+{{- if $gatewayMode }}
+{{- if eq (.Values.database.driver | default "mongodb") "sqlite" }}{{- fail "emailGateway.mode=gateway cannot run with database.driver=sqlite: the gateway spools to the database from its own pod and cannot open the API pod's SQLite file. Use another database driver, or disable emailGateway." }}{{- end }}
+{{- if eq (.Values.database.driver | default "mongodb") "mongodb" }}{{- if not .Values.mongodb.external.database }}{{- fail "mongodb.external.database must not be empty while emailGateway.mode=gateway: the outbound object spool refuses to start without a database name." }}{{- end }}{{- end }}
+{{- if or (lt (.Values.emailGateway.maxRecipients | int) 1) (gt (.Values.emailGateway.maxRecipients | int) 100) }}{{- fail (printf "emailGateway.maxRecipients must be between 1 and 100 in gateway mode, got %v" .Values.emailGateway.maxRecipients) }}{{- end }}
+{{- end }}
 {{- $relayClaim := .Values.emailGateway.relay.persistence.existingClaim | default (printf "%s-relay-spool" (include "mnemoshare.fullname" .)) }}
 apiVersion: apps/v1
 kind: Deployment
@@ -44,10 +47,6 @@ metadata:
     app.kubernetes.io/component: email-gateway
 spec:
   replicas: {{ .Values.emailGateway.replicas }}
-  {{- if $spoolOn }}
-  strategy:
-    type: Recreate
-  {{- end }}
   selector:
     matchLabels:
       {{- include "mnemoshare.selectorLabels" . | nindent 6 }}
@@ -66,7 +65,6 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- $podSC := deepCopy (.Values.podSecurityContext | default dict) }}
-        {{- if and $spoolOn (not (hasKey $podSC "fsGroupChangePolicy")) }}{{- $_ := set $podSC "fsGroupChangePolicy" "OnRootMismatch" }}{{- end }}
         {{- if $hasLowPort }}
         {{- /* The SMTP listener sits below 1024 while the container runs as a
              non-root user with every capability dropped; this safe sysctl is
@@ -297,9 +295,11 @@ spec:
           value: {{ .Values.emailGateway.relay.adminKey | quote }}
         {{- end }}
         {{- end }}
-        {{- if $spoolOn }}
-        - name: GATEWAY_SPOOL_DIR
-          value: {{ $spool.dir | quote }}
+        {{- if $gatewayMode }}
+        - name: OUTBOUND_SPOOL_BACKEND
+          value: "object"
+        {{- include "mnemoshare.databaseEnv" . | nindent 8 }}
+        {{- include "mnemoshare.storageEnv" . | nindent 8 }}
         {{- end }}
         # Health port
         - name: HEALTH_PORT
@@ -339,7 +339,7 @@ spec:
           failureThreshold: 3
         resources:
           {{- toYaml .Values.emailGateway.resources | nindent 12 }}
-        {{- if or $tlsSecret $relayMode $spoolOn }}
+        {{- if or $tlsSecret $relayMode }}
         volumeMounts:
         {{- if $tlsSecret }}
         - name: tls-certs
@@ -350,12 +350,8 @@ spec:
         - name: relay-spool
           mountPath: {{ .Values.emailGateway.relay.spoolDir }}
         {{- end }}
-        {{- if $spoolOn }}
-        - name: gateway-spool
-          mountPath: {{ $spool.dir }}
         {{- end }}
-        {{- end }}
-      {{- if or $tlsSecret $relayMode $spoolOn }}
+      {{- if or $tlsSecret $relayMode }}
       volumes:
       {{- if $tlsSecret }}
       - name: tls-certs
@@ -366,11 +362,6 @@ spec:
       - name: relay-spool
         persistentVolumeClaim:
           claimName: {{ $relayClaim }}
-      {{- end }}
-      {{- if $spoolOn }}
-      - name: gateway-spool
-        persistentVolumeClaim:
-          claimName: {{ $spoolClaim }}
       {{- end }}
       {{- end }}
       {{- with .Values.emailGateway.nodeSelector }}

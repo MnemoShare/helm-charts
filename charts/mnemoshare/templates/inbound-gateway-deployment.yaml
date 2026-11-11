@@ -173,65 +173,9 @@ spec:
         # Database — the inbound gateway persists relay/socketmap state. Without
         # an explicit driver it falls back to sqlite and cannot open a file on
         # the read-only rootfs. Mirror the api's DB wiring.
-        - name: DB_DRIVER
-          value: {{ .Values.database.driver | default "mongodb" | quote }}
-        {{- if eq (.Values.database.driver | default "mongodb") "mongodb" }}
-        - name: MONGODB_URI
-          valueFrom:
-            secretKeyRef:
-              name: {{ if .Values.existingSecrets.mongodb }}{{ .Values.existingSecrets.mongodb }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
-              key: mongodb-uri
-        - name: MONGODB_DATABASE
-          value: {{ .Values.mongodb.external.database | quote }}
-        {{- else if eq .Values.database.driver "postgres" }}
-        - name: POSTGRES_DSN
-          valueFrom:
-            secretKeyRef:
-              name: {{ if .Values.existingSecrets.postgres }}{{ .Values.existingSecrets.postgres }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
-              key: postgres-dsn
-        {{- end }}
+        {{- include "mnemoshare.databaseEnv" . | nindent 8 }}
         # S3 — inbound attachment persistence.
-        {{- if .Values.minio.enabled }}
-        # MinIO is enabled - use internal MinIO service endpoint
-        - name: S3_ENDPOINT
-          value: "{{ include "mnemoshare.fullname" . }}-minio:9000"
-        - name: S3_REGION
-          value: "us-east-1"
-        - name: S3_BUCKET
-          value: {{ .Values.s3.bucket | default "mnemoshare" | quote }}
-        - name: S3_USE_SSL
-          value: "false"
-        - name: S3_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: {{ if .Values.minio.existingSecret }}{{ .Values.minio.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-minio{{ end }}
-              key: rootUser
-        - name: S3_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: {{ if .Values.minio.existingSecret }}{{ .Values.minio.existingSecret }}{{ else }}{{ include "mnemoshare.fullname" . }}-minio{{ end }}
-              key: rootPassword
-        {{- else }}
-        # External S3-compatible storage
-        - name: S3_ENDPOINT
-          value: {{ .Values.s3.endpoint | quote }}
-        - name: S3_REGION
-          value: {{ .Values.s3.region | quote }}
-        - name: S3_BUCKET
-          value: {{ .Values.s3.bucket | quote }}
-        - name: S3_USE_SSL
-          value: {{ .Values.s3.useSSL | quote }}
-        - name: S3_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: {{ if .Values.existingSecrets.s3 }}{{ .Values.existingSecrets.s3 }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
-              key: s3-access-key
-        - name: S3_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: {{ if .Values.existingSecrets.s3 }}{{ .Values.existingSecrets.s3 }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
-              key: s3-secret-key
-        {{- end }}
+        {{- include "mnemoshare.storageEnv" . | nindent 8 }}
         # Threat-intel feeds for the ICES threat-scanning lane (opt-in).
         {{- include "mnemoshare.threatfeedEnv" . | nindent 8 }}
         # BEC detection, AI DLP classifier, and the post-processing relay target.

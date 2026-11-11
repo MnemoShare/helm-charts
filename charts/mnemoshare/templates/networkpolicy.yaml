@@ -469,6 +469,10 @@ spec:
           port: {{ .Values.service.targetPort }}
     {{- include "mnemoshare.np.icap" . | nindent 4 }}
     {{- include "mnemoshare.np.dlpServices" . | nindent 4 }}
+    {{- if eq .Values.emailGateway.mode "gateway" }}
+    {{- include "mnemoshare.np.database" . | nindent 4 }}
+    {{- include "mnemoshare.np.storage" . | nindent 4 }}
+    {{- end }}
     {{- if or .Values.emailGateway.relay.db.uri .Values.emailGateway.relay.db.existingSecret }}
     # Relay state database (RELAY_DB_URI)
     {{- $nm := .Values.networkPolicy.mongodb }}
