@@ -38,7 +38,7 @@ expressible there; use a CNI-specific policy (CiliumNetworkPolicy `toFQDNs`, Cal
 | api | DNS, database, storage, ICAP, Redis, rich-media/Tika/Presidio, Step-CA, license, KeyGuard, SendGrid/SES, SSO, SMTP, customer ports = `api.customerEgressPorts` (443) plus `workflowWorker.customerEgressPorts` when `workflowWorker.enabled=false` (the API then hosts the engines) |
 | workflow-worker | same destinations; customer ports = `workflowWorker.customerEgressPorts` (21, 22, 443, 990) |
 | ices | same destinations; customer ports = `ices.customerEgressPorts` (443); plus Gmail/Pub-Sub 443 |
-| email-gateway | DNS, API, ICAP, rich-media/Tika/Presidio, relay database (when `emailGateway.relay.db` is set), SMTP, `emailGateway.customerEgressPorts` (443, AI provider) |
+| email-gateway | DNS, API, ICAP, rich-media/Tika/Presidio, database and storage (gateway mode), relay database (when `emailGateway.relay.db` is set), SMTP, `emailGateway.customerEgressPorts` (443, AI provider) |
 | inbound-gateway | DNS, API, database, storage, ICAP, rich-media/Tika/Presidio, SMTP ports to `inboundGateway.relayHost` (any destination, SMTP ports only), `inboundGateway.customerEgressPorts` (443) |
 | mcp | DNS, API |
 | sftp-gateway | DNS, API |

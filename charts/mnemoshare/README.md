@@ -189,12 +189,6 @@ kubectl scale deploy/<fullname> -n <ns> --replicas=1
 | `sesAdmin.region` | SESv2 admin region (domain-authenticated sending) | `""` |
 | `sesAdmin.roleArn` | IAM role for SESv2 admin calls | `""` |
 | `sesEvents.webhookToken` | Token enabling the SES events webhook | `""` |
-| `emailGateway.spool.enabled` | Gateway mode: encrypted outbound deferral spool on a ReadWriteOnce PVC (`GATEWAY_SPOOL_DIR`); forces one replica and the `Recreate` strategy | `true` |
-| `emailGateway.spool.dir` | Spool mount path; must be the default (as on 2.x) | `/var/spool/mnemo-gateway` |
-| `emailGateway.spool.persistence.enabled` | Create the claim; `false` needs `existingClaim` (as on 2.x) | `true` |
-| `emailGateway.spool.persistence.size` | Spool PVC size. 500 queued messages (`OUTBOUND_DEFER_MAX_QUEUED`) of 25 MB would exceed it; when the spool is full, further deferrals become rejections with a sender notice. Raise it for large attachments | `5Gi` |
-| `emailGateway.spool.persistence.storageClass` | Spool PVC StorageClass (empty = cluster default) | `""` |
-| `emailGateway.spool.persistence.existingClaim` | Use an existing PVC instead of creating one | `""` |
 | `emailGateway.misdirected.checkTimeoutMs` | `MISDIRECTED_CHECK_TIMEOUT_MS`: wait for the API's misdirected-email verdict before sending unchecked (positive integer, ms) | unset (app default `3000`) |
 | `emailGateway.misdirected.maxHeldBytes` | `MISDIRECTED_MAX_HELD_BYTES`: cap on raw message bytes held in gateway memory; past it mail is sent, not held. Must be at most half of `emailGateway.resources.limits.memory` | unset (app default `67108864`) |
 | `emailGateway.misdirected.syncIntervalSec` | `MISDIRECTED_SYNC_INTERVAL_SEC`: how often held messages are reconciled with the API (positive integer, seconds) | unset (app default `30`) |
@@ -750,6 +744,16 @@ Probes and init containers no longer use `/bin/sh`, `pgrep` or `wget`. They call
 app PR #4081, MNS-1549). Older images fail the probes (worker/ICES restart loops) and
 the MCP init container. Worker and ICES now expose a `health` container port (8082,
 `/healthz` and `/readyz`). Deploy the new app image first.
+
+### Upgrade note (chart 1.35.0)
+
+In `gateway` mode the outbound gateway no longer has a spool volume. The `emailGateway.spool.*` values, the `<fullname>-gateway-spool` claim template, the `Recreate` strategy, `fsGroupChangePolicy` injection and `GATEWAY_SPOOL_DIR` are gone; the Deployment uses the default rolling update and `emailGateway.replicas` may be greater than 1 (default 1). It now renders `OUTBOUND_SPOOL_BACKEND=object` plus the same database (`DB_DRIVER`, `MONGODB_URI`/`MONGODB_DATABASE` or `POSTGRES_DSN`) and object storage (`S3_*`) environment as the inbound gateway, and its NetworkPolicy gains database and storage egress. `relay` and `inbound-relay` modes are unchanged (relay keeps its own spool PVC and gets none of the new environment).
+
+- On app versions up to 0.22.3 the new settings are not read, so nothing changes at runtime. Object mode takes effect with the first app release that carries it; that release also needs the gateway to reach the database and object storage.
+- No mail was ever written to the spool volume on those versions, so the claim kept by 1.34.0 can be deleted after the upgrade: `kubectl -n <namespace> delete pvc <release-fullname>-gateway-spool` (for a release named `mnemoshare`, `mnemoshare-gateway-spool`). A claim you supplied through `emailGateway.spool.persistence.existingClaim` is yours to remove.
+- The chart refuses to render the outbound gateway in `gateway` mode with `database.driver=sqlite`, which includes the Quickstart profile: a separate gateway pod cannot open the API pod's SQLite file.
+- The chart refuses `emailGateway.maxRecipients` above 100 in `gateway` mode.
+- Leftover `emailGateway.spool` keys in your values are ignored.
 
 ### Upgrade note: email gateway deferral spool (chart 1.34.0)
 
