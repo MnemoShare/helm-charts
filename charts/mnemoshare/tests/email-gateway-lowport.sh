@@ -60,7 +60,7 @@ check "$(docs --set emailGateway.listenPorts=25:starttls \
   --set 'podSecurityContext.sysctls[0].name=net.core.somaxconn' \
   --set-string 'podSecurityContext.sysctls[0].value=1024')" extra || fail "operator sysctl"
 
-check "$(docs --set podSecurityContext=null --set emailGateway.spool.enabled=false --set emailGateway.listenPorts=25:starttls)" nullpsc || fail "null podSecurityContext"
+check "$(docs --set podSecurityContext=null --set emailGateway.listenPorts=25:starttls)" nullpsc || fail "null podSecurityContext"
 check "$(docs --set 'podSecurityContext.sysctls[0].name=net.ipv4.ip_unprivileged_port_start' \
   --set-string 'podSecurityContext.sysctls[0].value=1024')" opLow || fail "operator low-port sysctl"
 check "$(docs --set 'podSecurityContext.sysctls[0].name=net.ipv4.ip_unprivileged_port_start' \

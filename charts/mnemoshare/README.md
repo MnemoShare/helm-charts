@@ -753,6 +753,10 @@ In `gateway` mode the outbound gateway no longer has a spool volume. The `emailG
 - No mail was ever written to the spool volume on those versions, so the claim kept by 1.34.0 can be deleted after the upgrade: `kubectl -n <namespace> delete pvc <release-fullname>-gateway-spool` (for a release named `mnemoshare`, `mnemoshare-gateway-spool`). A claim you supplied through `emailGateway.spool.persistence.existingClaim` is yours to remove.
 - The chart refuses to render the outbound gateway in `gateway` mode with `database.driver=sqlite`, which includes the Quickstart profile: a separate gateway pod cannot open the API pod's SQLite file.
 - The chart refuses `emailGateway.maxRecipients` above 100 in `gateway` mode.
+- The outbound gateway pod now receives the database connection string and the object-storage credentials in its environment. On app versions up to 0.22.3 it does not use them yet.
+- For a `database.driver` other than `mongodb` or `postgres` the chart does not wire a connection string. Supply the driver's DSN variable through `emailGateway.extraEnv` (as for the API); otherwise the gateway will refuse to start on the first app release with the object spool.
+- An existing Quickstart (SQLite) install that has the outbound gateway enabled in `gateway` mode must disable it before upgrading: the chart now refuses that combination at render.
+- `mongodb.external.database` must be non-empty and `emailGateway.maxRecipients` must be 1 to 100 in `gateway` mode; the chart refuses other values.
 - Leftover `emailGateway.spool` keys in your values are ignored.
 
 ### Upgrade note: email gateway deferral spool (chart 1.34.0)

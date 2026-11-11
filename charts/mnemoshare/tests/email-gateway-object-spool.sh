@@ -85,8 +85,30 @@ np = next(d for d in docs if d["kind"] == "NetworkPolicy" and d["metadata"]["nam
 assert 5432 in {p["port"] for r in np["spec"]["egress"] for p in r["ports"]}
 PY
 
+minio=$(docs --set minio.enabled=true --set emailGateway.mode=gateway)
+python3 - "$minio" <<'PY' || fail "bundled MinIO gateway mode"
+import json, sys
+docs = json.loads(sys.argv[1])
+gw = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"].endswith("-email-gateway"))
+env = {e["name"]: e for e in gw["spec"]["template"]["spec"]["containers"][0]["env"]}
+assert env["OUTBOUND_SPOOL_BACKEND"]["value"] == "object"
+assert env["S3_ENDPOINT"]["value"].endswith("-minio:9000"), env["S3_ENDPOINT"]
+assert env["S3_USE_SSL"]["value"] == "false"
+assert env["S3_ACCESS_KEY"]["valueFrom"]["secretKeyRef"]["key"] == "rootUser"
+assert env["S3_SECRET_KEY"]["valueFrom"]["secretKeyRef"]["key"] == "rootPassword"
+np = next(d for d in docs if d["kind"] == "NetworkPolicy" and d["metadata"]["name"].endswith("-email-gateway"))
+assert 9000 in {p["port"] for r in np["spec"]["egress"] for p in r["ports"]}
+PY
+
 for m in relay inbound-relay; do
   check "$(docs --set emailGateway.mode=$m --set emailGateway.relay.allowedSourceCIDRs=10.0.0.0/8)" relay || fail "$m mode"
+  python3 - "$(docs --set emailGateway.mode=$m --set emailGateway.relay.allowedSourceCIDRs=10.0.0.0/8)" <<'PY' || fail "$m mode must have no database or storage egress"
+import json, sys
+docs = json.loads(sys.argv[1])
+np = next(d for d in docs if d["kind"] == "NetworkPolicy" and d["metadata"]["name"].endswith("-email-gateway"))
+ports = {p["port"] for r in np["spec"]["egress"] for p in r["ports"]}
+assert not ports & {27017, 9000}, sorted(ports)
+PY
 done
 
 expect_fail() {
@@ -99,6 +121,8 @@ expect_fail() {
 }
 expect_fail "emailGateway.mode=gateway" --set workflowWorker.enabled=false --set database.driver=sqlite
 expect_fail "emailGateway.maxRecipients" --set emailGateway.maxRecipients=101
+expect_fail "emailGateway.maxRecipients" --set emailGateway.maxRecipients=0
+expect_fail "mongodb.external.database" --set mongodb.external.database=
 helm template t "$chart" "${base[@]}" --set emailGateway.maxRecipients=100 >/dev/null || fail "maxRecipients=100 must render"
 
 echo "email-gateway-object-spool: ok"

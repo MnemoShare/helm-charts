@@ -34,7 +34,8 @@
 {{- $gatewayMode := eq .Values.emailGateway.mode "gateway" }}
 {{- if $gatewayMode }}
 {{- if eq (.Values.database.driver | default "mongodb") "sqlite" }}{{- fail "emailGateway.mode=gateway cannot run with database.driver=sqlite: the gateway spools to the database from its own pod and cannot open the API pod's SQLite file. Use another database driver, or disable emailGateway." }}{{- end }}
-{{- if gt (.Values.emailGateway.maxRecipients | int) 100 }}{{- fail (printf "emailGateway.maxRecipients must be at most 100 in gateway mode, got %v" .Values.emailGateway.maxRecipients) }}{{- end }}
+{{- if eq (.Values.database.driver | default "mongodb") "mongodb" }}{{- if not .Values.mongodb.external.database }}{{- fail "mongodb.external.database must not be empty while emailGateway.mode=gateway: the outbound object spool refuses to start without a database name." }}{{- end }}{{- end }}
+{{- if or (lt (.Values.emailGateway.maxRecipients | int) 1) (gt (.Values.emailGateway.maxRecipients | int) 100) }}{{- fail (printf "emailGateway.maxRecipients must be between 1 and 100 in gateway mode, got %v" .Values.emailGateway.maxRecipients) }}{{- end }}
 {{- end }}
 {{- $relayClaim := .Values.emailGateway.relay.persistence.existingClaim | default (printf "%s-relay-spool" (include "mnemoshare.fullname" .)) }}
 apiVersion: apps/v1
