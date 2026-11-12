@@ -119,6 +119,10 @@ else:
     assert ref["key"] == "old-encryption-key", ref
     if want == "existing":
         assert ref["name"] == "my-enc", ref
+    else:
+        sec = [d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"] == ref["name"]]
+        assert len(sec) == 1, "expected the chart Secret " + ref["name"]
+        assert "old-encryption-key" in {**sec[0].get("data", {}), **sec[0].get("stringData", {})}, "chart Secret lacks old-encryption-key"
 PY
 }
 for m in gateway relay inbound-relay; do

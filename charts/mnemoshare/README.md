@@ -747,17 +747,21 @@ the MCP init container. Worker and ICES now expose a `health` container port (80
 
 ### Upgrade note (chart 1.35.3)
 
-The email gateway Deployment now receives `OLD_ENCRYPTION_KEY` (same Secret reference as the API) while `encryption.oldKey` is set, in every `emailGateway.mode`, so spool entries and relay data sealed under the previous key still open after a rotation. Without `encryption.oldKey` nothing changes and the gateway does not restart; with it set, the gateway pod rolls once on upgrade. Remove `encryption.oldKey` once rotation completes.
+The email gateway Deployment now receives `OLD_ENCRYPTION_KEY` (same Secret reference as the API) while `encryption.oldKey` is set, in every `emailGateway.mode`, so data sealed under the previous key still opens after a rotation. Without `encryption.oldKey` nothing changes and the gateway does not restart; with it set, the gateway pod rolls once on upgrade.
+
+- On app 0.22.5 (this chart's appVersion) only the relay-mode DKIM key re-encryption reads the variable. The outbound spool and the relay queues read it from the first app release that carries the object spool.
+- Keep `encryption.oldKey` set for at least 72 hours after a rotation completes: spool entries sealed under the old key can live that long, and an API rotation can finish in minutes. In relay mode also keep it until the relay logs `relay DKIM key rotation sweep complete`.
+- On those later app versions a malformed `encryption.oldKey` stops the gateway from starting, as it already does the API. It must be exactly 32 bytes, or `base64:` or `hex:` followed by a value that decodes to exactly 32 bytes.
 
 ### Upgrade note (chart 1.35.0)
 
 In `gateway` mode the outbound gateway no longer has a spool volume. The `emailGateway.spool.*` values, the `<fullname>-gateway-spool` claim template, the `Recreate` strategy, `fsGroupChangePolicy` injection and `GATEWAY_SPOOL_DIR` are gone; the Deployment uses the default rolling update and `emailGateway.replicas` may be greater than 1 (default 1). It now renders `OUTBOUND_SPOOL_BACKEND=object` plus the same database (`DB_DRIVER`, `MONGODB_URI`/`MONGODB_DATABASE` or `POSTGRES_DSN`) and object storage (`S3_*`) environment as the inbound gateway, and its NetworkPolicy gains database and storage egress. `relay` and `inbound-relay` modes are unchanged (relay keeps its own spool PVC and gets none of the new environment).
 
-- On app versions up to 0.22.3 the new settings are not read, so nothing changes at runtime. Object mode takes effect with the first app release that carries it; that release also needs the gateway to reach the database and object storage.
+- On app versions up to 0.22.5 the new settings are not read, so nothing changes at runtime. Object mode takes effect with the first app release that carries it; that release also needs the gateway to reach the database and object storage.
 - No mail was ever written to the spool volume on those versions, so the claim kept by 1.34.0 can be deleted after the upgrade: `kubectl -n <namespace> delete pvc <release-fullname>-gateway-spool` (for a release named `mnemoshare`, `mnemoshare-gateway-spool`). A claim you supplied through `emailGateway.spool.persistence.existingClaim` is yours to remove.
 - The chart refuses to render the outbound gateway in `gateway` mode with `database.driver=sqlite`, which includes the Quickstart profile: a separate gateway pod cannot open the API pod's SQLite file.
 - The chart refuses `emailGateway.maxRecipients` above 100 in `gateway` mode.
-- The outbound gateway pod now receives the database connection string and the object-storage credentials in its environment. On app versions up to 0.22.3 it does not use them yet.
+- The outbound gateway pod now receives the database connection string and the object-storage credentials in its environment. On app versions up to 0.22.5 it does not use them yet.
 - For a `database.driver` other than `mongodb` or `postgres` the chart does not wire a connection string. Supply the driver's DSN variable through `emailGateway.extraEnv` (as for the API); otherwise the gateway will refuse to start on the first app release with the object spool.
 - An existing Quickstart (SQLite) install that has the outbound gateway enabled in `gateway` mode must disable it before upgrading: the chart now refuses that combination at render.
 - `mongodb.external.database` must be non-empty and `emailGateway.maxRecipients` must be 1 to 100 in `gateway` mode; the chart refuses other values.

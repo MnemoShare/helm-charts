@@ -206,7 +206,7 @@ encryption:
   # 2. Set 'key' to your new encryption key
   # 3. Apply the Helm upgrade - rotation will start automatically on pod restart
   # 4. Monitor progress in the Admin UI (Organization Settings > Encryption)
-  # 5. After rotation completes, remove 'oldKey' and apply again
+  # 5. After rotation completes, remove 'oldKey' and apply again. If the email gateway is enabled, keep 'oldKey' for at least 72 hours after rotation completes (mail spooled under the old key lives that long)
 
 # License configuration
 license:
