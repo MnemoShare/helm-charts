@@ -750,8 +750,10 @@ the MCP init container. Worker and ICES now expose a `health` container port (80
 The email gateway Deployment now receives `OLD_ENCRYPTION_KEY` (same Secret reference as the API) while `encryption.oldKey` is set, in every `emailGateway.mode`, so data sealed under the previous key still opens after a rotation. Without `encryption.oldKey` nothing changes and the gateway does not restart; with it set, the gateway pod rolls once on upgrade.
 
 - On app 0.22.5 (this chart's appVersion) only the relay-mode DKIM key re-encryption reads the variable. The outbound spool and the relay queues read it from the first app release that carries the object spool.
-- Keep `encryption.oldKey` set for at least 72 hours after a rotation completes: spool entries sealed under the old key can live that long, and an API rotation can finish in minutes. In relay mode also keep it until the relay logs `relay DKIM key rotation sweep complete`.
-- On those later app versions a malformed `encryption.oldKey` stops the gateway from starting, as it already does the API. It must be exactly 32 bytes, or `base64:` or `hex:` followed by a value that decodes to exactly 32 bytes.
+- Keep `encryption.oldKey` set for at least 72 hours after every email gateway pod is running the new `ENCRYPTION_KEY` (the gateway rollout has finished), plus any time the gateway was down during those 72 hours. Gateway pods still running the old key keep sealing data under it, and spooled entries can live 72 hours.
+- With `emailGateway.mode=relay` and a relay database (`emailGateway.relay.db.uri` or `emailGateway.relay.db.existingSecret`), also keep `encryption.oldKey` until a relay start logs `relay DKIM key rotation sweep complete` with no warning in the same start containing `row left on old key` or `persist re-encrypted relay DKIM key failed`. The sweep logs the completion line even when it skipped rows.
+- On app 0.22.5 the relay and inbound-relay file queues have no old-key fallback. Drain the relay queue before rotating on that version.
+- On those later app versions a malformed `encryption.oldKey` stops the gateway from starting. On 0.22.5 the API does not refuse it. The value must be exactly 32 bytes, or `base64:` (standard padded base64) or `hex:` followed by a value that decodes to exactly 32 bytes, for example `base64:$(openssl rand -base64 32)`.
 
 ### Upgrade note (chart 1.35.0)
 

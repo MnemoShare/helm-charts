@@ -311,7 +311,7 @@ spec:
               name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: encryption-key
         {{- if .Values.encryption.oldKey }}
-        # Keep for at least 72h after a rotation (spool entry max age), and in relay mode until the DKIM re-key sweep completes
+        # Keep for at least 72h after the gateway runs the new key; see the chart README (1.35.3 note)
         - name: OLD_ENCRYPTION_KEY
           valueFrom:
             secretKeyRef:
