@@ -745,6 +745,10 @@ app PR #4081, MNS-1549). Older images fail the probes (worker/ICES restart loops
 the MCP init container. Worker and ICES now expose a `health` container port (8082,
 `/healthz` and `/readyz`). Deploy the new app image first.
 
+### Upgrade note (chart 1.35.3)
+
+The email gateway Deployment now receives `OLD_ENCRYPTION_KEY` (same Secret reference as the API) while `encryption.oldKey` is set, in every `emailGateway.mode`, so spool entries and relay data sealed under the previous key still open after a rotation. Without `encryption.oldKey` nothing changes and the gateway does not restart; with it set, the gateway pod rolls once on upgrade. Remove `encryption.oldKey` once rotation completes.
+
 ### Upgrade note (chart 1.35.0)
 
 In `gateway` mode the outbound gateway no longer has a spool volume. The `emailGateway.spool.*` values, the `<fullname>-gateway-spool` claim template, the `Recreate` strategy, `fsGroupChangePolicy` injection and `GATEWAY_SPOOL_DIR` are gone; the Deployment uses the default rolling update and `emailGateway.replicas` may be greater than 1 (default 1). It now renders `OUTBOUND_SPOOL_BACKEND=object` plus the same database (`DB_DRIVER`, `MONGODB_URI`/`MONGODB_DATABASE` or `POSTGRES_DSN`) and object storage (`S3_*`) environment as the inbound gateway, and its NetworkPolicy gains database and storage egress. `relay` and `inbound-relay` modes are unchanged (relay keeps its own spool PVC and gets none of the new environment).

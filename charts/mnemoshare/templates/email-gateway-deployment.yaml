@@ -310,6 +310,14 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: encryption-key
+        {{- if .Values.encryption.oldKey }}
+        # Spool entries sealed before a key rotation open with the old key (remove after rotation completes)
+        - name: OLD_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: old-encryption-key
+        {{- end }}
         # Explicit relay-host allow-list (distinct from upstream next-hop).
         {{- if .Values.emailGateway.relayHosts }}
         - name: RELAY_HOSTS

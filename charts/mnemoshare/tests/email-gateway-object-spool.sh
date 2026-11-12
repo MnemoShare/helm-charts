@@ -100,6 +100,34 @@ np = next(d for d in docs if d["kind"] == "NetworkPolicy" and d["metadata"]["nam
 assert 9000 in {p["port"] for r in np["spec"]["egress"] for p in r["ports"]}
 PY
 
+old_key() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+docs = json.loads(sys.argv[1]); want = sys.argv[2]
+def env(suffix):
+    d = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"].endswith(suffix))
+    return {e["name"]: e for e in d["spec"]["template"]["spec"]["containers"][0]["env"]}
+gw = env("-email-gateway")
+if want == "unset":
+    assert "OLD_ENCRYPTION_KEY" not in gw, "OLD_ENCRYPTION_KEY must be absent without encryption.oldKey"
+else:
+    ref = gw["OLD_ENCRYPTION_KEY"]["valueFrom"]["secretKeyRef"]
+    api = [d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "t-mnemoshare"]
+    assert len(api) == 1, "expected the API Deployment"
+    want_ref = next(e for e in api[0]["spec"]["template"]["spec"]["containers"][0]["env"] if e["name"] == "OLD_ENCRYPTION_KEY")["valueFrom"]["secretKeyRef"]
+    assert ref == want_ref, (ref, want_ref)
+    assert ref["key"] == "old-encryption-key", ref
+    if want == "existing":
+        assert ref["name"] == "my-enc", ref
+PY
+}
+for m in gateway relay inbound-relay; do
+  mode=(--set emailGateway.mode=$m --set emailGateway.relay.allowedSourceCIDRs=10.0.0.0/8)
+  old_key "$(docs "${mode[@]}")" unset || fail "$m: OLD_ENCRYPTION_KEY must be absent without encryption.oldKey"
+  old_key "$(docs "${mode[@]}" --set encryption.oldKey=old-encryption-key-exactly-32by)" set || fail "$m: OLD_ENCRYPTION_KEY must match the API Deployment"
+  old_key "$(docs "${mode[@]}" --set encryption.oldKey=old-encryption-key-exactly-32by --set existingSecrets.encryption=my-enc)" existing || fail "$m: OLD_ENCRYPTION_KEY must follow existingSecrets.encryption"
+done
+
 for m in relay inbound-relay; do
   check "$(docs --set emailGateway.mode=$m --set emailGateway.relay.allowedSourceCIDRs=10.0.0.0/8)" relay || fail "$m mode"
   python3 - "$(docs --set emailGateway.mode=$m --set emailGateway.relay.allowedSourceCIDRs=10.0.0.0/8)" <<'PY' || fail "$m mode must have no database or storage egress"
