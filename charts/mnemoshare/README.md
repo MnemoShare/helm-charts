@@ -753,7 +753,7 @@ The email gateway Deployment now receives `OLD_ENCRYPTION_KEY` (same Secret refe
 - Keep `encryption.oldKey` set for at least 72 hours after every email gateway pod is running the new `ENCRYPTION_KEY` (the gateway rollout has finished), plus any time the gateway was down during those 72 hours. Gateway pods still running the old key keep sealing data under it, and spooled entries can live 72 hours.
 - With `emailGateway.mode=relay` and a relay database (`emailGateway.relay.db.uri` or `emailGateway.relay.db.existingSecret`), also keep `encryption.oldKey` until a relay start logs `relay DKIM key rotation sweep complete` with no warning in the same start containing `row left on old key` or `persist re-encrypted relay DKIM key failed`. The sweep logs the completion line even when it skipped rows.
 - On app 0.22.5 the relay and inbound-relay file queues have no old-key fallback. Drain the relay queue before rotating on that version.
-- On those later app versions a malformed `encryption.oldKey` stops the gateway from starting. On 0.22.5 the API does not refuse it. The value must be exactly 32 bytes, or `base64:` (standard padded base64) or `hex:` followed by a value that decodes to exactly 32 bytes, for example `base64:$(openssl rand -base64 32)`.
+- `encryption.oldKey` is the previous `encryption.key` value, copied exactly; never generate a new value for it. On 0.22.5 neither the API nor the gateway checks its format. On those later app versions a malformed value stops the gateway from starting: it must be exactly 32 bytes, or `base64:` (standard padded base64) or `hex:` followed by a value that decodes to exactly 32 bytes.
 
 ### Upgrade note (chart 1.35.0)
 
