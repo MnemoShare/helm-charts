@@ -634,11 +634,13 @@ fall back to the app defaults (Microsoft follows Google; floor 60s; ceiling
 {{- end }}
 
 {{/*
-Mail-monitoring env for whichever engine hosts it (worker when embedded, or the
-standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud/webhook/*.
+Google and Microsoft webhook URLs for the pod that hosts the cloud engines (the
+worker, or the API when there is no worker) and for the standalone ices pod.
+Emitted when mailMonitoring.enabled or cloudDlp.webhooks.enabled. Each URL
+defaults to <appUrl>/api/v1/integrations/cloud/webhook/{google,microsoft}.
 */}}
-{{- define "mnemoshare.mailMonitoringEnv" -}}
-{{- if .Values.mailMonitoring.enabled }}
+{{- define "mnemoshare.cloudWebhookEnv" -}}
+{{- if or .Values.mailMonitoring.enabled .Values.cloudDlp.webhooks.enabled }}
 {{- $base := trimSuffix "/" (.Values.appUrl | default "") -}}
 {{- /* Gate each URL independently: an explicitly-set webhook URL must emit
        even when appUrl (and thus $base) is empty. */ -}}
@@ -650,6 +652,15 @@ standalone ices pod). Webhook URLs default to <appUrl>/api/v1/integrations/cloud
 - name: MICROSOFT_WEBHOOK_URL
   value: {{ .Values.mailMonitoring.microsoftWebhookUrl | default (printf "%s/api/v1/integrations/cloud/webhook/microsoft" $base) | quote }}
 {{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Mail-monitoring env for whichever engine hosts it (worker when embedded, or the
+standalone ices pod).
+*/}}
+{{- define "mnemoshare.mailMonitoringEnv" -}}
+{{- if .Values.mailMonitoring.enabled }}
 - name: GOOGLE_MAIL_ENROLLMENT_INTERVAL_SEC
   value: {{ .Values.mailMonitoring.enrollmentIntervalSec | default 60 | quote }}
 - name: GOOGLE_INTERNAL_MAIL_WATCH_INTERVAL_SEC

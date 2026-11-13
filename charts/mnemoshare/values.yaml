@@ -255,9 +255,21 @@ sesEvents:
   # SNS topic the SES event webhook validates against (non-secret).
   snsTopicArn: ""
 
-# Mail-monitoring (ICES) tuning for whichever engine hosts it — the worker when
-# ices.enabled=false, otherwise the standalone ices pod. Webhook URLs default to
-# <appUrl>/api/v1/integrations/cloud/webhook/{google,microsoft}.
+# Cloud-drive webhooks (Google Drive and Microsoft Drive change notifications).
+cloudDlp:
+  webhooks:
+    # Render GOOGLE_WEBHOOK_URL and MICROSOFT_WEBHOOK_URL on the pod that hosts the
+    # cloud engines without turning on mail monitoring. Same URLs and overrides as
+    # mailMonitoring.googleWebhookUrl / microsoftWebhookUrl. Off by default.
+    enabled: false
+
+# Mail-monitoring (ICES) tuning for whichever engine hosts it: the worker when
+# ices.enabled=false, otherwise the standalone ices pod. The webhook URLs below
+# default to <appUrl>/api/v1/integrations/cloud/webhook/{google,microsoft}. They
+# are rendered (GOOGLE_WEBHOOK_URL, MICROSOFT_WEBHOOK_URL) when mailMonitoring.enabled
+# or cloudDlp.webhooks.enabled is true, on the ices pod (mailMonitoring only) and on
+# the pod that hosts the cloud engines (the worker, or the API when there is no worker),
+# even when ices.enabled=true.
 mailMonitoring:
   # Off by default so SaaS/reconciler-driven deployments keep providing this via
   # ConfigMap (envFrom). Self-hosted ICES users set enabled=true.
@@ -1426,7 +1438,9 @@ threatFeed:
 #
 # Enabling ices sets ICES_STANDALONE=true on the workflow worker, so the
 # worker's google engine drops mail-monitoring and it is hosted exactly once
-# by this dedicated pod.
+# by this dedicated pod. The worker (or the API when there is no worker) still
+# hosts the Google and Microsoft Drive engines, so it keeps the webhook URLs
+# (see mailMonitoring and cloudDlp.webhooks); the mail-only env goes to ices.
 #
 # Requires Redis and a real database (mongodb/postgres) — sqlite is rejected.
 ices:

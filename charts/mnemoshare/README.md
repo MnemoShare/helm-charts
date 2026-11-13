@@ -745,6 +745,22 @@ app PR #4081, MNS-1549). Older images fail the probes (worker/ICES restart loops
 the MCP init container. Worker and ICES now expose a `health` container port (8082,
 `/healthz` and `/readyz`). Deploy the new app image first.
 
+### Upgrade note (chart 1.35.4)
+
+With `ices.enabled=true` the pod that hosts the Google and Microsoft Drive engines (the workflow worker, or the API when `workflowWorker.enabled=false`) now receives `GOOGLE_WEBHOOK_URL` and `MICROSOFT_WEBHOOK_URL`. Before, it received neither, so no Drive subscription was created and cloud-drive scans did not run. One rule: the two URLs render when `mailMonitoring.enabled` or the new `cloudDlp.webhooks.enabled` (default `false`) is true, on the ices pod (only with `mailMonitoring.enabled`) and on every pod that hosts the engines. Their values are unchanged: `mailMonitoring.googleWebhookUrl` and `mailMonitoring.microsoftWebhookUrl` if set (they emit even when `appUrl` is empty), otherwise `<appUrl>/api/v1/integrations/cloud/webhook/google` and `.../microsoft`.
+
+What changes:
+
+- Deployments with `ices.enabled=true` and `mailMonitoring.enabled=true`: the worker (StatefulSet or Deployment), or the API when there is no worker, gains both URLs. The mail-only settings (`GOOGLE_MAIL_ENROLLMENT_INTERVAL_SEC`, `GOOGLE_INTERNAL_MAIL_WATCH_INTERVAL_SEC`, `ARC_*`) stay on the ices pod only, and `ICES_STANDALONE=true` stays on the engine-hosting pod.
+- Deployments that set `cloudDlp.webhooks.enabled=true` with `mailMonitoring.enabled=false`: the engine-hosting pod gains both URLs and no mail-only settings. The ices pod is unchanged.
+- Everything else renders as before: the ices pod, a worker or API with `ices.enabled=false`, and the chart defaults (`mailMonitoring.enabled=false`, `cloudDlp.webhooks.enabled=false`) get no URLs.
+
+What to expect after upgrading:
+
+- Drive subscriptions are created at the first worker start after the upgrade, and the Microsoft engine now starts on ICES workers.
+- Cloud-drive scans begin. They are capped at alert by the default of `CLOUD_DLP_ENFORCEMENT`.
+- On a worker Deployment with more than one replica, the worker's leader key changes when it gains an engine, so two leaders coexist briefly during the rolling update. Scale the worker to 1 for the upgrade if duplicate scheduled work matters.
+
 ### Upgrade note (chart 1.35.3)
 
 The email gateway Deployment now receives `OLD_ENCRYPTION_KEY` (same Secret reference as the API) while `encryption.oldKey` is set, in every `emailGateway.mode`, so data sealed under the previous key still opens after a rotation. Without `encryption.oldKey` nothing changes and the gateway does not restart; with it set, the gateway pod rolls once on upgrade.

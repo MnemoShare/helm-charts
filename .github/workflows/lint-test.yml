@@ -453,6 +453,10 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bash charts/mnemoshare/tests/clamav-networkpolicy.sh
 
+      - name: Validate cloud webhook env on the engine-hosting pod
+        if: github.event_name == 'pull_request'
+        run: bash charts/mnemoshare/tests/cloud-webhook-env.sh
+
       - name: Validate the Quickstart profile render
         run: bash charts/mnemoshare/tests/quickstart.sh
 
