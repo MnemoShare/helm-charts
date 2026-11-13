@@ -90,5 +90,41 @@ check "ices off, no worker: api keeps URLs and mail env" api "$urls +MAILONLY" "
 check "defaults: worker has no URLs" workflow-worker "-WEBHOOKS -MAILONLY" "${app[@]}" --set workflowWorker.enabled=true
 check "defaults: api has no URLs" api "-WEBHOOKS -MAILONLY" "${app[@]}"
 check "defaults: ices has no URLs" ices "-WEBHOOKS -MAILONLY" "${app[@]}" --set workflowWorker.enabled=true --set ices.enabled=true
+check "worker on, ices off, cloudDlp.webhooks only: api hosts no engine, no URLs" api "-WEBHOOKS -MAILONLY" "${app[@]}" --set workflowWorker.enabled=true --set cloudDlp.webhooks.enabled=true
+check "worker on, ices off, cloudDlp.webhooks only: worker has URLs" workflow-worker "$urls -MAILONLY" "${app[@]}" --set workflowWorker.enabled=true --set cloudDlp.webhooks.enabled=true
+check "cloudDlp null renders as defaults" workflow-worker "-WEBHOOKS -MAILONLY" "${app[@]}" --set workflowWorker.enabled=true --set cloudDlp=null
+check "cloudDlp.webhooks null renders as defaults" workflow-worker "-WEBHOOKS -MAILONLY" "${app[@]}" --set workflowWorker.enabled=true --set cloudDlp.webhooks=null
+check "cloudDlp.webhooks, appUrl empty, explicit URLs" workflow-worker "$G=https://g.example.com/hook $M=https://m.example.com/hook" --set workflowWorker.enabled=true --set cloudDlp.webhooks.enabled=true --set mailMonitoring.googleWebhookUrl=https://g.example.com/hook --set mailMonitoring.microsoftWebhookUrl=https://m.example.com/hook
+
+# cloudDlp.webhooks.enabled with nothing to render is refused; mailMonitoring alone stays silent.
+if out=$(helm template t "$chart" "${base[@]}" --set workflowWorker.enabled=true --set cloudDlp.webhooks.enabled=true 2>&1); then
+  fail "cloudDlp.webhooks with no appUrl and no explicit URL rendered"
+elif ! grep -q "cloudDlp.webhooks.enabled=true renders no webhook URL: set appUrl, or mailMonitoring.googleWebhookUrl / mailMonitoring.microsoftWebhookUrl" <<<"$out"; then
+  fail "cloudDlp.webhooks refusal message missing: $out"
+fi
+helm template t "$chart" "${base[@]}" --set workflowWorker.enabled=true --set mailMonitoring.enabled=true >/dev/null 2>&1 \
+  || fail "mailMonitoring with no appUrl must keep rendering"
+
+# A workaround in extraEnv now repeats the name: the chart entry comes first, the user's last.
+dupcheck() { # <component> <helm args...>
+  local comp=$1; shift
+  helm template t "$chart" "${base[@]}" "${app[@]}" "$@" | python3 -c '
+import sys, yaml
+comp = sys.argv[1]
+docs = [d for d in yaml.safe_load_all(sys.stdin) if d]
+d = [d for d in docs if d["kind"] in ("Deployment", "StatefulSet")
+     and d["metadata"].get("labels", {}).get("app.kubernetes.io/component", "api") == comp][0]
+vals = [e["value"] for e in d["spec"]["template"]["spec"]["containers"][0]["env"] if e["name"] == "GOOGLE_WEBHOOK_URL"]
+want = ["https://t.example.com/api/v1/integrations/cloud/webhook/google", "https://user.example.com/g"]
+sys.exit(0 if vals == want else "GOOGLE_WEBHOOK_URL values %r, want %r" % (vals, want))
+' "$comp"
+}
+dupcheck workflow-worker "${split[@]}" --set "workflowWorker.extraEnv[0].name=GOOGLE_WEBHOOK_URL" --set "workflowWorker.extraEnv[0].value=https://user.example.com/g" || fail "worker extraEnv duplicate"
+dupcheck api --set ices.enabled=true --set mailMonitoring.enabled=true --set "extraEnv[0].name=GOOGLE_WEBHOOK_URL" --set "extraEnv[0].value=https://user.example.com/g" || fail "api extraEnv duplicate"
+
+# Default render: no URLs, and the API's rendered mail-monitoring comment is unchanged.
+out=$(helm template t "$chart" "${base[@]}" "${app[@]}")
+grep -q "_WEBHOOK_URL" <<<"$out" && fail "default render contains a webhook URL"
+grep -q "# needs the webhook/interval env when mailMonitoring.enabled." <<<"$out" || fail "API mail-monitoring comment changed"
 [ "$failed" -eq 0 ] || exit 1
 echo "cloud-webhook-env: ok"

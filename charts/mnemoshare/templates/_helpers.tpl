@@ -640,8 +640,12 @@ Emitted when mailMonitoring.enabled or cloudDlp.webhooks.enabled. Each URL
 defaults to <appUrl>/api/v1/integrations/cloud/webhook/{google,microsoft}.
 */}}
 {{- define "mnemoshare.cloudWebhookEnv" -}}
-{{- if or .Values.mailMonitoring.enabled .Values.cloudDlp.webhooks.enabled }}
+{{- $cdlp := ((.Values.cloudDlp).webhooks).enabled -}}
+{{- if or .Values.mailMonitoring.enabled $cdlp }}
 {{- $base := trimSuffix "/" (.Values.appUrl | default "") -}}
+{{- if and $cdlp (not $base) (not .Values.mailMonitoring.googleWebhookUrl) (not .Values.mailMonitoring.microsoftWebhookUrl) }}
+{{- fail "cloudDlp.webhooks.enabled=true renders no webhook URL: set appUrl, or mailMonitoring.googleWebhookUrl / mailMonitoring.microsoftWebhookUrl" }}
+{{- end }}
 {{- /* Gate each URL independently: an explicitly-set webhook URL must emit
        even when appUrl (and thus $base) is empty. */ -}}
 {{- if or $base .Values.mailMonitoring.googleWebhookUrl }}

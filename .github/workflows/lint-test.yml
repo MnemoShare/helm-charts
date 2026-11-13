@@ -455,7 +455,9 @@ jobs:
 
       - name: Validate cloud webhook env on the engine-hosting pod
         if: github.event_name == 'pull_request'
-        run: bash charts/mnemoshare/tests/cloud-webhook-env.sh
+        run: |
+          pip install pyyaml
+          bash charts/mnemoshare/tests/cloud-webhook-env.sh
 
       - name: Validate the Quickstart profile render
         run: bash charts/mnemoshare/tests/quickstart.sh
