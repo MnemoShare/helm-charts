@@ -310,6 +310,14 @@ spec:
             secretKeyRef:
               name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
               key: encryption-key
+        {{- if .Values.encryption.oldKey }}
+        # Keep for at least 72h after the gateway runs the new key; see the chart README (1.35.3 note)
+        - name: OLD_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.existingSecrets.encryption }}{{ .Values.existingSecrets.encryption }}{{ else }}{{ include "mnemoshare.fullname" . }}-secrets{{ end }}
+              key: old-encryption-key
+        {{- end }}
         # Explicit relay-host allow-list (distinct from upstream next-hop).
         {{- if .Values.emailGateway.relayHosts }}
         - name: RELAY_HOSTS

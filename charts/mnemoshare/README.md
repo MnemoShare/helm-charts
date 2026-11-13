@@ -745,15 +745,25 @@ app PR #4081, MNS-1549). Older images fail the probes (worker/ICES restart loops
 the MCP init container. Worker and ICES now expose a `health` container port (8082,
 `/healthz` and `/readyz`). Deploy the new app image first.
 
+### Upgrade note (chart 1.35.3)
+
+The email gateway Deployment now receives `OLD_ENCRYPTION_KEY` (same Secret reference as the API) while `encryption.oldKey` is set, in every `emailGateway.mode`, so data sealed under the previous key still opens after a rotation. Without `encryption.oldKey` nothing changes and the gateway does not restart; with it set, the gateway pod rolls once on upgrade.
+
+- On app 0.22.5 (this chart's appVersion) only the relay-mode DKIM key re-encryption reads the variable. The outbound spool and the relay queues read it from the first app release that carries the object spool.
+- Keep `encryption.oldKey` set for at least 72 hours after every email gateway pod is running the new `ENCRYPTION_KEY` (the gateway rollout has finished), plus any time the gateway was down during those 72 hours. Gateway pods still running the old key keep sealing data under it, and spooled entries can live 72 hours.
+- With `emailGateway.mode=relay` and a relay database (`emailGateway.relay.db.uri` or `emailGateway.relay.db.existingSecret`), also keep `encryption.oldKey` until a relay start logs `relay DKIM key rotation sweep complete` with no warning in the same start containing `row left on old key` or `persist re-encrypted relay DKIM key failed`. The sweep logs the completion line even when it skipped rows.
+- On app 0.22.5 the relay and inbound-relay file queues have no old-key fallback. Drain the relay queue before rotating on that version.
+- `encryption.oldKey` is the previous `encryption.key` value, copied exactly; never generate a new value for it. On 0.22.5 neither the API nor the gateway refuses to start on a malformed value; the API logs an error and does not start file re-encryption. From the first app release that carries the object spool, a malformed value stops the API and the gateway from starting: it must be exactly 32 bytes, or `base64:` (standard padded base64) or `hex:` followed by a value that decodes to exactly 32 bytes.
+
 ### Upgrade note (chart 1.35.0)
 
 In `gateway` mode the outbound gateway no longer has a spool volume. The `emailGateway.spool.*` values, the `<fullname>-gateway-spool` claim template, the `Recreate` strategy, `fsGroupChangePolicy` injection and `GATEWAY_SPOOL_DIR` are gone; the Deployment uses the default rolling update and `emailGateway.replicas` may be greater than 1 (default 1). It now renders `OUTBOUND_SPOOL_BACKEND=object` plus the same database (`DB_DRIVER`, `MONGODB_URI`/`MONGODB_DATABASE` or `POSTGRES_DSN`) and object storage (`S3_*`) environment as the inbound gateway, and its NetworkPolicy gains database and storage egress. `relay` and `inbound-relay` modes are unchanged (relay keeps its own spool PVC and gets none of the new environment).
 
-- On app versions up to 0.22.3 the new settings are not read, so nothing changes at runtime. Object mode takes effect with the first app release that carries it; that release also needs the gateway to reach the database and object storage.
+- On app versions up to 0.22.5 the new settings are not read, so nothing changes at runtime. Object mode takes effect with the first app release that carries it; that release also needs the gateway to reach the database and object storage.
 - No mail was ever written to the spool volume on those versions, so the claim kept by 1.34.0 can be deleted after the upgrade: `kubectl -n <namespace> delete pvc <release-fullname>-gateway-spool` (for a release named `mnemoshare`, `mnemoshare-gateway-spool`). A claim you supplied through `emailGateway.spool.persistence.existingClaim` is yours to remove.
 - The chart refuses to render the outbound gateway in `gateway` mode with `database.driver=sqlite`, which includes the Quickstart profile: a separate gateway pod cannot open the API pod's SQLite file.
 - The chart refuses `emailGateway.maxRecipients` above 100 in `gateway` mode.
-- The outbound gateway pod now receives the database connection string and the object-storage credentials in its environment. On app versions up to 0.22.3 it does not use them yet.
+- The outbound gateway pod now receives the database connection string and the object-storage credentials in its environment. On app versions up to 0.22.5 it does not use them yet.
 - For a `database.driver` other than `mongodb` or `postgres` the chart does not wire a connection string. Supply the driver's DSN variable through `emailGateway.extraEnv` (as for the API); otherwise the gateway will refuse to start on the first app release with the object spool.
 - An existing Quickstart (SQLite) install that has the outbound gateway enabled in `gateway` mode must disable it before upgrading: the chart now refuses that combination at render.
 - `mongodb.external.database` must be non-empty and `emailGateway.maxRecipients` must be 1 to 100 in `gateway` mode; the chart refuses other values.
