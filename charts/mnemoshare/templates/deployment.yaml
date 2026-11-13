@@ -133,6 +133,12 @@ spec:
           value: "true"
         {{- end }}
         {{- include "mnemoshare.mailCadenceEnv" . | nindent 8 }}
+        {{- if or (not .Values.workflowWorker.enabled) (and (not .Values.ices.enabled) .Values.mailMonitoring.enabled) }}
+        {{- /* The API hosts the cloud engines when there is no worker. With a
+               worker it keeps the URLs it already carried when mail monitoring
+               is embedded (no standalone ICES). */}}
+        {{- with (include "mnemoshare.cloudWebhookEnv" . | trim) }}{{ . | nindent 8 }}{{- end }}
+        {{- end }}
         {{- if not .Values.ices.enabled }}
         # No standalone ICES: the API pod's embedded mail-monitoring engine
         # needs the webhook/interval env when mailMonitoring.enabled.
