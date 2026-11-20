@@ -745,6 +745,26 @@ app PR #4081, MNS-1549). Older images fail the probes (worker/ICES restart loops
 the MCP init container. Worker and ICES now expose a `health` container port (8082,
 `/healthz` and `/readyz`). Deploy the new app image first.
 
+### Upgrade note (chart 1.36.0)
+
+With `ices.enabled=true` the engine-hosting pod (the worker, or the API when `workflowWorker.enabled=false`) now receives `GOOGLE_WEBHOOK_URL` and `MICROSOFT_WEBHOOK_URL`. Before, it received neither, so no Drive subscription was created and cloud-drive scans did not run.
+
+One rule: the two URLs render when `mailMonitoring.enabled` or the new `cloudDlp.webhooks.enabled` (default `false`) is true, on every engine-hosting pod and, only with `mailMonitoring.enabled`, on the ices pod. Their values are unchanged: `mailMonitoring.googleWebhookUrl` and `mailMonitoring.microsoftWebhookUrl` if set (they render even when `appUrl` is empty), otherwise `<appUrl>/api/v1/integrations/cloud/webhook/google` and `.../microsoft`. `cloudDlp.webhooks.enabled=true` with an empty `appUrl` and neither explicit URL set now fails the render, naming those three keys.
+
+What changes:
+
+- Installs with `ices.enabled=true` and `mailMonitoring.enabled=true`: the engine-hosting pod gains the URLs (both when `appUrl` is set; with an empty `appUrl`, only those set explicitly). The mail-only settings (`GOOGLE_MAIL_ENROLLMENT_INTERVAL_SEC`, `GOOGLE_INTERNAL_MAIL_WATCH_INTERVAL_SEC`, `ARC_*`) stay on the ices pod only, and `ICES_STANDALONE=true` stays on the engine-hosting pod.
+- Installs that set `cloudDlp.webhooks.enabled=true`: the engine-hosting pod gains the URLs, on the same terms, and no mail-only settings. With `mailMonitoring.enabled=false` the ices pod is unchanged.
+- For the ices pod, and for `ices.enabled=false` installs that do not set `cloudDlp.webhooks.enabled`, the rendered env is unchanged. With chart defaults no pod gets a URL.
+
+What to expect after upgrading:
+
+- On an install that gains the URLs, the engine-hosting pod creates Drive subscriptions at its first start after the upgrade, and the Microsoft engine starts on it.
+- Cloud-drive scans begin. They are capped at alert by the default of `CLOUD_DLP_ENFORCEMENT`.
+- The engine host's leader key changes when it gains an engine, so leader-only scheduled work can run twice while old and new pods run side by side. That happens when the engine-hosting workload rolls with both present: a worker Deployment at any replica count (no `strategy` is set, so it rolls with the default RollingUpdate), a worker StatefulSet with more than one replica, and the API Deployment when there is no worker, unless it uses the `Recreate` strategy (persistent SQLite). A worker StatefulSet with one replica has no overlap. To avoid the overlap, scale the engine host to 0 before the upgrade and back up after it; background processing is stopped for that time. If the workload is autoscaled (KEDA), pause autoscaling first, or it is scaled back up at once. Otherwise accept the brief overlap.
+
+If you worked around the missing URLs by setting `GOOGLE_WEBHOOK_URL` or `MICROSOFT_WEBHOOK_URL` in `workflowWorker.extraEnv` or `extraEnv`, remove those entries in the same upgrade as this chart version. The pod now gets the name twice, from the chart and then from your entry, and the later entry wins at runtime. If you remove the entry in a later upgrade, Helm's merge of the earlier release drops every entry with that name, and the chart's URL goes with it.
+
 ### Upgrade note (chart 1.35.3)
 
 The email gateway Deployment now receives `OLD_ENCRYPTION_KEY` (same Secret reference as the API) while `encryption.oldKey` is set, in every `emailGateway.mode`, so data sealed under the previous key still opens after a rotation. Without `encryption.oldKey` nothing changes and the gateway does not restart; with it set, the gateway pod rolls once on upgrade.

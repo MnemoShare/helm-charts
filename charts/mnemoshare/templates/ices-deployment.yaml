@@ -231,6 +231,9 @@ spec:
         {{- include "mnemoshare.workerApiCallbackEnv" . | nindent 8 }}
         {{- include "mnemoshare.platformEmailEnv" . | nindent 8 }}
         {{- include "mnemoshare.mailCadenceEnv" . | nindent 8 }}
+        {{- if .Values.mailMonitoring.enabled }}
+        {{- with (include "mnemoshare.cloudWebhookEnv" . | trim) }}{{ . | nindent 8 }}{{- end }}
+        {{- end }}
         {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
         {{- with .Values.ices.extraEnv }}
         {{- toYaml . | nindent 8 }}

@@ -282,6 +282,7 @@ spec:
         {{- include "mnemoshare.workerApiCallbackEnv" . | nindent 8 }}
         {{- include "mnemoshare.platformEmailEnv" . | nindent 8 }}
         {{- include "mnemoshare.mailCadenceEnv" . | nindent 8 }}
+        {{- with (include "mnemoshare.cloudWebhookEnv" . | trim) }}{{ . | nindent 8 }}{{- end }}
         {{- if not .Values.ices.enabled }}
         {{- include "mnemoshare.mailMonitoringEnv" . | nindent 8 }}
         {{- end }}
