@@ -4,7 +4,7 @@ description: Zero-trust MFT system enforcing encryption-at-rest, knowledge-based
 type: application
 version: 1.36.0
 # platformEmail/sesAdmin/sesEvents values (MNS-954) require app v0.17+
-appVersion: "0.22.5"
+appVersion: "0.23.4"
 keywords:
   - secure-file-transfer
   - hipaa
