@@ -915,13 +915,15 @@ mtls:
     rootCertPEM: ""
     # Provisioner name
     provisioner: "mnemoshare"
-    # Provisioner private key: a plain private JWK, or an encrypted JWK
+    # Provisioner private key: an encrypted JWK, or a plain private JWK (see provisionerPass)
     provisionerKey: ""
-    # Provisioner password; only needed when provisionerKey is an encrypted JWK
+    # Provisioner password. Optional only for a plain private JWK provisionerKey, which
+    # needs an app release that carries BUG-5112 (the first 0.x release after v0.23.4);
+    # on v0.23.4 and earlier the password is still required.
     provisionerPass: ""
     # Existing secret for CA provider credentials
-    # Secret should have keys: 'provisioner-key', optionally 'provisioner-pass'
-    # (only for an encrypted key; a plain private JWK needs none) and 'root-ca-cert'
+    # Secret should have keys: 'provisioner-key' and, unless the key is a plain private JWK
+    # (see provisionerPass), 'provisioner-pass'
     existingSecret: ""
 
   # cert-manager Certificate resource for mTLS TLS cert
