@@ -749,7 +749,7 @@ the MCP init container. Worker and ICES now expose a `health` container port (80
 
 With `mtls.caProvider.existingSecret`, the `provisioner-pass` key is now optional (`secretKeyRef.optional: true` on `CA_SMALLSTEP_PROVISIONER_PASS`); `provisioner-key` stays required. Secrets that carry both keys render the same as before.
 
-- Leaving `provisioner-pass` out is only useful with a plain private JWK in `provisioner-key`, which needs an app release that carries BUG-5112 (the first 0.x release after v0.23.4). On app 0.23.4 and earlier (this chart's appVersion) the password is still required, and an encrypted key always needs it.
+- Leaving `provisioner-pass` out is only useful with a plain private JWK in `provisioner-key`, which needs an app release that carries BUG-5112. On app 0.23.4 and earlier (this chart's appVersion) the password is still required, and an encrypted key always needs it.
 
 ### Upgrade note (chart 1.36.0)
 
