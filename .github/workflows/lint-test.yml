@@ -459,6 +459,12 @@ jobs:
           pip install pyyaml
           bash charts/mnemoshare/tests/cloud-webhook-env.sh
 
+      - name: Validate the provisioner password ref is optional
+        if: github.event_name == 'pull_request'
+        run: |
+          pip install pyyaml
+          bash charts/mnemoshare/tests/provisioner-pass-optional.sh
+
       - name: Validate the Quickstart profile render
         run: bash charts/mnemoshare/tests/quickstart.sh
 
