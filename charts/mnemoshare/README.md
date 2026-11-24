@@ -745,6 +745,10 @@ app PR #4081, MNS-1549). Older images fail the probes (worker/ICES restart loops
 the MCP init container. Worker and ICES now expose a `health` container port (8082,
 `/healthz` and `/readyz`). Deploy the new app image first.
 
+### Upgrade note (chart 1.36.1)
+
+With `mtls.caProvider.existingSecret`, the `provisioner-pass` key is now optional (`secretKeyRef.optional: true` on `CA_SMALLSTEP_PROVISIONER_PASS`); `provisioner-key` stays required. A plain private JWK in `provisioner-key` needs no password, so the Secret no longer has to carry `provisioner-pass`. An encrypted key still needs it. Secrets that carry both keys render the same as before.
+
 ### Upgrade note (chart 1.36.0)
 
 With `ices.enabled=true` the engine-hosting pod (the worker, or the API when `workflowWorker.enabled=false`) now receives `GOOGLE_WEBHOOK_URL` and `MICROSOFT_WEBHOOK_URL`. Before, it received neither, so no Drive subscription was created and cloud-drive scans did not run.

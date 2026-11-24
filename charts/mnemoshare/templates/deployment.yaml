@@ -475,6 +475,7 @@ spec:
             secretKeyRef:
               name: {{ .Values.mtls.caProvider.existingSecret }}
               key: provisioner-pass
+              optional: true
         {{- else }}
         {{- if .Values.mtls.caProvider.provisionerKey }}
         - name: CA_SMALLSTEP_PROVISIONER_KEY

@@ -915,12 +915,13 @@ mtls:
     rootCertPEM: ""
     # Provisioner name
     provisioner: "mnemoshare"
-    # Provisioner key (encrypted JWK)
+    # Provisioner private key: a plain private JWK, or an encrypted JWK
     provisionerKey: ""
-    # Provisioner password
+    # Provisioner password; only needed when provisionerKey is an encrypted JWK
     provisionerPass: ""
     # Existing secret for CA provider credentials
-    # Secret should have keys: 'provisioner-key', 'provisioner-pass', optionally 'root-ca-cert'
+    # Secret should have keys: 'provisioner-key', optionally 'provisioner-pass'
+    # (only for an encrypted key; a plain private JWK needs none) and 'root-ca-cert'
     existingSecret: ""
 
   # cert-manager Certificate resource for mTLS TLS cert
