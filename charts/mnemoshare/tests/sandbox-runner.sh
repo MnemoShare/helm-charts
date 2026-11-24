@@ -121,8 +121,8 @@ for d in yaml.safe_load_all(sys.stdin):
     ' <<<"$out" || fail "runner egress has a rule without a destination"
 
 # Minimum application version: below it the runner binary does not exist and would crash-loop.
-err=$(render --set sandbox.enabled=true --set sandbox.runner.tls.issuerRef.name=issuer "${api[@]}" 2>&1) && fail "render succeeded with appVersion below sandbox.minAppVersion"
-grep -qF "below sandbox.minAppVersion 0.23.0" <<<"$err" || fail "min-version failure is not explained: $err"
+err=$(render --set sandbox.enabled=true --set sandbox.runner.tls.issuerRef.name=issuer "${api[@]}" --set image.tag=0.22.9 2>&1) && fail "render succeeded with an image tag below sandbox.minAppVersion"
+grep -qF "image tag 0.22.9 is below sandbox.minAppVersion 0.23.0" <<<"$err" || fail "min-version failure is not explained: $err"
 for ok in "--set image.tag=0.23.0" "--set image.tag=v0.24.1" "--set image.tag=demo-abc123" "--set sandbox.runner.image.digest=$digestA"; do
   # shellcheck disable=SC2086
   render --set sandbox.enabled=true --set sandbox.runner.tls.issuerRef.name=issuer "${api[@]}" $ok >/dev/null || fail "render refused: $ok"
